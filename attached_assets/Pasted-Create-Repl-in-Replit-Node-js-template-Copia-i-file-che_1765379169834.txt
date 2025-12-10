@@ -1,0 +1,1466 @@
+Create Repl in Replit → Node.js template
+Copia i file che ti darò sotto
+Configura Secrets
+Run setup
+📁 STRUTTURA COMPLETA
+cpa-protocollo/
+├── .replit
+├── replit.nix
+├── .gitignore
+├── package.json
+├── README.md
+│
+├── client/
+│   ├── package.json
+│   ├── index.html
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   ├── tailwind.config.js
+│   ├── postcss.config.js
+│   └── src/
+│       ├── main.tsx
+│       ├── App.tsx
+│       ├── index.css
+│       ├── vite-env.d.ts
+│       ├── lib/
+│       │   └── api.ts
+│       ├── components/
+│       │   ├── Dashboard.tsx
+│       │   └── LoginForm.tsx
+│       └── pages/
+│           ├── HomePage.tsx
+│           └── LoginPage.tsx
+│
+└── server/
+    ├── package.json
+    ├── .env.example
+    ├── prisma/
+    │   ├── schema.prisma
+    │   └── seed.js
+    ├── uploads/
+    │   └── .gitkeep
+    └── src/
+        ├── server.js
+        ├── config/
+        │   └── constants.js
+        ├── middleware/
+        │   ├── auth.js
+        │   └── errorHandler.js
+        ├── routes/
+        │   ├── auth.js
+        │   ├── materials.js
+        │   └── flashcards.js
+        ├── services/
+        │   ├── aiService.js
+        │   ├── cacheService.js
+        │   └── costTracker.js
+        └── utils/
+            └── logger.js
+📄 FILE PER FILE
+ROOT: .replit
+Copyrun = "npm run dev"
+entrypoint = "server/src/server.js"
+
+[nix]
+channel = "stable-23_11"
+
+[deployment]
+run = ["sh", "-c", "npm run build && npm run start"]
+deploymentTarget = "cloudrun"
+
+[[ports]]
+localPort = 3000
+externalPort = 80
+
+[[ports]]
+localPort = 5173
+externalPort = 3001
+
+[env]
+NODE_ENV = "development"
+
+[languages.javascript]
+pattern = "**/{*.js,*.jsx,*.ts,*.tsx}"
+
+[languages.javascript.languageServer]
+start = "typescript-language-server --stdio"
+ROOT: replit.nix
+Copy{ pkgs }: {
+  deps = [
+    pkgs.nodejs-20_x
+    pkgs.nodePackages.typescript-language-server
+    pkgs.nodePackages.npm
+    pkgs.openssl
+  ];
+  env = {
+    LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.openssl];
+  };
+}
+ROOT: package.json
+Copy{
+  "name": "cpa-protocollo",
+  "version": "1.0.0",
+  "description": "Protocollo C.P.A. 2.0 - Sistema completo preparazione concorsi",
+  "scripts": {
+    "setup": "npm install && npm run setup:client && npm run setup:server",
+    "setup:client": "cd client && npm install",
+    "setup:server": "cd server && npm install",
+    "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
+    "dev:client": "cd client && npm run dev -- --host 0.0.0.0",
+    "dev:server": "cd server && npm run dev",
+    "build": "cd client && npm run build",
+    "start": "cd server && npm run start",
+    "db:setup": "cd server && npx prisma generate && npx prisma migrate dev",
+    "db:seed": "cd server && npx prisma db seed"
+  },
+  "keywords": ["concorsi", "study", "ai"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
+ROOT: .gitignore
+node_modules/
+client/node_modules/
+server/node_modules/
+client/dist/
+server/dist/
+.env
+.env.local
+*.log
+.DS_Store
+server/uploads/*
+!server/uploads/.gitkeep
+server/dev.db
+server/dev.db-journal
+.replit.nix
+ROOT: README.md
+Copy# 🎯 Protocollo C.P.A. 2.0
+
+Sistema completo per preparazione concorsi pubblici con AI.
+
+## 🚀 Setup Veloce
+
+### 1. Installa dipendenze
+```bash
+npm run setup
+2. Configura Secrets in Replit
+Vai su 🔒 Secrets e aggiungi:
+
+Copy{
+  "DATABASE_URL": "file:./dev.db",
+  "JWT_SECRET": "your-super-secret-jwt-key-change-in-production",
+  "OPENAI_API_KEY": "sk-proj-YOUR-KEY-HERE"
+}
+3. Setup Database
+Copynpm run db:setup
+npm run db:seed
+4. Avvia App
+Copynpm run dev
+📚 Credenziali Test
+Admin: admin@cpa.it / admin123
+User: test@cpa.it / test123
+🛠️ Comandi Utili
+npm run dev - Dev server
+npm run build - Build produzione
+npm run start - Avvia produzione
+npm run db:setup - Setup database
+npm run db:seed - Seed dati test
+📖 Documentazione
+Frontend: http://localhost:5173 (porta 3001 in Replit) Backend: http://localhost:3000 (porta 80 in Replit)
+
+
+---
+
+## 🗄️ SERVER FILES
+
+### **server/package.json**
+
+```json
+{
+  "name": "cpa-server",
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.9.0",
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "node-cache": "^5.1.2",
+    "openai": "^4.28.0",
+    "pdf-parse": "^1.1.1",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3",
+    "prisma": "^5.9.0"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  }
+}
+server/.env.example
+DATABASE_URL="file:./dev.db"
+JWT_SECRET="your-super-secret-jwt-key"
+OPENAI_API_KEY="sk-proj-your-key-here"
+PORT=3000
+NODE_ENV="development"
+ALLOWED_ORIGINS="*"
+server/prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String
+  name          String?
+  level         Int      @default(0)
+  role          String   @default("user")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  materials     Material[]
+  flashcards    Flashcard[]
+  pomodoros     Pomodoro[]
+  quizResults   QuizResult[]
+}
+
+model Material {
+  id              String   @id @default(uuid())
+  userId          String
+  title           String
+  type            String
+  fileUrl         String?
+  extractedText   String?
+  status          String   @default("pending")
+  processingError String?
+  flashcardsCount Int      @default(0)
+  quizzesCount    Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  flashcards      Flashcard[]
+}
+
+model Flashcard {
+  id            String    @id @default(uuid())
+  userId        String
+  materialId    String
+  front         String
+  back          String
+  tags          String
+  difficulty    String    @default("medium")
+  source        String?
+  nextReview    DateTime  @default(now())
+  bin           Int       @default(1)
+  attempts      Int       @default(0)
+  correctStreak Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  material      Material  @relation(fields: [materialId], references: [id], onDelete: Cascade)
+}
+
+model Pomodoro {
+  id             String   @id @default(uuid())
+  userId         String
+  startTime      DateTime
+  endTime        DateTime?
+  duration       Int
+  actualDuration Int?
+  subject        String
+  activity       String
+  completed      Boolean  @default(false)
+  interrupted    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model QuizResult {
+  id             String   @id @default(uuid())
+  userId         String
+  materialId     String?
+  totalQuestions Int
+  correctAnswers Int
+  score          Float
+  timeSpent      Int
+  wrongAnswers   String
+  questionData   String
+  createdAt      DateTime @default(now())
+  
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+server/prisma/seed.js
+Copyconst { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcrypt');
+
+const prisma = new PrismaClient();
+
+async function main() {
+  console.log('🌱 Seeding database...');
+
+  // Admin user
+  const adminPassword = await bcrypt.hash('admin123', 10);
+  const admin = await prisma.user.upsert({
+    where: { email: 'admin@cpa.it' },
+    update: {},
+    create: {
+      email: 'admin@cpa.it',
+      passwordHash: adminPassword,
+      name: 'Admin CPA',
+      role: 'admin',
+      level: 100
+    }
+  });
+  console.log('✅ Admin:', admin.email);
+
+  // Test user
+  const userPassword = await bcrypt.hash('test123', 10);
+  const user = await prisma.user.upsert({
+    where: { email: 'test@cpa.it' },
+    update: {},
+    create: {
+      email: 'test@cpa.it',
+      passwordHash: userPassword,
+      name: 'Marco Rossi',
+      level: 25
+    }
+  });
+  console.log('✅ User:', user.email);
+
+  // Sample material
+  const material = await prisma.material.create({
+    data: {
+      userId: user.id,
+      title: 'Legge 241/1990',
+      type: 'normativa',
+      status: 'completed',
+      extractedText: 'Legge 7 agosto 1990, n. 241 - Nuove norme in materia di procedimento amministrativo...',
+      flashcardsCount: 3,
+      quizzesCount: 0
+    }
+  });
+  console.log('✅ Material created');
+
+  // Flashcards
+  await prisma.flashcard.createMany({
+    data: [
+      {
+        userId: user.id,
+        materialId: material.id,
+        front: 'Chi nomina il Responsabile del Procedimento?',
+        back: 'Il dirigente dell\'unità organizzativa competente (art. 6, co. 1, L.241/90).',
+        tags: 'L.241/90,Procedimento',
+        difficulty: 'medium',
+        source: 'Art. 6 L.241/90',
+        bin: 3
+      },
+      {
+        userId: user.id,
+        materialId: material.id,
+        front: 'Cos\'è la SCIA?',
+        back: 'Segnalazione Certificata di Inizio Attività (art. 19 L.241/90).',
+        tags: 'L.241/90,SCIA',
+        difficulty: 'easy',
+        source: 'Art. 19 L.241/90',
+        bin: 4
+      },
+      {
+        userId: user.id,
+        materialId: material.id,
+        front: 'Termine massimo procedimento amministrativo?',
+        back: '30 giorni (art. 2, co. 2, L.241/90).',
+        tags: 'L.241/90,Termini',
+        difficulty: 'medium',
+        source: 'Art. 2 L.241/90',
+        bin: 2
+      }
+    ]
+  });
+  console.log('✅ Flashcards created');
+
+  console.log('🎉 Seeding completed!');
+}
+
+main()
+  .catch(e => {
+    console.error('❌ Error:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+server/uploads/.gitkeep
+# Keep this folder in git
+server/src/server.js
+Copyrequire('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const path = require('path');
+
+const app = express();
+
+// Middleware
+app.use(helmet());
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+  credentials: true
+}));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/materials', require('./routes/materials'));
+app.use('/api/flashcards', require('./routes/flashcards'));
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    service: 'CPA Backend v1.0'
+  });
+});
+
+// Serve frontend in production
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../../client/dist')));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
+  });
+}
+
+// Error handler
+app.use(require('./middleware/errorHandler'));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📡 Environment: ${process.env.NODE_ENV}`);
+});
+server/src/config/constants.js
+Copymodule.exports = {
+  JWT_EXPIRES_IN: '7d',
+  BCRYPT_ROUNDS: 10,
+  
+  AI_MODELS: {
+    CHEAP: 'gpt-4o-mini',
+    PREMIUM: 'gpt-4-turbo-preview'
+  },
+  
+  RATE_LIMITS: {
+    FLASHCARD_GENERATION: { daily: 50, hourly: 10 },
+    QUIZ_GENERATION: { daily: 30, hourly: 5 },
+    AI_TUTOR: { daily: 100, hourly: 20 }
+  },
+  
+  SRS_INTERVALS: {
+    WRONG: 3600000,      // 1 hour
+    HARD: 86400000,      // 1 day
+    EASY: 259200000,     // 3 days
+    MASTERED: 1209600000 // 14 days
+  }
+};
+server/src/middleware/auth.js
+Copyconst jwt = require('jsonwebtoken');
+
+module.exports = function authMiddleware(req, res, next) {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+    
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Token invalido' });
+  }
+};
+server/src/middleware/errorHandler.js
+Copymodule.exports = function errorHandler(err, req, res, next) {
+  console.error('❌ Error:', err);
+  
+  res.status(err.status || 500).json({
+    error: err.message || 'Errore interno del server',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+};
+server/src/routes/auth.js
+Copyconst express = require('express');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const { PrismaClient } = require('@prisma/client');
+const { body, validationResult } = require('express-validator');
+
+const router = express.Router();
+const prisma = new PrismaClient();
+
+// Register
+router.post('/register',
+  [
+    body('email').isEmail(),
+    body('password').isLength({ min: 6 }),
+    body('name').optional().trim()
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { email, password, name } = req.body;
+
+      // Check existing
+      const existing = await prisma.user.findUnique({ where: { email } });
+      if (existing) {
+        return res.status(400).json({ error: 'Email già registrata' });
+      }
+
+      // Hash password
+      const passwordHash = await bcrypt.hash(password, 10);
+
+      // Create user
+      const user = await prisma.user.create({
+        data: { email, passwordHash, name }
+      });
+
+      // Generate token
+      const token = jwt.sign(
+        { id: user.id, email: user.email, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      res.json({
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          level: user.level,
+          role: user.role
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Login
+router.post('/login',
+  [
+    body('email').isEmail(),
+    body('password').exists()
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { email, password } = req.body;
+
+      // Find user
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (!user) {
+        return res.status(401).json({ error: 'Credenziali invalide' });
+      }
+
+      // Check password
+      const valid = await bcrypt.compare(password, user.passwordHash);
+      if (!valid) {
+        return res.status(401).json({ error: 'Credenziali invalide' });
+      }
+
+      // Generate token
+      const token = jwt.sign(
+        { id: user.id, email: user.email, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      res.json({
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          level: user.level,
+          role: user.role
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Get current user
+router.get('/me', require('../middleware/auth'), async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        level: true,
+        role: true,
+        createdAt: true
+      }
+    });
+
+    res.json({ user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+module.exports = router;
+server/src/routes/materials.js
+Copyconst express = require('express');
+const { PrismaClient } = require('@prisma/client');
+const authMiddleware = require('../middleware/auth');
+
+const router = express.Router();
+const prisma = new PrismaClient();
+
+// Get all materials
+router.get('/', authMiddleware, async (req, res, next) => {
+  try {
+    const materials = await prisma.material.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({ materials });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get single material
+router.get('/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const material = await prisma.material.findFirst({
+      where: {
+        id: req.params.id,
+        userId: req.user.id
+      },
+      include: {
+        flashcards: true
+      }
+    });
+
+    if (!material) {
+      return res.status(404).json({ error: 'Material non trovato' });
+    }
+
+    res.json({ material });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Create material
+router.post('/', authMiddleware, async (req, res, next) => {
+  try {
+    const { title, type, fileUrl, extractedText } = req.body;
+
+    const material = await prisma.material.create({
+      data: {
+        userId: req.user.id,
+        title,
+        type,
+        fileUrl,
+        extractedText,
+        status: 'pending'
+      }
+    });
+
+    res.json({ material });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Delete material
+router.delete('/:id', authMiddleware, async (req, res, next) => {
+  try {
+    await prisma.material.delete({
+      where: {
+        id: req.params.id,
+        userId: req.user.id
+      }
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+module.exports = router;
+server/src/routes/flashcards.js
+Copyconst express = require('express');
+const { PrismaClient } = require('@prisma/client');
+const authMiddleware = require('../middleware/auth');
+
+const router = express.Router();
+const prisma = new PrismaClient();
+
+// Get flashcards to review
+router.get('/review', authMiddleware, async (req, res, next) => {
+  try {
+    const flashcards = await prisma.flashcard.findMany({
+      where: {
+        userId: req.user.id,
+        nextReview: {
+          lte: new Date()
+        }
+      },
+      orderBy: { nextReview: 'asc' },
+      take: 50
+    });
+
+    res.json({ flashcards, count: flashcards.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get flashcards by material
+router.get('/material/:materialId', authMiddleware, async (req, res, next) => {
+  try {
+    const flashcards = await prisma.flashcard.findMany({
+      where: {
+        materialId: req.params.materialId,
+        userId: req.user.id
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({ flashcards });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update flashcard review
+router.post('/:id/review', authMiddleware, async (req, res, next) => {
+  try {
+    const { response } = req.body; // 'wrong' | 'hard' | 'easy' | 'mastered'
+    
+    const flashcard = await prisma.flashcard.findFirst({
+      where: {
+        id: req.params.id,
+        userId: req.user.id
+      }
+    });
+
+    if (!flashcard) {
+      return res.status(404).json({ error: 'Flashcard non trovata' });
+    }
+
+    // Calculate next review
+    const now = new Date();
+    let nextReview = new Date(now);
+    let newBin = flashcard.bin;
+
+    switch (response) {
+      case 'wrong':
+        nextReview.setHours(now.getHours() + 1);
+        newBin = 1;
+        break;
+      case 'hard':
+        nextReview.setDate(now.getDate() + 1);
+        newBin = 2;
+        break;
+      case 'easy':
+        nextReview.setDate(now.getDate() + 3);
+        newBin = 3;
+        break;
+      case 'mastered':
+        nextReview.setDate(now.getDate() + 14);
+        newBin = 4;
+        break;
+    }
+
+    // Update
+    const updated = await prisma.flashcard.update({
+      where: { id: req.params.id },
+      data: {
+        nextReview,
+        bin: newBin,
+        attempts: flashcard.attempts + 1,
+        correctStreak: response === 'mastered' ? flashcard.correctStreak + 1 : 0
+      }
+    });
+
+    res.json({ flashcard: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+module.exports = router;
+server/src/services/aiService.js
+Copyconst OpenAI = require('openai');
+const cacheService = require('./cacheService');
+
+class AIService {
+  constructor() {
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
+
+    this.models = {
+      cheap: "gpt-4o-mini",
+      premium: "gpt-4-turbo-preview"
+    };
+  }
+
+  async generateFlashcardsFromText(text, numCards = 20, userId) {
+    const cacheKey = cacheService.generateKey(text, 'flashcards', { numCards });
+    
+    return await cacheService.getOrSet(cacheKey, 86400, async () => {
+      const response = await this.openai.chat.completions.create({
+        model: this.models.cheap,
+        messages: [
+          {
+            role: "system",
+            content: `Genera flashcard per concorsi pubblici italiani.
+            
+Formato JSON:
+{
+  "flashcards": [
+    {
+      "front": "Domanda chiara?",
+      "back": "Risposta completa",
+      "tags": "tag1,tag2",
+      "difficulty": "easy|medium|hard",
+      "source": "Art. X L.241/90"
+    }
+  ]
+}`
+          },
+          {
+            role: "user",
+            content: `Genera ${numCards} flashcard da:\n\n${text.substring(0, 10000)}`
+          }
+        ],
+        temperature: 0.5,
+        max_tokens: 3000,
+        response_format: { type: "json_object" }
+      });
+
+      const result = JSON.parse(response.choices[0].message.content);
+      return result.flashcards || [];
+    });
+  }
+}
+
+module.exports = new AIService();
+server/src/services/cacheService.js
+Copyconst NodeCache = require('node-cache');
+const crypto = require('crypto');
+
+class CacheService {
+  constructor() {
+    this.cache = new NodeCache({
+      stdTTL: 86400,
+      checkperiod: 600
+    });
+
+    this.stats = { hits: 0, misses: 0 };
+  }
+
+  generateKey(text, operation, params = {}) {
+    const content = typeof text === 'string' ? text.substring(0, 1000) : JSON.stringify(text);
+    const hash = crypto
+      .createHash('md5')
+      .update(content + operation + JSON.stringify(params))
+      .digest('hex');
+    
+    return `ai_${operation}_${hash}`;
+  }
+
+  async getOrSet(key, ttl, generateFn) {
+    const cached = this.cache.get(key);
+    
+    if (cached !== undefined) {
+      this.stats.hits++;
+      console.log(`✅ Cache HIT: ${key}`);
+      return cached;
+    }
+
+    this.stats.misses++;
+    console.log(`❌ Cache MISS: ${key}`);
+    
+    const result = await generateFn();
+    this.cache.set(key, result, ttl);
+    
+    return result;
+  }
+
+  getStats() {
+    const total = this.stats.hits + this.stats.misses;
+    const hitRate = total > 0 ? (this.stats.hits / total * 100).toFixed(2) : 0;
+    
+    return {
+      keys: this.cache.keys().length,
+      hits: this.stats.hits,
+      misses: this.stats.misses,
+      hitRate: `${hitRate}%`
+    };
+  }
+}
+
+module.exports = new CacheService();
+server/src/services/costTracker.js
+Copyconst { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+class CostTracker {
+  constructor() {
+    this.pricing = {
+      "gpt-4o-mini": { input: 0.00015, output: 0.0006 },
+      "gpt-4-turbo-preview": { input: 0.01, output: 0.03 }
+    };
+  }
+
+  async trackUsage(userId, model, usage) {
+    if (!usage) return;
+
+    const inputCost = (usage.prompt_tokens / 1000) * this.pricing[model].input;
+    const outputCost = (usage.completion_tokens / 1000) * this.pricing[model].output;
+    const totalCost = inputCost + outputCost;
+
+    console.log(`💰 Cost: $${totalCost.toFixed(4)} (${model})`);
+
+    return totalCost;
+  }
+}
+
+module.exports = new CostTracker();
+server/src/utils/logger.js
+Copyconst winston = require('winston');
+
+const logger = winston.createLogger({
+  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.simple()
+    })
+  ]
+});
+
+module.exports = logger;
+🎨 CLIENT FILES
+client/package.json
+Copy{
+  "name": "cpa-client",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.21.3",
+    "zustand": "^4.5.0",
+    "@tanstack/react-query": "^5.17.19",
+    "axios": "^1.6.5",
+    "framer-motion": "^11.0.3",
+    "lucide-react": "^0.315.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.48",
+    "@types/react-dom": "^18.2.18",
+    "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.11",
+    "tailwindcss": "^3.4.1",
+    "autoprefixer": "^10.4.17",
+    "postcss": "^8.4.33"
+  }
+}
+client/index.html
+Copy<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Protocollo C.P.A. 2.0</title>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>
+client/vite.config.ts
+Copyimport { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path'
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src')
+    }
+  },
+  server: {
+    port: 5173,
+    host: '0.0.0.0',
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      }
+    }
+  }
+})
+client/tsconfig.json
+Copy{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
+client/tailwind.config.js
+Copy/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        primary: {
+          50: '#eff6ff',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+        }
+      }
+    },
+  },
+  plugins: [],
+}
+client/postcss.config.js
+Copyexport default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+client/src/main.tsx
+Copyimport React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.tsx'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
+client/src/App.tsx
+Copyimport { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import LoginPage from './pages/LoginPage'
+import HomePage from './pages/HomePage'
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<HomePage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}
+
+export default App
+client/src/index.css
+Copy@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+#root {
+  min-height: 100vh;
+}
+client/src/vite-env.d.ts
+Copy/// <reference types="vite/client" />
+client/src/lib/api.ts
+Copyimport axios from 'axios'
+
+const api = axios.create({
+  baseURL: '/api',
+  timeout: 120000
+})
+
+// Interceptor per token
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+export const authAPI = {
+  login: async (email: string, password: string) => {
+    const res = await api.post('/auth/login', { email, password })
+    return res.data
+  },
+  
+  register: async (email: string, password: string, name?: string) => {
+    const res = await api.post('/auth/register', { email, password, name })
+    return res.data
+  },
+  
+  me: async () => {
+    const res = await api.get('/auth/me')
+    return res.data
+  }
+}
+
+export const materialsAPI = {
+  getAll: async () => {
+    const res = await api.get('/materials')
+    return res.data
+  },
+  
+  getOne: async (id: string) => {
+    const res = await api.get(`/materials/${id}`)
+    return res.data
+  }
+}
+
+export const flashcardsAPI = {
+  getReview: async () => {
+    const res = await api.get('/flashcards/review')
+    return res.data
+  },
+  
+  review: async (id: string, response: string) => {
+    const res = await api.post(`/flashcards/${id}/review`, { response })
+    return res.data
+  }
+}
+
+export default api
+client/src/components/LoginForm.tsx
+Copyimport { useState } from 'react'
+import { authAPI } from '@/lib/api'
+
+export default function LoginForm() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+
+    try {
+      const data = await authAPI.login(email, password)
+      localStorage.setItem('token', data.token)
+      window.location.href = '/'
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Errore login')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Email
+        </label>
+        <input
+          type="email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+          required
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Password
+        </label>
+        <input
+          type="password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+          required
+        />
+      </div>
+
+      {error && (
+        <div className="text-red-600 text-sm">{error}</div>
+      )}
+
+      <button
+        type="submit"
+        disabled={loading}
+        className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+      >
+        {loading ? 'Caricamento...' : 'Accedi'}
+      </button>
+
+      <div className="text-sm text-gray-600 text-center">
+        Test: test@cpa.it / test123
+      </div>
+    </form>
+  )
+}
+client/src/components/Dashboard.tsx
+Copyimport { useEffect, useState } from 'react'
+import { materialsAPI, flashcardsAPI } from '@/lib/api'
+
+export default function Dashboard() {
+  const [materials, setMaterials] = useState<any[]>([])
+  const [reviewCount, setReviewCount] = useState(0)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = async () => {
+    try {
+      const [materialsRes, reviewRes] = await Promise.all([
+        materialsAPI.getAll(),
+        flashcardsAPI.getReview()
+      ])
+      
+      setMaterials(materialsRes.materials)
+      setReviewCount(reviewRes.count)
+    } catch (error) {
+      console.error('Error loading data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return <div className="text-center py-8">Caricamento...</div>
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="bg-white p-6 rounded-lg shadow">
+        <h2 className="text-xl font-bold mb-4">📚 Materiali</h2>
+        <p className="text-3xl font-bold text-blue-600">{materials.length}</p>
+        <p className="text-gray-600 mt-2">materiali caricati</p>
+      </div>
+
+      <div className="bg-white p-6 rounded-lg shadow">
+        <h2 className="text-xl font-bold mb-4">🗂️ Flashcard</h2>
+        <p className="text-3xl font-bold text-orange-600">{reviewCount}</p>
+        <p className="text-gray-600 mt-2">da ripassare oggi</p>
+      </div>
+
+      <div className="bg-white p-6 rounded-lg shadow md:col-span-2">
+        <h2 className="text-xl font-bold mb-4">📖 Ultimi Materiali</h2>
+        {materials.length === 0 ? (
+          <p className="text-gray-500">Nessun materiale caricato</p>
+        ) : (
+          <ul className="space-y-2">
+            {materials.map(m => (
+              <li key={m.id} className="border-b pb-2">
+                <div className="font-medium">{m.title}</div>
+                <div className="text-sm text-gray-500">
+                  {m.flashcardsCount} flashcard • {m.type}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+client/src/pages/LoginPage.tsx
+Copyimport LoginForm from '@/components/LoginForm'
+
+export default function LoginPage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            🎯 Protocollo C.P.A. 2.0
+          </h1>
+          <p className="text-gray-600">
+            Sistema per preparazione concorsi
+          </p>
+        </div>
+
+        <LoginForm />
+      </div>
+    </div>
+  )
+}
+client/src/pages/HomePage.tsx
+Copyimport { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { authAPI } from '@/lib/api'
+import Dashboard from '@/components/Dashboard'
+
+export default function HomePage() {
+  const [user, setUser] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    loadUser()
+  }, [])
+
+  const loadUser = async () => {
+    try {
+      const data = await authAPI.me()
+      setUser(data.user)
+    } catch (error) {
+      navigate('/login')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    navigate('/login')
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-white text-xl">Caricamento...</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen p-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-2xl font-bold">
+                Benvenuto, {user?.name || user?.email}!
+              </h1>
+              <p className="text-gray-600">Livello: {user?.level}%</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+
+        <Dashboard />
+      </div>
+    </div>
+  )
+}
+🚀 ISTRUZIONI FINALI
+SETUP COMPLETO:
+Crea tutti i file in Replit seguendo la struttura
+Configura Secrets (🔒 in Replit):
+Copy{
+  "DATABASE_URL": "file:./dev.db",
+  "JWT_SECRET": "cpa-secret-key-2024",
+  "OPENAI_API_KEY": "sk-proj-YOUR-KEY"
+}
+Nel Shell di Replit:
+Copynpm run setup
+cd server
+npx prisma generate
+npx prisma migrate dev --name init
+npx prisma db seed
+cd ..
+npm run dev
+Apri il browser sulla porta 3001 (Webview Replit)
