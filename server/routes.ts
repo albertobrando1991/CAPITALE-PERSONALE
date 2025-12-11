@@ -66,38 +66,58 @@ export async function registerRoutes(
         });
       }
       
-      const systemPrompt = `Sei un esperto di concorsi pubblici italiani. Analizza il bando di concorso fornito ed estrai tutte le informazioni in formato JSON strutturato.
+      const systemPrompt = `Sei un esperto analista di bandi di concorsi pubblici italiani. Il tuo compito è estrarre TUTTE le informazioni dal bando con precisione assoluta.
 
-Restituisci SOLO un oggetto JSON valido con questa struttura esatta:
+REGOLE FONDAMENTALI:
+1. TITOLI DI STUDIO: Estrai ESATTAMENTE le classi di laurea richieste con i codici specifici (es. "LM-63 Scienze delle pubbliche amministrazioni", "L-14 Scienze dei servizi giuridici", "LMG/01 Giurisprudenza"). Per OGNI profilo a bando, elenca separatamente i titoli richiesti.
+2. PENALITÀ ERRORI: Cerca nel bando frasi come "penalità", "punteggio negativo", "risposta errata", "-0.25", "-0.33", "decurtazione". Se presenti, estrai il valore ESATTO.
+3. PORTALE ISCRIZIONE: I concorsi pubblici italiani usano il portale INPA (inPA.gov.it). Cerca nel bando il portale esatto menzionato.
+4. PROVA PRESELETTIVA: Cerca se è prevista una prova preselettiva e se esiste una banca dati ufficiale.
+
+Restituisci SOLO un oggetto JSON valido:
 {
-  "titoloEnte": "Nome dell'ente e titolo del concorso",
-  "tipoConcorso": "Tipo (es. Concorso pubblico per esami, Concorso pubblico per titoli ed esami)",
-  "scadenzaDomanda": "Data scadenza in formato DD/MM/YYYY",
-  "dataPresuntaEsame": "Data presunta o stimata dell'esame",
-  "posti": numero_posti,
+  "titoloEnte": "Nome completo dell'ente e titolo esatto del concorso",
+  "tipoConcorso": "Tipo esatto (per esami, per titoli ed esami, etc.)",
+  "scadenzaDomanda": "DD/MM/YYYY",
+  "dataPresuntaEsame": "DD/MM/YYYY o 'Da definire'",
+  "posti": numero_posti_totale,
+  "profili": [
+    {
+      "nome": "Nome profilo/figura professionale",
+      "posti": numero_posti_profilo,
+      "titoliStudio": ["Elenco ESATTO delle classi di laurea con codici (es. LM-63, L-14, LMG/01)"],
+      "altriRequisiti": ["Altri requisiti specifici per questo profilo"]
+    }
+  ],
   "requisiti": [
-    {"titolo": "Descrizione requisito", "soddisfatto": null}
+    {"titolo": "Requisito ESATTO come da bando", "soddisfatto": null}
   ],
   "prove": {
-    "tipo": "Descrizione tipo di prove",
-    "descrizione": "Dettagli sulle prove",
+    "tipo": "Tipo prove (scritta, orale, pratica)",
+    "descrizione": "Descrizione dettagliata delle prove",
     "hasPreselettiva": true/false,
     "hasBancaDati": true/false,
-    "penalitaErrori": "-0.33" o null
+    "bancaDatiInfo": "Dettagli sulla banca dati se presente",
+    "penalitaErrori": "Valore ESATTO della penalità (es. '-0.25', '-0.33') o null se non specificata",
+    "punteggioRispostaCorretta": "Punteggio per risposta corretta se specificato",
+    "punteggioRispostaNonData": "Punteggio per risposta non data se specificato"
   },
   "materie": [
     {
-      "nome": "Nome materia principale",
-      "microArgomenti": ["Argomento specifico 1", "Argomento specifico 2"],
-      "peso": percentuale_peso_stimato
+      "nome": "Nome materia ESATTO come da bando",
+      "microArgomenti": ["Riferimenti normativi specifici citati nel bando"],
+      "peso": percentuale_se_indicata
     }
   ],
   "passaggiIscrizione": [
-    {"step": 1, "descrizione": "Descrizione passo", "completato": false}
+    {"step": 1, "descrizione": "Registrazione sul portale INPA (inPA.gov.it)", "completato": false},
+    {"step": 2, "descrizione": "Compilazione domanda online", "completato": false},
+    {"step": 3, "descrizione": "Pagamento tassa di concorso (importo se specificato)", "completato": false},
+    {"step": 4, "descrizione": "Allegare documentazione richiesta", "completato": false}
   ],
   "calendarioInverso": [
     {
-      "fase": "Nome fase",
+      "fase": "Nome fase studio",
       "dataInizio": "DD/MM/YYYY",
       "dataFine": "DD/MM/YYYY",
       "giorniDisponibili": numero_giorni,
@@ -108,12 +128,12 @@ Restituisci SOLO un oggetto JSON valido con questa struttura esatta:
   "giorniTapering": 7
 }
 
-IMPORTANTE:
-- Estrai TUTTI i requisiti di ammissione (titoli di studio, eta, cittadinanza, etc.)
-- Per le materie, esplodi ogni materia generica in micro-argomenti specifici (es. "Diritto Amministrativo" -> ["L. 241/90", "D.Lgs. 165/2001", "Contratti Pubblici", etc.])
-- Genera un calendario inverso realistico dalla data presunta esame, lasciando 7 giorni finali per il tapering
-- Stima le ore basandoti su 3-4 ore di studio giornaliere
-- I passaggi iscrizione devono includere: registrazione portale, compilazione domanda, pagamento tassa, invio documentazione, etc.`;
+ISTRUZIONI CRITICHE:
+- Per i TITOLI DI STUDIO: copia ESATTAMENTE le classi di laurea dal bando, inclusi i codici (LM-xx, L-xx, etc.)
+- Per le PENALITÀ: cerca parole chiave come "penalità", "punteggio negativo", "risposta errata detrarrà", "meno X punti"
+- Per il PORTALE: quasi tutti i concorsi pubblici usano INPA - verifica nel bando
+- NON inventare informazioni: se un dato non è presente, usa null
+- Estrai TUTTI i riferimenti normativi citati nelle materie d'esame`;
 
       const truncatedContent = fileContent.substring(0, 25000);
       console.log(`Sending ${truncatedContent.length} characters to OpenAI for analysis...`);
