@@ -3,12 +3,28 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import OpenAI from "openai";
 import multer from "multer";
-import { createRequire } from "module";
-
-const require = createRequire(import.meta.url);
-const pdfParse = require("pdf-parse");
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+async function extractTextFromPDF(buffer: Buffer): Promise<string> {
+  const data = new Uint8Array(buffer);
+  const loadingTask = getDocument({ data });
+  const pdfDocument = await loadingTask.promise;
+  
+  let fullText = "";
+  
+  for (let i = 1; i <= pdfDocument.numPages; i++) {
+    const page = await pdfDocument.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items
+      .map((item: any) => item.str)
+      .join(" ");
+    fullText += pageText + "\n";
+  }
+  
+  return fullText;
+}
 
 function getOpenAIClient() {
   return new OpenAI({
@@ -37,9 +53,9 @@ export async function registerRoutes(
       let fileContent: string;
       
       if (req.file.mimetype === "application/pdf") {
-        const pdfData = await pdfParse(req.file.buffer);
-        fileContent = pdfData.text;
-        console.log(`PDF parsed: ${pdfData.numpages} pages, ${fileContent.length} characters extracted`);
+        console.log("Parsing PDF file...");
+        fileContent = await extractTextFromPDF(req.file.buffer);
+        console.log(`PDF parsed: ${fileContent.length} characters extracted`);
       } else {
         fileContent = req.file.buffer.toString("utf-8");
       }
