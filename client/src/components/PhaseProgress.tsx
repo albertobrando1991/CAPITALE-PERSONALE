@@ -11,10 +11,12 @@ interface Phase {
 }
 
 interface PhaseProgressProps {
-  currentPhase: number;
+  currentPhase?: number;
   phases: Phase[];
   onPhaseClick?: (phaseId: number) => void;
 }
+
+export type { Phase };
 
 const phaseColors = {
   locked: "bg-muted text-muted-foreground",
