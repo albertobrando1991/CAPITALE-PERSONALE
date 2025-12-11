@@ -3,6 +3,10 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import OpenAI from "openai";
 import multer from "multer";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -29,7 +33,22 @@ export async function registerRoutes(
       }
 
       const openai = getOpenAIClient();
-      const fileContent = req.file.buffer.toString("utf-8");
+      
+      let fileContent: string;
+      
+      if (req.file.mimetype === "application/pdf") {
+        const pdfData = await pdfParse(req.file.buffer);
+        fileContent = pdfData.text;
+        console.log(`PDF parsed: ${pdfData.numpages} pages, ${fileContent.length} characters extracted`);
+      } else {
+        fileContent = req.file.buffer.toString("utf-8");
+      }
+      
+      if (!fileContent || fileContent.trim().length < 100) {
+        return res.status(400).json({ 
+          error: "Il file sembra vuoto o non contiene testo leggibile. Assicurati di caricare un PDF con testo selezionabile (non scansionato come immagine)." 
+        });
+      }
       
       const systemPrompt = `Sei un esperto di concorsi pubblici italiani. Analizza il bando di concorso fornito ed estrai tutte le informazioni in formato JSON strutturato.
 
@@ -80,26 +99,37 @@ IMPORTANTE:
 - Stima le ore basandoti su 3-4 ore di studio giornaliere
 - I passaggi iscrizione devono includere: registrazione portale, compilazione domanda, pagamento tassa, invio documentazione, etc.`;
 
+      const truncatedContent = fileContent.substring(0, 25000);
+      console.log(`Sending ${truncatedContent.length} characters to OpenAI for analysis...`);
+      console.log(`First 500 chars of content: ${truncatedContent.substring(0, 500)}`);
+      
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Analizza questo bando di concorso:\n\n${fileContent.substring(0, 15000)}` }
+          { role: "user", content: `Analizza questo bando di concorso pubblico italiano. Leggi attentamente tutto il testo e estrai le informazioni richieste:\n\n${truncatedContent}` }
         ],
         response_format: { type: "json_object" },
-        temperature: 0.3,
+        temperature: 0.2,
+        max_tokens: 4000,
       });
 
       const content = response.choices[0].message.content;
+      console.log(`OpenAI response received: ${content?.substring(0, 500)}...`);
+      
       if (!content) {
         throw new Error("Nessuna risposta dall'AI");
       }
 
       const bandoData = JSON.parse(content);
+      console.log(`Bando analysis complete: ${bandoData.titoloEnte || 'No title'}`);
       res.json(bandoData);
-    } catch (error) {
-      console.error("Error analyzing bando:", error);
-      res.status(500).json({ error: "Errore durante l'analisi del bando" });
+    } catch (error: any) {
+      console.error("Error analyzing bando:", error?.message || error);
+      if (error?.response?.data) {
+        console.error("OpenAI error details:", error.response.data);
+      }
+      res.status(500).json({ error: "Errore durante l'analisi del bando. Riprova con un altro file." });
     }
   });
 
