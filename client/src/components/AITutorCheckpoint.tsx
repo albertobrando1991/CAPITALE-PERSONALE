@@ -111,7 +111,7 @@ export function AITutorCheckpoint({
                   size="sm"
                   onClick={() => setModalitaInput("voce")}
                   disabled={disabled}
-                  data-testid="button-input-voce"
+                  data-testid="button-modalita-voce"
                 >
                   <Mic className="h-4 w-4 mr-1" />
                   Registra Risposta
@@ -121,7 +121,7 @@ export function AITutorCheckpoint({
                   size="sm"
                   onClick={() => setModalitaInput("testo")}
                   disabled={disabled}
-                  data-testid="button-input-testo"
+                  data-testid="button-modalita-testo"
                 >
                   <PenLine className="h-4 w-4 mr-1" />
                   Scrivi
