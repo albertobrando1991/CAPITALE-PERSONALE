@@ -135,15 +135,23 @@ ISTRUZIONI CRITICHE:
 - NON inventare informazioni: se un dato non è presente, usa null
 - Estrai TUTTI i riferimenti normativi citati nelle materie d'esame`;
 
-      const truncatedContent = fileContent.substring(0, 25000);
-      console.log(`Sending ${truncatedContent.length} characters to OpenAI for analysis...`);
-      console.log(`First 500 chars of content: ${truncatedContent.substring(0, 500)}`);
+      const maxChars = 60000;
+      let contentToSend = fileContent;
+      
+      if (fileContent.length > maxChars) {
+        const firstPart = fileContent.substring(0, 40000);
+        const lastPart = fileContent.substring(fileContent.length - 20000);
+        contentToSend = firstPart + "\n\n[...SEZIONE CENTRALE OMESSA...]\n\n" + lastPart;
+      }
+      
+      console.log(`Sending ${contentToSend.length} characters to OpenAI for analysis...`);
+      console.log(`First 500 chars: ${contentToSend.substring(0, 500)}`);
       
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Analizza questo bando di concorso pubblico italiano. Leggi attentamente tutto il testo e estrai le informazioni richieste:\n\n${truncatedContent}` }
+          { role: "user", content: `Analizza questo bando di concorso pubblico italiano. Leggi attentamente tutto il testo e estrai le informazioni richieste. ATTENZIONE: cerca specificamente le PENALITÀ PER ERRORI e i TITOLI DI STUDIO ESATTI con codici classe.\n\n${contentToSend}` }
         ],
         response_format: { type: "json_object" },
         temperature: 0.2,
