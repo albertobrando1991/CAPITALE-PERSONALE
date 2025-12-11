@@ -15,6 +15,7 @@ import FlashcardsPage from "@/pages/FlashcardsPage";
 import QuizPage from "@/pages/QuizPage";
 import PomodoroPage from "@/pages/PomodoroPage";
 import StatsPage from "@/pages/StatsPage";
+import Phase1Page from "@/pages/Phase1Page";
 
 function ProtectedRoutes() {
   const { user, isAuthenticated, logout } = useAuth();
@@ -44,6 +45,7 @@ function ProtectedRoutes() {
           <main className="flex-1 overflow-auto">
             <Switch>
               <Route path="/" component={DashboardPage} />
+              <Route path="/phase1" component={Phase1Page} />
               <Route path="/materials" component={MaterialsPage} />
               <Route path="/flashcards" component={FlashcardsPage} />
               <Route path="/quiz" component={QuizPage} />
