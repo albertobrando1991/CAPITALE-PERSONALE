@@ -1,0 +1,675 @@
+Formula del Sistema:
+SUCCESSO = Intelligence + Fondamenta AI + Acquisizione + Consolidamento SRS + Drill AI + Simulazione
+Progressione di Livello (0-100%):
+Fase	Livello	Obiettivo	Tecnologia Chiave
+1. Intelligence	0-10%	Decodifica bando + Setup	Reverse Planning
+0.5. Fondamenta AI	10-35%	Costruzione schema mentale	AI Tutor + Flashcard Dinamiche
+2. Acquisizione	35-60%	Studio analitico preciso	SQ3R + AI Question Bank
+3. Consolidamento	60-80%	Memoria a lungo termine	SRS + Mnemotecniche
+4. Drill & Simulazione	80-100%	Automatismo + Gestione stress	AI Quiz Generator + Hell Week
+🟢 FASE 1: INTELLIGENCE & SETUP (Livello 0-10%)
+[Invariata rispetto all'originale]
+
+Modulo 1.1: Decodifica del Bando
+Estrazione requisiti bloccanti
+Analisi tipologia prove (preselettiva/scritta/orale)
+Tassonomia materie in micro-argomenti
+Identificazione banche dati ufficiali
+Modulo 1.2: Calendario Inverso
+Ore totali disponibili
+Distribuzione % per fase
+Tapering finale (7 giorni scarico cognitivo)
+Output Dashboard:
+
+┌─────────────────────────────────────────┐
+│ ⚙️ CONFIGURAZIONE CONCORSO              │
+├─────────────────────────────────────────┤
+│ Concorso: RIPAM 2025 - Categoria C      │
+│ Data Esame: 15 Maggio 2025              │
+│ Giorni Disponibili: 90                  │
+│ Ore Settimanali: 20h                    │
+│ Materie Principali: 8                   │
+│ Banca Dati: ✅ Disponibile              │
+│ Penalità Errori: -0.33                  │
+└─────────────────────────────────────────┘
+🔵 FASE 0.5: FONDAMENTA AI-ENHANCED (Livello 10-35%) [NUOVA]
+🎯 Obiettivo:
+Costruire lo "scheletro concettuale" del sapere richiesto attraverso studio discorsivo + intelligenza artificiale adattiva.
+
+📚 Modulo 0.5.1: Studio Generale con AI Tutor
+Sub-fase A: Lettura Esplorativa (10-20% Livello)
+Materiali:
+
+Manuali di preparazione generalisti
+Testi divulgativi di settore
+Metodo "Overfly Reading":
+
+Lettura veloce (1-2 capitoli/giorno)
+Niente sottolineature (solo post-it con dubbi)
+Obiettivo: panoramica, non memorizzazione
+Trigger AI dopo ogni capitolo:
+
+┌───────────────────────────────────────────────┐
+│ 🤖 AI TUTOR - Checkpoint Comprensione         │
+├───────────────────────────────────────────────┤
+│ Hai completato: Cap. 3 - Il Procedimento     │
+│ Amministrativo                                │
+│                                               │
+│ Rispondi a voce (o scritto) alle domande:    │
+│                                               │
+│ 1️⃣ Con parole tue: cos'è il procedimento     │
+│    amministrativo?                            │
+│                                               │
+│ 2️⃣ Quali sono i 3 concetti principali che    │
+│    hai incontrato?                            │
+│                                               │
+│ 3️⃣ Cosa NON ti è chiaro?                     │
+│                                               │
+│ [🎤 Registra Risposta] [✍️ Scrivi]           │
+└───────────────────────────────────────────────┘
+Valutazione AI:
+
+L'AI analizza la risposta (audio/testo)
+Fornisce feedback su:
+✅ Correttezza concettuale (anche se imprecisa)
+⚠️ Gap da colmare (suggerisce paragrafi da rileggere)
+💡 Collegamenti (es. "Hai citato la motivazione, che ritroverai nell'art. 3 L.241/90")
+Esempio di Feedback AI:
+
+✅ RISPOSTA VALUTATA: Buona (70%)
+
+Hai capito che il procedimento è un "percorso formale" 
+prima di una decisione. Bene!
+
+⚠️ ATTENZIONE: Hai dimenticato il concetto di "termine".
+→ Rileggi pag. 45, par. "Termini e Scadenze"
+
+💡 COLLEGAMENTO: Il Responsabile del Procedimento 
+(che hai citato) lo ritroverai nell'art. 6 L.241/90. 
+Segnatelo!
+
+📊 Punteggio Comprensione Capitolo: ████████░░ 80%
+Sub-fase B: Flashcard AI Generate (15-25% Livello)
+Innovazione Chiave: Le flashcard si creano automaticamente mentre studi.
+
+Funzionamento:
+
+Upload Manuale/Dispensa in PDF
+AI estrae concetti chiave e genera flashcard in tempo reale
+Tipologie di carte:
+🔹 Concetto-Definizione (es. "Cos'è l'autotutela?")
+🔹 Causa-Effetto (es. "Cosa succede se scade il termine?")
+🔹 Confronto (es. "Differenza tra annullamento e revoca")
+Dashboard - Sezione Flashcard:
+
+┌────────────────────────────────────────────┐
+│ 🗂️ FLASHCARD GENERATOR AI                 │
+├────────────────────────────────────────────┤
+│ Materia: Diritto Amministrativo            │
+│ Fonte: Manuale Alphatest 2025              │
+│                                            │
+│ 📤 Carica PDF → [Seleziona File]          │
+│                                            │
+│ Carte Generate: 127                        │
+│ └─ Da Ripassare Oggi: 23                  │
+│ └─ Masterate: 89                          │
+│ └─ In Apprendimento: 15                   │
+│                                            │
+│ [▶️ Inizia Sessione] [⚙️ Impostazioni]    │
+└────────────────────────────────────────────┘
+Esempio di Flashcard AI:
+
+┌─────────────────────────────────────────────┐
+│ FRONTE                                      │
+├─────────────────────────────────────────────┤
+│ Qual è la differenza tra SCIA e DIA?        │
+│                                             │
+│ [🎤 Rispondi a Voce] [✍️ Scrivi Risposta]  │
+└─────────────────────────────────────────────┘
+
+↓ DOPO LA RISPOSTA DELL'UTENTE ↓
+
+┌─────────────────────────────────────────────┐
+│ 🤖 VALUTAZIONE AI                           │
+├─────────────────────────────────────────────┤
+│ Hai risposto:                               │
+│ "La SCIA è più veloce, la DIA serve per    │
+│ altro..."                                   │
+│                                             │
+│ ⚠️ RISPOSTA PARZIALE (40%)                  │
+│                                             │
+│ ✅ Corretto: Hai colto la differenza       │
+│ temporale                                   │
+│                                             │
+│ ❌ Manca: La SCIA ha sostituito la DIA     │
+│ nel 2010. La DIA esiste ancora solo per    │
+│ attività edilizie specifiche (art. 22       │
+│ DPR 380/2001).                              │
+│                                             │
+│ 📌 RISPOSTA COMPLETA:                       │
+│ SCIA (Segnalazione Certificata Inizio      │
+│ Attività): Efficacia immediata, controllo  │
+│ ex post (L. 122/2010).                     │
+│ DIA (Dichiarazione Inizio Attività):       │
+│ 30gg attesa, oggi usata solo in edilizia.  │
+│                                             │
+│ 🎯 Consiglio: Ripassa L.241/90 art. 19-20  │
+│                                             │
+│ [🔁 Ripeti Domani] [✅ Ho Capito]          │
+└─────────────────────────────────────────────┘
+Algoritmo di Ripetizione AI-Enhanced:
+
+❌ Sbagliata/Incerta: Ripeti dopo 1h, poi 6h, poi 24h
+⚠️ Parziale (come esempio): Ripeti dopo 1 giorno
+✅ Corretta ma lenta (>30sec): Ripeti dopo 3 giorni
+✅ Mastered (<10sec): Ripeti dopo 2 settimane
+📜 Modulo 0.5.2: Studio Normativo con AI Question Bank
+Sub-fase A: Upload e Parsing Normativo (20-28% Livello)
+Funzionamento:
+
+Utente carica PDF (es. L. 241/1990, Codice Appalti, Costituzione)
+AI analizza struttura:
+Identifica articoli, commi, riferimenti incrociati
+Estrae termini tecnici ricorrenti
+Individua articoli "critici" (quelli più citati nei quiz)
+Dashboard - Upload Normativa:
+
+┌────────────────────────────────────────────┐
+│ 📚 BIBLIOTECA NORMATIVA AI                 │
+├────────────────────────────────────────────┤
+│ 📤 CARICA NUOVA LEGGE                      │
+│                                            │
+│ [📄 Seleziona PDF]                         │
+│                                            │
+│ Normative Caricate:                        │
+│ ✅ L. 241/1990 (54 articoli analizzati)   │
+│ ✅ Costituzione (139 articoli)            │
+│ ✅ D.Lgs 165/2001 (73 articoli)           │
+│ ⏳ Codice Appalti (in elaborazione...)    │
+│                                            │
+│ Domande Generate: 1.247                    │
+│ Quiz Tipo Concorso: 892                    │
+│                                            │
+│ [🎯 Vai ai Quiz] [📊 Statistiche]         │
+└────────────────────────────────────────────┘
+Sub-fase B: AI Tutor Conversazionale (25-35% Livello)
+Modalità "Tutoraggio Socratico":
+
+L'AI non dà lezioni, ma pone domande per guidare l'apprendimento.
+
+Esempio di Sessione:
+
+┌─────────────────────────────────────────────┐
+│ 🧠 AI TUTOR - Sessione Diritto Amm.vo      │
+├─────────────────────────────────────────────┤
+│ Argomento Selezionato: Art. 7 L.241/90     │
+│ (Responsabile del Procedimento)            │
+│                                             │
+│ 🤖 AI: Iniziamo! Chi nomina il             │
+│ Responsabile del Procedimento?             │
+│                                             │
+│ [🎤 Rispondi] _______________________      │
+│                                             │
+└─────────────────────────────────────────────┘
+
+↓ UTENTE RISPONDE: "Il dirigente"
+
+┌─────────────────────────────────────────────┐
+│ 🤖 AI: ✅ Esatto! Il dirigente dell'unità  │
+│ organizzativa competente.                   │
+│                                             │
+│ Approfondimento: E se il dirigente NON lo  │
+│ nomina entro X giorni? Cosa succede?       │
+│                                             │
+│ [🎤 Rispondi] _______________________      │
+└─────────────────────────────────────────────┘
+
+↓ UTENTE RISPONDE: "Non so..."
+
+┌─────────────────────────────────────────────┐
+│ 🤖 AI: Nessun problema! Ti do un indizio:  │
+│                                             │
+│ Pensa a chi ha FIRMATO l'atto che ha       │
+│ avviato il procedimento...                  │
+│                                             │
+│ 💡 Suggerimento: C'è una regola di         │
+│ "supplenza automatica" nella legge.         │
+│                                             │
+│ [🎤 Ritenta] [📖 Mostra Risposta]          │
+└─────────────────────────────────────────────┘
+
+↓ UTENTE: [📖 Mostra Risposta]
+
+┌─────────────────────────────────────────────┐
+│ 📖 RISPOSTA CORRETTA:                       │
+│                                             │
+│ Se il dirigente non provvede, il           │
+│ Responsabile si identifica nel soggetto    │
+│ che ha avviato il procedimento (art. 7,    │
+│ co. 1).                                     │
+│                                             │
+│ 🎯 MEMORIZZA QUESTO:                        │
+│ "Nomina esplicita o automatica per chi     │
+│ avvia"                                      │
+│                                             │
+│ 📊 Questa domanda ti verrà riproposta tra: │
+│ ⏰ 24 ore (per consolidamento)              │
+│                                             │
+│ [➡️ Prossima Domanda]                      │
+└─────────────────────────────────────────────┘
+Tipologie di Domande AI Tutor:
+
+Recupero Semplice (What): "Qual è il termine per la conclusione?"
+Applicazione (How): "Come si calcola la decorrenza dei 30 giorni?"
+Analisi (Why): "Perché l'art. 3 prevede la motivazione obbligatoria?"
+Comparazione: "Differenza tra parere obbligatorio e vincolante?"
+Caso Pratico: "Il Comune non risponde: silenzio-assenso o diniego?"
+Adattamento Intelligente:
+
+✅ 3 risposte corrette consecutive → AI aumenta difficoltà
+❌ 2 risposte sbagliate → AI torna a domande base e dà più indizi
+⏱️ Risposta lenta (>60sec) → AI marca l'argomento per ripasso intensivo
+🎯 Checkpoint di Validazione (Gate Fase 0.5 → Fase 2)
+Test AI "Readiness Assessment":
+
+┌──────────────────────────────────────────────┐
+│ 🚦 TEST DI INGRESSO ALLA FASE 2             │
+├──────────────────────────────────────────────┤
+│ Requisiti per sbloccare studio analitico:   │
+│                                              │
+│ ✅ 80% flashcard "Masterate"                │
+│ ✅ 70% domande AI Tutor corrette al 1°tent. │
+│ ✅ Tutte le normative chiave caricate       │
+│ ✅ Test orale: spiegare 3 argomenti random  │
+│                                              │
+│ 📊 Tuo Stato Attuale:                       │
+│ ├─ Flashcard: ████████░░ 85% ✅            │
+│ ├─ AI Tutor: ██████░░░░ 62% ❌            │
+│ ├─ Normative: ██████████ 100% ✅           │
+│ └─ Test Orale: Non ancora svolto            │
+│                                              │
+│ ⚠️ Devi migliorare: AI Tutor (mancano 8%)  │
+│                                              │
+│ [📚 Continua Fase 0.5] [🎤 Prova Test Orale]│
+└──────────────────────────────────────────────┘
+🟡 FASE 2: ACQUISIZIONE STRATEGICA (Livello 35-60%)
+📖 Modulo 2.1: SQ3R Modificato con AI Question Suggester
+Innovazione: L'AI pre-genera le domande basandosi su:
+
+Titoli dei capitoli
+Grassetti nel testo
+Articoli citati
+Parole chiave tecniche
+Flusso di Studio:
+
+Survey (5 min): Scansiona il capitolo
+
+AI Question Pre-Load:
+
+┌──────────────────────────────────────────────┐
+│ 🤖 DOMANDE SUGGERITE PER QUESTO CAPITOLO    │
+├──────────────────────────────────────────────┤
+│ Cap. 5 - Accesso ai Documenti Amministrativi│
+│                                              │
+│ L'AI ha individuato 8 domande chiave:       │
+│                                              │
+│ 1. Chi può esercitare il diritto di accesso?│
+│ 2. Qual è la differenza tra accesso         │
+│    documentale e civico?                     │
+│ 3. Quando si può negare l'accesso?          │
+│ 4. Entro quanto tempo va fornita risposta?  │
+│ ...                                          │
+│                                              │
+│ [▶️ Inizia Lettura Mirata]                  │
+└──────────────────────────────────────────────┘
+Read (Lettura Attiva): Leggi cercando le risposte
+
+Recite (Feynman Test): Spiega ad alta voce → AI valuta
+
+Review: Gestito da SRS nella Fase 3
+
+🧩 Modulo 2.2: Logica RIPAM con AI Drill
+Per i concorsi con preselettiva:
+
+┌──────────────────────────────────────────────┐
+│ 🧠 LOGICA AI - Drill Adattivo               │
+├──────────────────────────────────────────────┤
+│ Tipologia: Serie Numeriche                  │
+│                                              │
+│ QUIZ: 3, 7, 15, 31, ?                       │
+│                                              │
+│ A) 63  B) 47  C) 55  D) 59                  │
+│                                              │
+│ Risposta: ___                                │
+│                                              │
+│ [Conferma]                                   │
+└──────────────────────────────────────────────┘
+
+↓ RISPOSTA SBAGLIATA ↓
+
+┌──────────────────────────────────────────────┐
+│ ❌ Risposta Errata                           │
+│                                              │
+│ Hai scelto: A) 63                           │
+│ Corretto: A) 63                             │
+│                                              │
+│ 🤖 SPIEGAZIONE AI:                          │
+│ La serie segue la logica: n×2 + 1           │
+│                                              │
+│ 3 → (3×2)+1 = 7                             │
+│ 7 → (7×2)+1 = 15                            │
+│ 15 → (15×2)+1 = 31                          │
+│ 31 → (31×2)+1 = 63 ✅                       │
+│                                              │
+│ 💡 Trucco: Quando vedi raddoppi "quasi"     │
+│ perfetti, cerca il "+1" nascosto.           │
+│                                              │
+│ 📊 Questo pattern ti verrà riproposto in    │
+│ 3 varianti diverse per consolidamento.      │
+│                                              │
+│ [➡️ Prossimo Quiz]                          │
+└──────────────────────────────────────────────┘
+AI Tracking:
+
+📈 Heatmap delle tipologie dove sbagli
+🎯 Quiz personalizzati sulle tue debolezze
+⏱️ Progressione tempi di risposta
+🟠 FASE 3: CONSOLIDAMENTO SRS (Livello 60-80%)
+🔁 Modulo 3.1: Active Recall AI-Driven
+Sistema di Ripetizione Intelligente:
+
+L'AI predice quando stai per dimenticare (basandosi su modelli scientifici di oblio).
+
+Dashboard SRS:
+
+┌──────────────────────────────────────────────┐
+│ 🔄 RIPASSO INTELLIGENTE - Oggi              │
+├──────────────────────────────────────────────┤
+│ 🔴 URGENTE (dimenticherai entro 12h):       │
+│ └─ Art. 10-bis L.241/90 (SCIA)              │
+│ └─ Termine procedimento senza regolamento   │
+│                                              │
+│ 🟡 DA RIVEDERE (dimenticherai entro 3gg):   │
+│ └─ Differenza annullamento/revoca           │
+│ └─ Pareri obbligatori vs vincolanti         │
+│                                              │
+│ 🟢 MANUTENZIONE (ogni 2 settimane):         │
+│ └─ Struttura Costituzione (già solida)      │
+│                                              │
+│ ⏱️ Tempo Stimato: 25 minuti                 │
+│                                              │
+│ [▶️ Inizia Sessione] [📅 Posticipa a Domani]│
+└──────────────────────────────────────────────┘
+Modalità Ripasso:
+
+Flashcard Classiche (fronte/retro)
+Quiz a risposta multipla
+Domanda orale AI (valutazione parlata)
+🧠 Modulo 3.2: Mnemotecniche con AI Assistant
+AI suggerisce mnemotecniche personalizzate:
+
+┌──────────────────────────────────────────────┐
+│ 💡 GENERATORE MNEMOTECNICO AI               │
+├──────────────────────────────────────────────┤
+│ Devi ricordare: Art. 241 (L.241/90)         │
+│                                              │
+│ 🤖 AI suggerisce:                           │
+│                                              │
+│ 🏛️ PALAZZO DELLA MEMORIA:                   │
+│ "Immagina la tua casa. All'ingresso (241)   │
+│ c'è un cartello 'Procedimento in Corso'."   │
+│                                              │
+│ 🔢 CONVERSIONE FONETICA:                    │
+│ 241 → N-R-T → "NaRRaTo"                     │
+│ Frase: "Il procedimento deve essere         │
+│ NARRATO (motivato)"                          │
+│                                              │
+│ 🎨 IMMAGINE ASSURDA:                        │
+│ Un dirigente che corre (241 = maratona)     │
+│ con un fascicolo in mano.                   │
+│                                              │
+│ [💾 Salva Preferita] [🔄 Genera Altra]      │
+└──────────────────────────────────────────────┘
+🔴 FASE 4: DRILL & SIMULAZIONE AI (Livello 80-100%)
+🎯 Modulo 4.1: AI Quiz Generator - Infinite Variations
+Innovazione Chiave: Domande sempre diverse dallo stesso PDF normativo.
+
+Come Funziona:
+Utente carica PDF normativo (es. L. 241/90)
+AI genera pool infinito di domande usando:
+Parafrasi semantiche (stessa norma, formulazione diversa)
+Variazioni di distractor (risposte errate plausibili)
+Mix di articoli (domande incrociate)
+Esempio Pratico:
+
+Da questo articolo:
+
+Art. 21-septies L.241/90: "Il provvedimento amministrativo illegittimo può essere annullato d'ufficio sussistendone le ragioni di interesse pubblico..."
+
+AI genera 10+ varianti:
+
+Variante 1 (Letterale):
+
+Secondo l'art. 21-septies, l'annullamento d'ufficio 
+richiede:
+A) Solo l'illegittimità dell'atto
+B) Interesse pubblico + illegittimità ✅
+C) Sola motivazione
+D) Consenso dell'interessato
+Variante 2 (Caso Pratico):
+
+Il Comune ha rilasciato una concessione viziata da 
+incompetenza. Può annullarla?
+A) Sì, sempre entro 180 giorni
+B) Sì, se sussiste interesse pubblico attuale ✅
+C) No, è possibile solo il risarcimento
+D) Sì, ma solo su istanza di parte
+Variante 3 (Comparativa):
+
+Differenza tra annullamento d'ufficio e revoca:
+A) La revoca richiede illegittimità originaria
+B) L'annullamento si applica ad atti legittimi
+C) L'annullamento sana vizi, la revoca cambia valutazione ✅
+D) Sono sinonimi
+Variante 4 (Negativa - Tranello):
+
+L'annullamento d'ufficio NON richiede:
+A) Valutazione di interesse pubblico
+B) Illegittimità dell'atto
+C) Consenso del destinatario ✅
+D) Motivazione
+Dashboard Quiz Generator:
+
+┌──────────────────────────────────────────────┐
+│ 🤖 AI QUIZ GENERATOR - Exam Mode            │
+├──────────────────────────────────────────────┤
+│ Fonte: L. 241/1990 + Costituzione           │
+│                                              │
+│ ⚙️ CONFIGURAZIONE DRILL:                    │
+│ ├─ Numero domande: [30] ▼                   │
+│ ├─ Difficoltà: [●●●○○] Media               │
+│ ├─ Focus: [Tutti argomenti] ▼               │
+│ ├─ Tempo per domanda: [60 sec]              │
+│ └─ Penalità errori: [Sì, -0.33]             │
+│                                              │
+│ 🎲 GARANZIA AI:                             │
+│ Ogni sessione avrà domande COMPLETAMENTE     │
+│ diverse dalle precedenti (stesso contenuto,  │
+│ formulazione unica).                         │
+│                                              │
+│ 📊 Sessioni Completate: 47                  │
+│ Media Attuale: 78% (in crescita 📈)         │
+│                                              │
+│ [🚀 Genera Nuovo Quiz] [📊 Vedi Storico]    │
+└──────────────────────────────────────────────┘
+Dopo Ogni Quiz - Debriefing AI:
+
+┌──────────────────────────────────────────────┐
+│ 📊 ANALISI PERFORMANCE - Quiz #48           │
+├──────────────────────────────────────────────┤
+│ Punteggio: 24/30 (80%) ✅                   │
+│ Tempo Medio: 48 sec/domanda                  │
+│ Penalità Applicate: -2 punti                │
+│                                              │
+│ 🔍 ERRORI ANALIZZATI:                       │
+│                                              │
+│ ❌ Domanda 7 (Art. 10-bis SCIA):            │
+│ Tipo errore: Lacuna teorica                 │
+│ → Azione: Ripassa art. 10-bis co. 4-6       │
+│                                              │
+│ ❌ Domanda 15 (Termine procedimento):       │
+│ Tipo errore: Lettura frettolosa             │
+│ → Azione: Rallenta sui "NON"/"SALVO"        │
+│                                              │
+│ ❌ Domanda 23 (Autotutela vs Tutela):       │
+│ Tipo errore: Confusione concettuale          │
+│ → Azione: Flashcard comparativa programmata │
+│                                              │
+│ 💡 INSIGHT AI:                              │
+│ Sei debole sulle "eccezioni" alle regole    │
+│ generali (6 errori su 8 erano su clausole   │
+│ "salvo che"/"tranne").                       │
+│                                              │
+│ 🎯 NEXT STEPS:                              │
+│ 1. Drill specifico su "eccezioni normative" │
+│ 2. Ripasso art. 10-bis (3° volta in 5gg)    │
+│ 3. Simulazione completa tra 2 giorni        │
+│                                              │
+│ [📚 Vai al Ripasso] [🔁 Nuovo Quiz]         │
+└──────────────────────────────────────────────┘
+🔥 Modulo 4.2: Hell Week - Simulazione Reale
+Ultimi 14 giorni prima dell'esame:
+
+┌──────────────────────────────────────────────┐
+│ 🔴 MODALITÀ HELL WEEK ATTIVATA              │
+├──────────────────────────────────────────────┤
+│ ⚠️ Da qui in poi: SOLO simulazioni complete │
+│                                              │
+│ Calendario:                                  │
+│ Giorno -14: Simulazione #1 (baseline)       │
+│ Giorno -12: Drill su errori Sim. #1         │
+│ Giorno -10: Simulazione #2                  │
+│ Giorno -8:  Drill + Ripasso mirato          │
+│ Giorno -6:  Simulazione #3 (full stress)    │
+│ Giorno -4:  Ripasso leggero (SRS)           │
+│ Giorno -2:  Simulazione #4 (ultima)         │
+│ Giorno -1:  RIPOSO TOTALE 🧘               │
+│                                              │
+│ 🎯 CONDIZIONI HELL WEEK:                    │
+│ ✅ Timer reale (non puoi mettere in pausa) │
+│ ✅ Ambiente rumoroso (suoni casuali attivi) │
+│ ✅ Blocco notifiche + modalità schermo pieno│
+│ ✅ Penalità applicate automaticamente        │
+│ ✅ Niente spiegazioni durante il quiz        │
+│                                              │
+│ 📊 Obiettivo: Punteggio stabile >85%       │
+│ nella ultime 2 simulazioni                   │
+│                                              │
+│ [🔥 Inizia Hell Week]                       │
+└──────────────────────────────────────────────┘
+Features Hell Week:
+
+Stress Simulator: Countdown visibile + suoni di ambiente d'esame
+Question Shuffling: Ordine domande randomizzato (come al vero esame)
+No Pause: Se esci, simulazione annullata
+Post-Exam Analysis: Grafico progressione tra le simulazioni
+🧘 Modulo 4.3: Gestione Stress AI-Coached
+AI rileva segnali di stress e interviene:
+
+┌──────────────────────────────────────────────┐
+│ 🧠 STRESS DETECTOR                          │
+├──────────────────────────────────────────────┤
+│ ⚠️ Rilevato calo performance:               │
+│                                              │
+│ Ultimi 10 quiz:                              │
+│ Quiz #45: 82% (tempo medio: 45s) ✅         │
+│ Quiz #46: 79% (tempo medio: 52s) ⚠️         │
+│ Quiz #47: 71% (tempo medio: 61s) 🔴         │
+│ Quiz #48: 68% (tempo medio: 67s) 🔴         │
+│                                              │
+│ 🤖 DIAGNOSI AI:                             │
+│ Possibile sovraccarico cognitivo.            │
+│ Aumenta tempo di risposta + cala precisione.│
+│                                              │
+│ 💊 PRESCRIZIONE:                            │
+│ 1. STOP quiz per 24h                        │
+│ 2. Sessione Box Breathing (5 min)           │
+│ 3. Ripasso passivo (rileggi riassunti)      │
+│ 4. Domani: solo 1 quiz leggero              │
+│                                              │
+│ [🧘 Inizia Box Breathing] [📅 Pausa 24h]   │
+└──────────────────────────────────────────────┘
+Box Breathing Guidato:
+
+┌──────────────────────────────────────────────┐
+│ 🫁 BOX BREATHING - 5 Minuti                 │
+├──────────────────────────────────────────────┤
+│                                              │
+│            ↑ Trattieni (4s)                  │
+│            │                                 │
+│   ┌────────┴────────┐                       │
+│   │                 │                       │
+│ Inspira (4s)    Espira (4s)                 │
+│   │                 │                       │
+│   └────────┬────────┘                       │
+│            │                                 │
+│            ↓ Trattieni (4s)                  │
+│                                              │
+│ Ciclo 3/15 ████████░░░░░░░░                │
+│                                              │
+│ [Audio guidato in riproduzione...🎵]        │
+│                                              │
+└──────────────────────────────────────────────┘
+📊 DASHBOARD COMPLETA - Mockup Finale
+Vista Principale:
+┌────────────────────────────────────────────────────────────────┐
+│ 🎯 PROTOCOLLO C.P.A. 2.0 - Dashboard Studente                 │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│ 📅 Giorni al Concorso: 47        🔋 Livello: 72% ████████░░  │
+│                                                                │
+│ ┌──────────────────────────────────────────────────────────┐ │
+│ │ 📈 PROGRESSIONE GENERALE                                 │ │
+│ │                                                          │ │
+│ │ Fase 1: Intelligence          ██████████ 100% ✅        │ │
+│ │ Fase 0.5: Fondamenta AI       ██████████ 100% ✅        │ │
+│ │ Fase 2: Acquisizione          ████████░░  82% 🔄        │ │
+│ │ Fase 3: Consolidamento        ████░░░░░░  45% ⏸️        │ │
+│ │ Fase 4: Drill & Simulazione   ░░░░░░░░░░   0% 🔒        │ │
+│ │                                                          │ │
+│ │ ⏰ Oggi Devi: Completare 2 sessioni SQ3R                │ │
+│ │                                                          │ │
+│ └──────────────────────────────────────────────────────────┘ │
+│                                                                │
+│ ┌─────────────────────┐  ┌──────────────────────────────┐    │
+│ │ 🗂️ FLASHCARD AI     │  │ 🤖 AI TUTOR                  │    │
+│ │                     │  │                              │    │
+│ │ Da ripassare: 23    │  │ Sessione attiva:             │    │
+│ │ Masterate: 456      │  │ Art. 21-octies L.241/90      │    │
+│ │                     │  │                              │    │
+│ │ [▶️ Inizia]         │  │ Domanda 4/10 in corso...     │    │
+│ │                     │  │                              │    │
+│ └─────────────────────┘  └──────────────────────────────┘    │
+│                                                                │
+│ ┌──────────────────────────────────────────────────────────┐ │
+│ │ 🎯 QUIZ AI GENERATOR                                     │ │
+│ │                                                          │ │
+│ │ Quiz Completati: 48      Media: 78% 📈 (+12% vs inizio)│ │
+│ │                                                          │ │
+│ │ Prossimo quiz consigliato: Drill Logica (30 domande)    │ │
+│ │                                                          │ │
+│ │ [🚀 Genera Quiz] [📊 Analisi Errori] [📚 Ripasso]      │ │
+│ │                                                          │ │
+│ └──────────────────────────────────────────────────────────┘ │
+│                                                                │
+│ ┌─────────────────────┐  ┌──────────────────────────────┐    │
+│ │ 📚 BIBLIOTECA       │  │ 🧠 STRESS CHECK              │    │
+│ │                     │  │                              │    │
+│ │ Normative: 8/8 ✅   │  │ Livello attuale: 🟢 Basso   │    │
+│ │ Manuali: 3/3 ✅     │  │                              │    │
+│ │                     │  │ Ultimo riposo: 8h fa         │    │
+│ │ [📤 Carica Nuovo]   │  │                              │    │
+│ │                     │  │ [🧘 Box Breathing]           │    │
+│ └─────────────────────┘  └──────────────────────────────┘    │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
