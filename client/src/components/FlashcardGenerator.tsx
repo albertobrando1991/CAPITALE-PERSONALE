@@ -192,16 +192,16 @@ export function FlashcardGenerator({
             className="flex-1"
             onClick={onStartSession}
             disabled={disabled || stats.totali === 0 || isLoading}
-            data-testid="button-inizia-sessione"
+            data-testid="button-inizia-sessione-flashcard"
           >
             <Play className="h-4 w-4 mr-2" />
-            Inizia Sessione
+            {stats.totali === 0 ? "Genera Flashcard" : "Inizia Sessione"}
           </Button>
           <Button
             size="icon"
             variant="outline"
             disabled={disabled}
-            data-testid="button-impostazioni"
+            data-testid="button-impostazioni-flashcard"
           >
             <Settings className="h-4 w-4" />
           </Button>

@@ -163,7 +163,7 @@ export function BibliotecaNormativa({
             className="flex-1"
             onClick={onGoToQuiz}
             disabled={disabled || domandeGenerate === 0 || isLoading}
-            data-testid="button-vai-quiz"
+            data-testid="button-vai-quiz-normativa"
           >
             <Target className="h-4 w-4 mr-2" />
             Vai ai Quiz
@@ -172,7 +172,7 @@ export function BibliotecaNormativa({
             variant="outline"
             onClick={onViewStats}
             disabled={disabled || normative.length === 0}
-            data-testid="button-statistiche"
+            data-testid="button-vedi-analisi-normativa"
           >
             <BarChart3 className="h-4 w-4" />
           </Button>
