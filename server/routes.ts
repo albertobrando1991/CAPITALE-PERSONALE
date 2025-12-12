@@ -1,6 +1,8 @@
-import type { Express, Request } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { setupAuth, isAuthenticated } from "./replitAuth";
+import { insertConcorsoSchema } from "@shared/schema";
 import OpenAI from "openai";
 import multer from "multer";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -37,12 +39,99 @@ interface MulterRequest extends Request {
   file?: Express.Multer.File;
 }
 
+function getUserId(req: Request): string {
+  const user = req.user as any;
+  return user?.claims?.sub;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   
-  app.post("/api/analyze-bando", upload.single("file"), async (req: MulterRequest, res) => {
+  await setupAuth(app);
+
+  app.get("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "Utente non trovato" });
+      }
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ error: "Errore nel recupero utente" });
+    }
+  });
+
+  app.get("/api/concorsi", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const concorsi = await storage.getConcorsi(userId);
+      res.json(concorsi);
+    } catch (error) {
+      console.error("Error fetching concorsi:", error);
+      res.status(500).json({ error: "Errore nel recupero concorsi" });
+    }
+  });
+
+  app.get("/api/concorsi/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const concorso = await storage.getConcorso(req.params.id, userId);
+      if (!concorso) {
+        return res.status(404).json({ error: "Concorso non trovato" });
+      }
+      res.json(concorso);
+    } catch (error) {
+      console.error("Error fetching concorso:", error);
+      res.status(500).json({ error: "Errore nel recupero concorso" });
+    }
+  });
+
+  app.post("/api/concorsi", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const data = { ...req.body, userId };
+      const validated = insertConcorsoSchema.parse(data);
+      const concorso = await storage.createConcorso(validated);
+      res.status(201).json(concorso);
+    } catch (error: any) {
+      console.error("Error creating concorso:", error);
+      res.status(400).json({ error: error.message || "Errore nella creazione del concorso" });
+    }
+  });
+
+  app.patch("/api/concorsi/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const concorso = await storage.updateConcorso(req.params.id, userId, req.body);
+      if (!concorso) {
+        return res.status(404).json({ error: "Concorso non trovato" });
+      }
+      res.json(concorso);
+    } catch (error) {
+      console.error("Error updating concorso:", error);
+      res.status(500).json({ error: "Errore nell'aggiornamento del concorso" });
+    }
+  });
+
+  app.delete("/api/concorsi/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const deleted = await storage.deleteConcorso(req.params.id, userId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Concorso non trovato" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting concorso:", error);
+      res.status(500).json({ error: "Errore nell'eliminazione del concorso" });
+    }
+  });
+
+  app.post("/api/analyze-bando", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
     try {
       if (!req.file) {
         return res.status(400).json({ error: "Nessun file caricato" });
@@ -364,11 +453,33 @@ ISTRUZIONI CRITICHE:
     }
   });
 
-  app.post("/api/phase1/complete", async (req, res) => {
+  app.post("/api/phase1/complete", isAuthenticated, async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const bandoData = req.body;
-      console.log("Phase 1 completed with data:", bandoData);
-      res.json({ success: true, message: "Fase 1 completata" });
+      
+      const concorso = await storage.createConcorso({
+        userId,
+        nome: bandoData.titoloEnte || "Nuovo Concorso",
+        titoloEnte: bandoData.titoloEnte,
+        tipoConcorso: bandoData.tipoConcorso,
+        posti: bandoData.posti,
+        scadenzaDomanda: bandoData.scadenzaDomanda,
+        dataPresuntaEsame: bandoData.dataPresuntaEsame,
+        mesiPreparazione: bandoData.mesiPreparazione || 6,
+        oreSettimanali: bandoData.oreSettimanali || 15,
+        bandoAnalysis: bandoData,
+      });
+      
+      await storage.upsertUserProgress({
+        userId,
+        concorsoId: concorso.id,
+        fase1Completata: true,
+        faseCorrente: 2,
+      });
+      
+      console.log("Phase 1 completed, concorso created:", concorso.id);
+      res.json({ success: true, concorsoId: concorso.id, message: "Fase 1 completata" });
     } catch (error) {
       console.error("Error completing phase 1:", error);
       res.status(500).json({ error: "Errore nel completamento della fase 1" });
