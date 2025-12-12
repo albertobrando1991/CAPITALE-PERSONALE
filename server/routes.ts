@@ -196,10 +196,37 @@ ISTRUZIONI CRITICHE:
       
       console.log(`REGEX EXTRACTION - Penalty: ${extractedPenalty || 'not found'}, Correct: ${extractedCorrect || 'not found'}, No answer: ${extractedNoAnswer || 'not found'}`);
       
-      const materieMatch = fileContent.match(/(?:materie|argomenti|quesiti)[:\s]+(?:.*?)(diritto[^.]*?)(?:\.|;|\n)/gi);
-      if (materieMatch) {
-        console.log(`Found materie references: ${materieMatch.slice(0, 3).join(' | ')}`);
+      const titoliStudioPattern = /(?:L-\d{1,2}|LM-\d{1,2}|LMG[\/-]?\d{1,2}|LS-\d{1,2})/gi;
+      
+      const extractedTitoli: string[] = [];
+      const seenTitoli = new Set<string>();
+      
+      let titoloMatch;
+      while ((titoloMatch = titoliStudioPattern.exec(fileContent)) !== null) {
+        const titolo = titoloMatch[0].toUpperCase().replace('/', '-');
+        if (!seenTitoli.has(titolo)) {
+          seenTitoli.add(titolo);
+          extractedTitoli.push(titolo);
+        }
       }
+      
+      console.log(`TITOLI DI STUDIO ESTRATTI: ${extractedTitoli.length > 0 ? extractedTitoli.join(', ') : 'nessuno trovato'}`);
+      
+      const materieKeywords = [
+        'diritto amministrativo', 'diritto costituzionale', 'diritto civile',
+        'diritto dell\'unione europea', 'diritto penale', 'diritto del lavoro',
+        'contabilità', 'organizzazione', 'inglese', 'informatica',
+        'logico-deduttiv', 'situazional'
+      ];
+      
+      const extractedMaterie: string[] = [];
+      for (const keyword of materieKeywords) {
+        if (fileContent.toLowerCase().includes(keyword)) {
+          extractedMaterie.push(keyword);
+        }
+      }
+      
+      console.log(`MATERIE ESTRATTE: ${extractedMaterie.length > 0 ? extractedMaterie.join(', ') : 'nessuna trovata'}`);
       
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
@@ -238,6 +265,41 @@ ISTRUZIONI CRITICHE:
       if (extractedNoAnswer && !bandoData.prove.punteggioRispostaNonData) {
         bandoData.prove.punteggioRispostaNonData = extractedNoAnswer;
         console.log(`Overriding AI no-answer score with regex value: ${extractedNoAnswer}`);
+      }
+      
+      if (extractedTitoli.length > 0) {
+        if (!bandoData.profili || bandoData.profili.length === 0) {
+          bandoData.profili = [{ nome: "Profilo principale", posti: bandoData.posti || 1, titoliStudio: extractedTitoli, altriRequisiti: [] }];
+          console.log(`Created profile with extracted titoli: ${extractedTitoli.join(', ')}`);
+        } else {
+          for (const profilo of bandoData.profili) {
+            if (!profilo.titoliStudio || profilo.titoliStudio.length === 0) {
+              profilo.titoliStudio = extractedTitoli;
+              console.log(`Added extracted titoli to profile ${profilo.nome}: ${extractedTitoli.join(', ')}`);
+            } else {
+              const existingCodes = profilo.titoliStudio.map((t: string) => {
+                const match = t.match(/(?:L-\d{1,2}|LM-\d{1,2}|LMG[\/-]?\d{1,2}|LS-\d{1,2})/i);
+                return match ? match[0].toUpperCase().replace('/', '-') : null;
+              }).filter(Boolean);
+              
+              for (const titolo of extractedTitoli) {
+                if (!existingCodes.includes(titolo)) {
+                  profilo.titoliStudio.push(titolo);
+                }
+              }
+              console.log(`Merged titoli for profile ${profilo.nome}: ${profilo.titoliStudio.join(', ')}`);
+            }
+          }
+        }
+      }
+      
+      if (extractedMaterie.length > 0 && (!bandoData.materie || bandoData.materie.length === 0)) {
+        bandoData.materie = extractedMaterie.map(m => ({
+          nome: m.charAt(0).toUpperCase() + m.slice(1),
+          microArgomenti: [],
+          peso: null
+        }));
+        console.log(`Added extracted materie: ${extractedMaterie.join(', ')}`);
       }
       
       console.log(`Bando analysis complete: ${bandoData.titoloEnte || 'No title'}`);
