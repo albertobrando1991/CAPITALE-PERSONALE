@@ -1,48 +1,40 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Flashcard } from "@/components/Flashcard";
 import { EmptyState } from "@/components/EmptyState";
-import { ArrowLeft, Layers, X } from "lucide-react";
+import { ArrowLeft, Layers, X, Loader2 } from "lucide-react";
 import { Link } from "wouter";
+import type { Flashcard as FlashcardType } from "@shared/schema";
 
-// todo: remove mock functionality
-const mockFlashcards = [
-  {
-    id: "1",
-    front: "Chi nomina il Responsabile del Procedimento?",
-    back: "Il dirigente dell'unita organizzativa competente (art. 6, co. 1, L.241/90).",
-    tags: ["L.241/90", "Procedimento"],
-    difficulty: "medium" as const,
-    source: "Art. 6 L.241/90",
-  },
-  {
-    id: "2",
-    front: "Cos'e la SCIA?",
-    back: "Segnalazione Certificata di Inizio Attivita (art. 19 L.241/90). Consente di iniziare un'attivita subito dopo la presentazione della segnalazione.",
-    tags: ["L.241/90", "SCIA"],
-    difficulty: "easy" as const,
-    source: "Art. 19 L.241/90",
-  },
-  {
-    id: "3",
-    front: "Qual e il termine massimo per la conclusione del procedimento amministrativo?",
-    back: "30 giorni dalla data di avvio del procedimento, salvo diversa disposizione di legge o regolamento (art. 2, co. 2, L.241/90).",
-    tags: ["L.241/90", "Termini"],
-    difficulty: "medium" as const,
-    source: "Art. 2 L.241/90",
-  },
-  {
-    id: "4",
-    front: "Cosa prevede l'art. 97 della Costituzione?",
-    back: "I pubblici uffici sono organizzati secondo disposizioni di legge, in modo che siano assicurati il buon andamento e l'imparzialita dell'amministrazione.",
-    tags: ["Costituzione", "Art. 97"],
-    difficulty: "hard" as const,
-    source: "Art. 97 Cost.",
-  },
-];
+function mapFlashcardForDisplay(card: FlashcardType) {
+  let difficulty: "easy" | "medium" | "hard" = "medium";
+  if (card.livelloSRS !== null && card.livelloSRS !== undefined) {
+    if (card.livelloSRS >= 3) difficulty = "easy";
+    else if (card.livelloSRS === 0) difficulty = "medium";
+  }
+
+  const tags: string[] = [];
+  if (card.materia) tags.push(card.materia);
+  if (card.tipo && card.tipo !== "concetto") tags.push(card.tipo);
+
+  return {
+    id: card.id,
+    front: card.fronte,
+    back: card.retro,
+    tags,
+    difficulty,
+    source: card.fonte || undefined,
+  };
+}
 
 export default function FlashcardsPage() {
-  const [flashcards] = useState(mockFlashcards);
+  const { data: flashcardsRaw = [], isLoading } = useQuery<FlashcardType[]>({
+    queryKey: ["/api/flashcards"],
+  });
+
+  const flashcards = flashcardsRaw.map(mapFlashcardForDisplay);
+
   const [isStudying, setIsStudying] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [completed, setCompleted] = useState(0);
@@ -72,6 +64,14 @@ export default function FlashcardsPage() {
     setCurrentIndex(0);
     setSessionComplete(false);
   };
+
+  if (isLoading) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (flashcards.length === 0) {
     return (

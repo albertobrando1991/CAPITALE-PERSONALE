@@ -40,6 +40,7 @@ export interface IStorage {
   getFlashcards(userId: string, concorsoId?: string): Promise<Flashcard[]>;
   createFlashcard(flashcard: InsertFlashcard): Promise<Flashcard>;
   createFlashcards(flashcardList: InsertFlashcard[]): Promise<Flashcard[]>;
+  updateFlashcard(id: string, userId: string, data: Partial<InsertFlashcard>): Promise<Flashcard | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -185,6 +186,15 @@ export class DatabaseStorage implements IStorage {
   async createFlashcards(flashcardList: InsertFlashcard[]): Promise<Flashcard[]> {
     if (flashcardList.length === 0) return [];
     return await db.insert(flashcards).values(flashcardList).returning();
+  }
+
+  async updateFlashcard(id: string, userId: string, data: Partial<InsertFlashcard>): Promise<Flashcard | undefined> {
+    const [updated] = await db
+      .update(flashcards)
+      .set(data)
+      .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)))
+      .returning();
+    return updated;
   }
 }
 
