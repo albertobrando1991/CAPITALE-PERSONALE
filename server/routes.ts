@@ -135,17 +135,71 @@ ISTRUZIONI CRITICHE:
 - NON inventare informazioni: se un dato non è presente, usa null
 - Estrai TUTTI i riferimenti normativi citati nelle materie d'esame`;
 
-      const maxChars = 60000;
-      let contentToSend = fileContent;
+      const contentToSend = fileContent.substring(0, 100000);
       
-      if (fileContent.length > maxChars) {
-        const firstPart = fileContent.substring(0, 40000);
-        const lastPart = fileContent.substring(fileContent.length - 20000);
-        contentToSend = firstPart + "\n\n[...SEZIONE CENTRALE OMESSA...]\n\n" + lastPart;
+      console.log(`PDF total: ${fileContent.length} chars, sending: ${contentToSend.length} chars`);
+      console.log(`Searching for penalty keywords in extracted text...`);
+      
+      const penaltyPatterns = [
+        /risposta errata[:\s]*([+-]?\d+[,.]?\d*)\s*punt/i,
+        /errata[:\s]*([+-]?\d+[,.]?\d*)\s*punt/i,
+        /risposta errata[:\s]*([+-]?\d+[,.]?\d*)/i,
+        /penalità[:\s]*([+-]?\d+[,.]?\d*)/i,
+        /(-\d+[,.]?\d*)\s*punt[io]?\s*(?:per\s+)?(?:ogni\s+)?(?:risposta\s+)?errata/i
+      ];
+      
+      const correctPatterns = [
+        /risposta esatta[:\s]*\+?(\d+[,.]?\d*)\s*punt/i,
+        /esatta[:\s]*\+?(\d+[,.]?\d*)\s*punt/i,
+        /risposta corretta[:\s]*\+?(\d+[,.]?\d*)\s*punt/i,
+        /\+(\d+[,.]?\d*)\s*punt[io]?\s*(?:per\s+)?(?:ogni\s+)?(?:risposta\s+)?(?:esatta|corretta)/i
+      ];
+      
+      const noAnswerPatterns = [
+        /mancata risposta[:\s]*(\d+[,.]?\d*)\s*punt/i,
+        /risposta non data[:\s]*(\d+[,.]?\d*)\s*punt/i,
+        /non risposta[:\s]*(\d+[,.]?\d*)/i,
+        /omessa[:\s]*(\d+[,.]?\d*)/i
+      ];
+      
+      let extractedPenalty: string | null = null;
+      let extractedCorrect: string | null = null;
+      let extractedNoAnswer: string | null = null;
+      
+      for (const pattern of penaltyPatterns) {
+        const match = fileContent.match(pattern);
+        if (match) {
+          extractedPenalty = match[1].replace(',', '.');
+          if (!extractedPenalty.startsWith('-')) extractedPenalty = '-' + extractedPenalty;
+          console.log(`Penalty found with pattern ${pattern}: ${extractedPenalty}`);
+          break;
+        }
       }
       
-      console.log(`Sending ${contentToSend.length} characters to OpenAI for analysis...`);
-      console.log(`First 500 chars: ${contentToSend.substring(0, 500)}`);
+      for (const pattern of correctPatterns) {
+        const match = fileContent.match(pattern);
+        if (match) {
+          extractedCorrect = '+' + match[1].replace(',', '.');
+          console.log(`Correct answer score found with pattern ${pattern}: ${extractedCorrect}`);
+          break;
+        }
+      }
+      
+      for (const pattern of noAnswerPatterns) {
+        const match = fileContent.match(pattern);
+        if (match) {
+          extractedNoAnswer = match[1].replace(',', '.');
+          console.log(`No answer score found with pattern ${pattern}: ${extractedNoAnswer}`);
+          break;
+        }
+      }
+      
+      console.log(`REGEX EXTRACTION - Penalty: ${extractedPenalty || 'not found'}, Correct: ${extractedCorrect || 'not found'}, No answer: ${extractedNoAnswer || 'not found'}`);
+      
+      const materieMatch = fileContent.match(/(?:materie|argomenti|quesiti)[:\s]+(?:.*?)(diritto[^.]*?)(?:\.|;|\n)/gi);
+      if (materieMatch) {
+        console.log(`Found materie references: ${materieMatch.slice(0, 3).join(' | ')}`);
+      }
       
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
@@ -166,7 +220,28 @@ ISTRUZIONI CRITICHE:
       }
 
       const bandoData = JSON.parse(content);
+      
+      if (!bandoData.prove) {
+        bandoData.prove = {};
+      }
+      
+      if (extractedPenalty && !bandoData.prove.penalitaErrori) {
+        bandoData.prove.penalitaErrori = extractedPenalty;
+        console.log(`Overriding AI penalty with regex value: ${extractedPenalty}`);
+      }
+      
+      if (extractedCorrect && !bandoData.prove.punteggioRispostaCorretta) {
+        bandoData.prove.punteggioRispostaCorretta = extractedCorrect;
+        console.log(`Overriding AI correct score with regex value: ${extractedCorrect}`);
+      }
+      
+      if (extractedNoAnswer && !bandoData.prove.punteggioRispostaNonData) {
+        bandoData.prove.punteggioRispostaNonData = extractedNoAnswer;
+        console.log(`Overriding AI no-answer score with regex value: ${extractedNoAnswer}`);
+      }
+      
       console.log(`Bando analysis complete: ${bandoData.titoloEnte || 'No title'}`);
+      console.log(`Final penalties: penalty=${bandoData.prove?.penalitaErrori}, correct=${bandoData.prove?.punteggioRispostaCorretta}, noAnswer=${bandoData.prove?.punteggioRispostaNonData}`);
       res.json(bandoData);
     } catch (error: any) {
       console.error("Error analyzing bando:", error?.message || error);
