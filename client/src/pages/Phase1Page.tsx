@@ -1,17 +1,88 @@
-import { useState } from "react";
-import { Link } from "wouter";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Link, useSearch, useLocation } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BandoUpload } from "@/components/BandoUpload";
 import { BandoAnalysis, type BandoData } from "@/components/BandoAnalysis";
 import { PhaseProgress, defaultPhases } from "@/components/PhaseProgress";
-import { ArrowLeft, Sparkles, BookOpen, Target, Calendar, Brain } from "lucide-react";
+import { ArrowLeft, Sparkles, BookOpen, Target, Calendar, Brain, Loader2, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Concorso } from "@shared/schema";
 
 export default function Phase1Page() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const searchString = useSearch();
+  const params = new URLSearchParams(searchString);
+  const concorsoId = params.get("id");
+  
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [bandoData, setBandoData] = useState<BandoData | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedRef = useRef<string>("");
+  
+  const { data: existingConcorso, isLoading: isLoadingConcorso } = useQuery<Concorso>({
+    queryKey: ["/api/concorsi", concorsoId],
+    queryFn: async () => {
+      const res = await fetch(`/api/concorsi/${concorsoId}`);
+      if (!res.ok) throw new Error("Failed to fetch concorso");
+      return res.json();
+    },
+    enabled: !!concorsoId,
+  });
+  
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+  
+  useEffect(() => {
+    if (existingConcorso?.bandoAnalysis && !bandoData) {
+      setBandoData(existingConcorso.bandoAnalysis as BandoData);
+      lastSavedRef.current = JSON.stringify(existingConcorso.bandoAnalysis);
+    }
+  }, [existingConcorso, bandoData]);
+  
+  const saveMutation = useMutation({
+    mutationFn: async (data: Partial<Concorso>) => {
+      if (!concorsoId) return;
+      return apiRequest("PATCH", `/api/concorsi/${concorsoId}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/concorsi"] });
+    },
+  });
+  
+  const debouncedSave = useCallback((newBandoData: BandoData) => {
+    if (!concorsoId) return;
+    
+    const currentDataStr = JSON.stringify(newBandoData);
+    if (currentDataStr === lastSavedRef.current) return;
+    
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    setIsSaving(true);
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await saveMutation.mutateAsync({
+          bandoAnalysis: newBandoData,
+          mesiPreparazione: newBandoData.mesiPreparazione,
+          oreSettimanali: newBandoData.oreSettimanali,
+        });
+        lastSavedRef.current = currentDataStr;
+      } finally {
+        setIsSaving(false);
+      }
+    }, 1500);
+  }, [concorsoId, saveMutation]);
 
   const handleAnalyze = async (file: File) => {
     setIsAnalyzing(true);
@@ -50,22 +121,26 @@ export default function Phase1Page() {
 
   const handleUpdateRequisito = (index: number, value: boolean) => {
     if (!bandoData) return;
-    setBandoData({
+    const newData = {
       ...bandoData,
       requisiti: bandoData.requisiti.map((r, i) =>
         i === index ? { ...r, soddisfatto: value } : r
       ),
-    });
+    };
+    setBandoData(newData);
+    debouncedSave(newData);
   };
 
   const handleUpdatePassaggio = (index: number, value: boolean) => {
     if (!bandoData) return;
-    setBandoData({
+    const newData = {
       ...bandoData,
       passaggiIscrizione: bandoData.passaggiIscrizione.map((p, i) =>
         i === index ? { ...p, completato: value } : p
       ),
-    });
+    };
+    setBandoData(newData);
+    debouncedSave(newData);
   };
 
   const handleUpdateCalendario = (mesi: number, ore: number) => {
@@ -123,13 +198,15 @@ export default function Phase1Page() {
       };
     });
     
-    setBandoData({
+    const newData = {
       ...bandoData,
       mesiPreparazione: mesi,
       oreSettimanali: ore,
       oreTotaliDisponibili: oreTotali,
       calendarioInverso: nuovoCalendario
-    });
+    };
+    setBandoData(newData);
+    debouncedSave(newData);
   };
 
   const handleConfirm = async () => {
@@ -144,29 +221,72 @@ export default function Phase1Page() {
         throw new Error("Errore nel completamento");
       }
       
+      const result = await response.json();
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/concorsi"] });
+      
       toast({
         title: "Fase 1 completata!",
         description: "Ora puoi accedere alla Fase 2: Acquisizione Strategica.",
       });
+      
+      setLocation("/");
     } catch (error) {
       console.error("Error completing phase 1:", error);
+      toast({
+        title: "Errore",
+        description: "Errore nel completamento della fase 1.",
+        variant: "destructive",
+      });
     }
   };
 
+  if (concorsoId && isLoadingConcorso) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground">Caricamento concorso...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center gap-4 mb-6">
-        <Link href="/">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-3xl font-semibold">FASE 1: Intelligence & Setup</h1>
-          <p className="text-muted-foreground mt-1">
-            Decodifica del bando e configurazione del motore di studio
-          </p>
+      <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
+        <div className="flex items-center gap-4">
+          <Link href="/">
+            <Button variant="ghost" size="icon" data-testid="button-back">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-3xl font-semibold" data-testid="text-phase1-title">
+              FASE 1: Intelligence & Setup
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              {concorsoId && existingConcorso 
+                ? existingConcorso.nome 
+                : "Decodifica del bando e configurazione del motore di studio"}
+            </p>
+          </div>
         </div>
+        {concorsoId && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span data-testid="text-saving">Salvataggio...</span>
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" />
+                <span data-testid="text-saved">Salvato</span>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
