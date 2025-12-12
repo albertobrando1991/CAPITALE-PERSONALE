@@ -303,6 +303,55 @@ ISTRUZIONI CRITICHE:
         console.log(`Added extracted materie: ${extractedMaterie.join(', ')}`);
       }
       
+      const mesiPreparazione = 6;
+      const oreSettimanali = 15;
+      const oggi = new Date();
+      const dataEsame = new Date(oggi);
+      dataEsame.setMonth(dataEsame.getMonth() + mesiPreparazione);
+      
+      const giorniTotali = Math.floor((dataEsame.getTime() - oggi.getTime()) / (1000 * 60 * 60 * 24));
+      const oreTotali = Math.floor(giorniTotali / 7) * oreSettimanali;
+      
+      const fasi = [
+        { nome: "Fase 1: Intelligence & Setup", percentuale: 10 },
+        { nome: "Fase 2: Acquisizione Strategica", percentuale: 40 },
+        { nome: "Fase 3: Consolidamento e Memorizzazione", percentuale: 30 },
+        { nome: "Fase 4: Simulazione ad Alta Fedeltà", percentuale: 20 }
+      ];
+      
+      let giorniUsati = 0;
+      const calendarioGenerato = fasi.map((fase, index) => {
+        const giorniFase = Math.floor(giorniTotali * (fase.percentuale / 100));
+        const dataInizio = new Date(oggi);
+        dataInizio.setDate(dataInizio.getDate() + giorniUsati);
+        const dataFine = new Date(dataInizio);
+        dataFine.setDate(dataFine.getDate() + giorniFase - 1);
+        giorniUsati += giorniFase;
+        
+        const formatDate = (d: Date) => {
+          const day = d.getDate().toString().padStart(2, '0');
+          const month = (d.getMonth() + 1).toString().padStart(2, '0');
+          const year = d.getFullYear();
+          return `${day}/${month}/${year}`;
+        };
+        
+        return {
+          fase: fase.nome,
+          dataInizio: formatDate(dataInizio),
+          dataFine: formatDate(dataFine),
+          giorniDisponibili: giorniFase,
+          oreStimate: Math.floor(oreTotali * (fase.percentuale / 100))
+        };
+      });
+      
+      bandoData.calendarioInverso = calendarioGenerato;
+      bandoData.oreTotaliDisponibili = oreTotali;
+      bandoData.giorniTapering = 7;
+      bandoData.mesiPreparazione = mesiPreparazione;
+      bandoData.oreSettimanali = oreSettimanali;
+      bandoData.dataInizioStudio = oggi.toISOString();
+      
+      console.log(`Calendario inverso generato: ${mesiPreparazione} mesi, ${oreTotali}h totali, ${giorniTotali} giorni`);
       console.log(`Bando analysis complete: ${bandoData.titoloEnte || 'No title'}`);
       console.log(`Final penalties: penalty=${bandoData.prove?.penalitaErrori}, correct=${bandoData.prove?.punteggioRispostaCorretta}, noAnswer=${bandoData.prove?.punteggioRispostaNonData}`);
       res.json(bandoData);
