@@ -1,11 +1,21 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatsCard } from "@/components/StatsCard";
-import { ProgressBar } from "@/components/ProgressBar";
 import { PhaseProgress, defaultPhases } from "@/components/PhaseProgress";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   BookOpen,
   Layers,
@@ -13,24 +23,27 @@ import {
   Trophy,
   ArrowRight,
   Clock,
-  Rocket,
   Target,
   Brain,
   Sparkles,
   Calendar,
   Battery,
-  Zap,
   Plus,
   FileText,
-  Users,
   Trash2,
+  CheckCircle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { Concorso } from "@shared/schema";
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [concorsoToDelete, setConcorsoToDelete] = useState<Concorso | null>(null);
 
   const { data: concorsi = [], isLoading: concorsiLoading } = useQuery<Concorso[]>({
     queryKey: ["/api/concorsi"],
@@ -41,21 +54,62 @@ export default function DashboardPage() {
     },
   });
 
-  const currentPhase = 1;
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/concorsi/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/concorsi"] });
+      toast({
+        title: "Concorso eliminato",
+        description: "Il concorso e stato eliminato con successo.",
+      });
+      setDeleteDialogOpen(false);
+      setConcorsoToDelete(null);
+    },
+    onError: () => {
+      toast({
+        title: "Errore",
+        description: "Impossibile eliminare il concorso.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const phases = defaultPhases;
   const hasConcorsi = !concorsiLoading && concorsi.length > 0;
-  const showEmptyState = !concorsiLoading && concorsi.length === 0;
   const livelloGlobale = 5;
 
-  const handlePhaseClick = (phaseId: number) => {
+  const handlePhaseClick = (phaseId: number, concorsoId?: string) => {
+    if (!concorsoId && concorsi.length > 0) {
+      concorsoId = concorsi[0].id;
+    }
     if (phaseId === 1) {
-      setLocation("/phase1");
+      setLocation(concorsoId ? `/phase1?id=${concorsoId}` : "/phase1");
+    } else if (phaseId === 2 && concorsoId) {
+      setLocation(`/phase2?id=${concorsoId}`);
+    }
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, concorso: Concorso) => {
+    e.stopPropagation();
+    setConcorsoToDelete(concorso);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (concorsoToDelete) {
+      deleteMutation.mutate(concorsoToDelete.id);
     }
   };
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return "Non specificata";
     return dateStr;
+  };
+
+  const isFase1Complete = (concorso: Concorso) => {
+    return concorso.bandoAnalysis !== null;
   };
 
   return (
@@ -107,21 +161,43 @@ export default function DashboardPage() {
             {concorsi.map((concorso) => (
               <Card 
                 key={concorso.id} 
-                className="hover-elevate cursor-pointer"
-                onClick={() => setLocation(`/phase1?id=${concorso.id}`)}
+                className="hover-elevate cursor-pointer relative"
                 data-testid={`card-concorso-${concorso.id}`}
               >
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-lg line-clamp-2">
+                    <CardTitle 
+                      className="text-lg line-clamp-2 flex-1 cursor-pointer"
+                      onClick={() => setLocation(isFase1Complete(concorso) ? `/phase2?id=${concorso.id}` : `/phase1?id=${concorso.id}`)}
+                    >
                       {concorso.nome || "Concorso senza nome"}
                     </CardTitle>
-                    <Badge variant="secondary">
-                      {concorso.posti || "?"} posti
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      {isFase1Complete(concorso) && (
+                        <Badge variant="default" className="bg-green-600">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Fase 1
+                        </Badge>
+                      )}
+                      <Badge variant="secondary">
+                        {concorso.posti || "?"} posti
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={(e) => handleDeleteClick(e, concorso)}
+                        data-testid={`button-delete-concorso-${concorso.id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent 
+                  className="space-y-3"
+                  onClick={() => setLocation(isFase1Complete(concorso) ? `/phase2?id=${concorso.id}` : `/phase1?id=${concorso.id}`)}
+                >
                   {concorso.titoloEnte && (
                     <p className="text-sm text-muted-foreground line-clamp-2">
                       {concorso.titoloEnte}
@@ -151,7 +227,7 @@ export default function DashboardPage() {
                   </div>
 
                   <Button variant="secondary" className="w-full mt-2" size="sm">
-                    Vai al Concorso
+                    {isFase1Complete(concorso) ? "Vai alla Fase 2" : "Completa Fase 1"}
                     <ArrowRight className="h-4 w-4 ml-2" />
                   </Button>
                 </CardContent>
@@ -261,15 +337,15 @@ export default function DashboardPage() {
                   Carica Nuovo Bando
                 </Button>
               </Link>
-              <Link href="/materials" className="block">
+              <Link href={hasConcorsi && concorsi.some(c => c.bandoAnalysis) ? `/phase2?id=${concorsi.find(c => c.bandoAnalysis)?.id}` : "#"} className="block">
                 <Button
                   variant="secondary"
                   className="w-full justify-start"
-                  disabled={!hasConcorsi}
+                  disabled={!hasConcorsi || !concorsi.some(c => c.bandoAnalysis)}
                   data-testid="button-action-materiali"
                 >
                   <BookOpen className="h-4 w-4 mr-2" />
-                  Gestisci Materiali
+                  Gestisci Materiali (Fase 2)
                 </Button>
               </Link>
               <Link href="/flashcards" className="block">
@@ -326,6 +402,28 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminare questo concorso?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Stai per eliminare "{concorsoToDelete?.nome || "questo concorso"}". 
+              Questa azione e irreversibile e tutti i dati associati (materiali, flashcard, progressi) verranno eliminati.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? "Eliminazione..." : "Elimina"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

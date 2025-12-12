@@ -16,6 +16,7 @@ import QuizPage from "@/pages/QuizPage";
 import PomodoroPage from "@/pages/PomodoroPage";
 import StatsPage from "@/pages/StatsPage";
 import Phase1Page from "@/pages/Phase1Page";
+import Phase2Page from "@/pages/Phase2Page";
 
 function ProtectedRoutes() {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
@@ -54,6 +55,7 @@ function ProtectedRoutes() {
             <Switch>
               <Route path="/" component={DashboardPage} />
               <Route path="/phase1" component={Phase1Page} />
+              <Route path="/phase2" component={Phase2Page} />
               <Route path="/materials" component={MaterialsPage} />
               <Route path="/flashcards" component={FlashcardsPage} />
               <Route path="/quiz" component={QuizPage} />

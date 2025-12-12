@@ -126,3 +126,24 @@ export const insertQuizResultSchema = createInsertSchema(quizResults).omit({
 
 export type InsertQuizResult = z.infer<typeof insertQuizResultSchema>;
 export type QuizResult = typeof quizResults.$inferSelect;
+
+export const materials = pgTable("materials", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  concorsoId: varchar("concorso_id").notNull().references(() => concorsi.id, { onDelete: "cascade" }),
+  nome: text("nome").notNull(),
+  tipo: text("tipo").notNull(),
+  materia: text("materia"),
+  contenuto: text("contenuto"),
+  estratto: boolean("estratto").default(false),
+  flashcardGenerate: integer("flashcard_generate").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMaterialSchema = createInsertSchema(materials).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMaterial = z.infer<typeof insertMaterialSchema>;
+export type Material = typeof materials.$inferSelect;
