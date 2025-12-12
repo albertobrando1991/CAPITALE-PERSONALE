@@ -1,54 +1,53 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 interface User {
   id: string;
-  email: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  profileImageUrl: string | null;
   name: string;
   level: number;
-  role: "user" | "admin";
 }
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  isLoading: boolean;
+  login: () => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // todo: remove mock functionality
-  const [user, setUser] = useState<User | null>({
-    id: "1",
-    email: "marco.rossi@cpa.it",
-    name: "Marco Rossi",
-    level: 25,
-    role: "user",
+  const { data: user, isLoading, error } = useQuery<User>({
+    queryKey: ["/api/auth/user"],
+    retry: false,
+    staleTime: 5 * 60 * 1000,
   });
 
-  const login = async (email: string, password: string) => {
-    console.log("Login attempt:", email, password);
-    // todo: remove mock functionality
-    setUser({
-      id: "1",
-      email,
-      name: "Marco Rossi",
-      level: 25,
-      role: "user",
-    });
+  const transformedUser = user ? {
+    ...user,
+    name: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email || "Utente",
+    level: 0,
+  } : null;
+
+  const login = () => {
+    window.location.href = "/api/login";
   };
 
   const logout = () => {
-    setUser(null);
-    console.log("User logged out");
+    window.location.href = "/api/logout";
   };
 
   return (
     <AuthContext.Provider
       value={{
-        user,
-        isAuthenticated: !!user,
+        user: transformedUser,
+        isAuthenticated: !!user && !error,
+        isLoading,
         login,
         logout,
       }}
