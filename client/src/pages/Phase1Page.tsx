@@ -68,6 +68,70 @@ export default function Phase1Page() {
     });
   };
 
+  const handleUpdateCalendario = (mesi: number, ore: number) => {
+    if (!bandoData) return;
+    
+    const oggi = bandoData.dataInizioStudio 
+      ? new Date(bandoData.dataInizioStudio) 
+      : new Date();
+    const dataEsame = new Date(oggi);
+    dataEsame.setMonth(dataEsame.getMonth() + mesi);
+    
+    const giorniTotali = Math.floor((dataEsame.getTime() - oggi.getTime()) / (1000 * 60 * 60 * 24));
+    const settimane = giorniTotali / 7;
+    const oreTotali = Math.round(settimane * ore);
+    
+    const fasiConfig = [
+      { nome: "Fase 1: Intelligence & Setup", percentuale: 10 },
+      { nome: "Fase 2: Acquisizione Strategica", percentuale: 40 },
+      { nome: "Fase 3: Consolidamento e Memorizzazione", percentuale: 30 },
+      { nome: "Fase 4: Simulazione ad Alta Fedelta", percentuale: 20 }
+    ];
+    
+    const giorniPerFase = fasiConfig.map(f => Math.floor(giorniTotali * (f.percentuale / 100)));
+    const giorniAssegnati = giorniPerFase.reduce((a, b) => a + b, 0);
+    const giorniRimanenti = giorniTotali - giorniAssegnati;
+    giorniPerFase[giorniPerFase.length - 1] += giorniRimanenti;
+    
+    const orePerFase = fasiConfig.map(f => Math.floor(oreTotali * (f.percentuale / 100)));
+    const oreAssegnate = orePerFase.reduce((a, b) => a + b, 0);
+    const oreRimanenti = oreTotali - oreAssegnate;
+    orePerFase[orePerFase.length - 1] += oreRimanenti;
+    
+    const formatDate = (d: Date) => {
+      const day = d.getDate().toString().padStart(2, '0');
+      const month = (d.getMonth() + 1).toString().padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    };
+    
+    let giorniUsati = 0;
+    const nuovoCalendario = fasiConfig.map((fase, index) => {
+      const giorniFase = giorniPerFase[index];
+      const dataInizio = new Date(oggi);
+      dataInizio.setDate(dataInizio.getDate() + giorniUsati);
+      const dataFine = new Date(dataInizio);
+      dataFine.setDate(dataFine.getDate() + giorniFase - 1);
+      giorniUsati += giorniFase;
+      
+      return {
+        fase: fase.nome,
+        dataInizio: formatDate(dataInizio),
+        dataFine: formatDate(dataFine),
+        giorniDisponibili: giorniFase,
+        oreStimate: orePerFase[index]
+      };
+    });
+    
+    setBandoData({
+      ...bandoData,
+      mesiPreparazione: mesi,
+      oreSettimanali: ore,
+      oreTotaliDisponibili: oreTotali,
+      calendarioInverso: nuovoCalendario
+    });
+  };
+
   const handleConfirm = async () => {
     try {
       const response = await fetch("/api/phase1/complete", {
@@ -182,6 +246,7 @@ export default function Phase1Page() {
               data={bandoData}
               onUpdateRequisito={handleUpdateRequisito}
               onUpdatePassaggio={handleUpdatePassaggio}
+              onUpdateCalendario={handleUpdateCalendario}
               onConfirm={handleConfirm}
             />
           )}
