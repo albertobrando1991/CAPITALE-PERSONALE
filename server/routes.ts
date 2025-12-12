@@ -265,17 +265,25 @@ export async function registerRoutes(
         messages: [
           {
             role: "system",
-            content: `Genera flashcard di studio dal testo fornito. Crea domande precise e risposte concise.
+            content: `Sei un esperto creatore di flashcard per la preparazione ai concorsi pubblici italiani. 
+Genera ALMENO 50 flashcard diverse dal testo fornito. Crea domande precise e risposte concise che coprono tutti i concetti importanti.
+
+ISTRUZIONI:
+- Genera il maggior numero possibile di flashcard (minimo 50, idealmente 60-80)
+- Copri TUTTI i concetti chiave, definizioni, articoli di legge, date, numeri
+- Varia i tipi di domande: definizioni, applicazioni, confronti, casi pratici
+- Ogni flashcard deve essere unica e non ripetitiva
+
 Restituisci SOLO un array JSON di flashcard:
 [
   {"fronte": "Domanda?", "retro": "Risposta"},
   ...
-]
-Genera 10-20 flashcard coprendo i concetti chiave.`
+]`
           },
           { role: "user", content: contentToAnalyze }
         ],
-        temperature: 0.3,
+        temperature: 0.4,
+        max_tokens: 16000,
       });
 
       const content = response.choices[0]?.message?.content || "[]";
@@ -301,6 +309,26 @@ Genera 10-20 flashcard coprendo i concetti chiave.`
     } catch (error) {
       console.error("Error generating flashcards:", error);
       res.status(500).json({ error: "Errore nella generazione flashcards" });
+    }
+  });
+
+  app.patch("/api/flashcards/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { livelloSRS } = req.body;
+      
+      if (livelloSRS === undefined || typeof livelloSRS !== "number" || !Number.isInteger(livelloSRS)) {
+        return res.status(400).json({ error: "livelloSRS (numero intero) richiesto" });
+      }
+      
+      const updated = await storage.updateFlashcard(req.params.id, userId, { livelloSRS });
+      if (!updated) {
+        return res.status(404).json({ error: "Flashcard non trovata" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating flashcard:", error);
+      res.status(500).json({ error: "Errore nell'aggiornamento flashcard" });
     }
   });
 
