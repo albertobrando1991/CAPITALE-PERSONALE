@@ -5,9 +5,15 @@ import {
   type InsertConcorso,
   type UserProgress,
   type InsertUserProgress,
+  type Material,
+  type InsertMaterial,
+  type Flashcard,
+  type InsertFlashcard,
   users, 
   concorsi,
-  userProgress
+  userProgress,
+  materials,
+  flashcards
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
@@ -24,6 +30,16 @@ export interface IStorage {
   
   getUserProgress(userId: string, concorsoId?: string): Promise<UserProgress | undefined>;
   upsertUserProgress(progress: InsertUserProgress): Promise<UserProgress>;
+
+  getMaterials(userId: string, concorsoId: string): Promise<Material[]>;
+  getMaterial(id: string, userId: string): Promise<Material | undefined>;
+  createMaterial(material: InsertMaterial): Promise<Material>;
+  updateMaterial(id: string, userId: string, data: Partial<InsertMaterial>): Promise<Material | undefined>;
+  deleteMaterial(id: string, userId: string): Promise<boolean>;
+
+  getFlashcards(userId: string, concorsoId?: string): Promise<Flashcard[]>;
+  createFlashcard(flashcard: InsertFlashcard): Promise<Flashcard>;
+  createFlashcards(flashcardList: InsertFlashcard[]): Promise<Flashcard[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -113,6 +129,60 @@ export class DatabaseStorage implements IStorage {
     
     const [created] = await db.insert(userProgress).values(progressData).returning();
     return created;
+  }
+
+  async getMaterials(userId: string, concorsoId: string): Promise<Material[]> {
+    return await db.select().from(materials).where(
+      and(eq(materials.userId, userId), eq(materials.concorsoId, concorsoId))
+    );
+  }
+
+  async getMaterial(id: string, userId: string): Promise<Material | undefined> {
+    const [material] = await db.select().from(materials).where(
+      and(eq(materials.id, id), eq(materials.userId, userId))
+    );
+    return material;
+  }
+
+  async createMaterial(material: InsertMaterial): Promise<Material> {
+    const [created] = await db.insert(materials).values(material).returning();
+    return created;
+  }
+
+  async updateMaterial(id: string, userId: string, data: Partial<InsertMaterial>): Promise<Material | undefined> {
+    const [updated] = await db
+      .update(materials)
+      .set(data)
+      .where(and(eq(materials.id, id), eq(materials.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteMaterial(id: string, userId: string): Promise<boolean> {
+    const result = await db
+      .delete(materials)
+      .where(and(eq(materials.id, id), eq(materials.userId, userId)))
+      .returning();
+    return result.length > 0;
+  }
+
+  async getFlashcards(userId: string, concorsoId?: string): Promise<Flashcard[]> {
+    if (concorsoId) {
+      return await db.select().from(flashcards).where(
+        and(eq(flashcards.userId, userId), eq(flashcards.concorsoId, concorsoId))
+      );
+    }
+    return await db.select().from(flashcards).where(eq(flashcards.userId, userId));
+  }
+
+  async createFlashcard(flashcard: InsertFlashcard): Promise<Flashcard> {
+    const [created] = await db.insert(flashcards).values(flashcard).returning();
+    return created;
+  }
+
+  async createFlashcards(flashcardList: InsertFlashcard[]): Promise<Flashcard[]> {
+    if (flashcardList.length === 0) return [];
+    return await db.insert(flashcards).values(flashcardList).returning();
   }
 }
 

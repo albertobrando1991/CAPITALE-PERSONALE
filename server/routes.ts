@@ -2,7 +2,8 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertConcorsoSchema } from "@shared/schema";
+import { insertConcorsoSchema, insertMaterialSchema } from "@shared/schema";
+import { z } from "zod";
 import OpenAI from "openai";
 import multer from "multer";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -128,6 +129,178 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting concorso:", error);
       res.status(500).json({ error: "Errore nell'eliminazione del concorso" });
+    }
+  });
+
+  app.get("/api/materials", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const concorsoId = req.query.concorsoId as string;
+      if (!concorsoId) {
+        return res.status(400).json({ error: "concorsoId richiesto" });
+      }
+      const materials = await storage.getMaterials(userId, concorsoId);
+      res.json(materials);
+    } catch (error) {
+      console.error("Error fetching materials:", error);
+      res.status(500).json({ error: "Errore nel recupero materiali" });
+    }
+  });
+
+  app.post("/api/materials", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const data = { ...req.body, userId };
+      
+      const validated = insertMaterialSchema.parse(data);
+      
+      const concorso = await storage.getConcorso(validated.concorsoId, userId);
+      if (!concorso) {
+        return res.status(403).json({ error: "Concorso non trovato o non autorizzato" });
+      }
+      
+      const material = await storage.createMaterial(validated);
+      res.status(201).json(material);
+    } catch (error: any) {
+      console.error("Error creating material:", error);
+      if (error.name === "ZodError") {
+        return res.status(400).json({ error: "Dati non validi", details: error.errors });
+      }
+      res.status(500).json({ error: "Errore nella creazione materiale" });
+    }
+  });
+
+  app.delete("/api/materials/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const deleted = await storage.deleteMaterial(req.params.id, userId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Materiale non trovato" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting material:", error);
+      res.status(500).json({ error: "Errore nell'eliminazione materiale" });
+    }
+  });
+
+  app.get("/api/flashcards", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const concorsoId = req.query.concorsoId as string | undefined;
+      const flashcards = await storage.getFlashcards(userId, concorsoId);
+      res.json(flashcards);
+    } catch (error) {
+      console.error("Error fetching flashcards:", error);
+      res.status(500).json({ error: "Errore nel recupero flashcards" });
+    }
+  });
+
+  app.post("/api/upload-material", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const concorsoId = req.body.concorsoId;
+      const materia = req.body.materia || "Generale";
+      
+      if (!req.file || !concorsoId) {
+        return res.status(400).json({ error: "File e concorsoId richiesti" });
+      }
+
+      const concorso = await storage.getConcorso(concorsoId, userId);
+      if (!concorso) {
+        return res.status(403).json({ error: "Concorso non trovato o non autorizzato" });
+      }
+
+      let contenuto: string;
+      if (req.file.mimetype === "application/pdf") {
+        contenuto = await extractTextFromPDF(req.file.buffer);
+      } else {
+        contenuto = req.file.buffer.toString("utf-8");
+      }
+
+      const material = await storage.createMaterial({
+        userId,
+        concorsoId,
+        nome: req.file.originalname,
+        tipo: "pdf",
+        materia,
+        contenuto,
+        estratto: true,
+      });
+
+      res.status(201).json(material);
+    } catch (error) {
+      console.error("Error uploading material:", error);
+      res.status(500).json({ error: "Errore nel caricamento materiale" });
+    }
+  });
+
+  app.post("/api/generate-flashcards", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { materialId } = req.body;
+
+      if (!materialId) {
+        return res.status(400).json({ error: "materialId richiesto" });
+      }
+
+      const material = await storage.getMaterial(materialId, userId);
+      if (!material) {
+        return res.status(404).json({ error: "Materiale non trovato" });
+      }
+      if (!material.contenuto) {
+        return res.status(400).json({ error: "Materiale senza contenuto" });
+      }
+
+      const concorso = await storage.getConcorso(material.concorsoId, userId);
+      if (!concorso) {
+        return res.status(403).json({ error: "Concorso non autorizzato" });
+      }
+
+      const openai = getOpenAIClient();
+      const contentToAnalyze = material.contenuto.substring(0, 30000);
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `Genera flashcard di studio dal testo fornito. Crea domande precise e risposte concise.
+Restituisci SOLO un array JSON di flashcard:
+[
+  {"fronte": "Domanda?", "retro": "Risposta"},
+  ...
+]
+Genera 10-20 flashcard coprendo i concetti chiave.`
+          },
+          { role: "user", content: contentToAnalyze }
+        ],
+        temperature: 0.3,
+      });
+
+      const content = response.choices[0]?.message?.content || "[]";
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      const flashcardsData = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+
+      const flashcardsToInsert = flashcardsData.map((f: any) => ({
+        userId,
+        concorsoId: material.concorsoId,
+        materia: material.materia || "Generale",
+        fonte: material.nome,
+        fronte: f.fronte,
+        retro: f.retro,
+        tipo: "concetto",
+      }));
+
+      const created = await storage.createFlashcards(flashcardsToInsert);
+      await storage.updateMaterial(materialId, userId, { 
+        flashcardGenerate: created.length 
+      });
+
+      res.json({ count: created.length, flashcards: created });
+    } catch (error) {
+      console.error("Error generating flashcards:", error);
+      res.status(500).json({ error: "Errore nella generazione flashcards" });
     }
   });
 

@@ -1,0 +1,576 @@
+import { useState } from "react";
+import { Link, useSearch, useLocation } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  ArrowLeft,
+  BookOpen,
+  Upload,
+  FileText,
+  Sparkles,
+  Layers,
+  Plus,
+  Loader2,
+  CheckCircle,
+  Brain,
+  Target,
+  Trash2,
+} from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Concorso, Material, Flashcard } from "@shared/schema";
+
+interface BandoData {
+  materie?: Array<{ nome: string; microArgomenti?: string[] }>;
+}
+
+export default function Phase2Page() {
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const searchString = useSearch();
+  const params = new URLSearchParams(searchString);
+  const concorsoId = params.get("id");
+
+  const [isUploading, setIsUploading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState<string | null>(null);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [newMaterial, setNewMaterial] = useState({
+    nome: "",
+    tipo: "appunti",
+    materia: "",
+    contenuto: "",
+  });
+
+  const { data: concorso, isLoading: loadingConcorso } = useQuery<Concorso>({
+    queryKey: ["/api/concorsi", concorsoId],
+    queryFn: async () => {
+      const res = await fetch(`/api/concorsi/${concorsoId}`);
+      if (!res.ok) throw new Error("Failed to fetch concorso");
+      return res.json();
+    },
+    enabled: !!concorsoId,
+  });
+
+  const { data: materials = [], isLoading: loadingMaterials } = useQuery<Material[]>({
+    queryKey: ["/api/materials", concorsoId],
+    queryFn: async () => {
+      const res = await fetch(`/api/materials?concorsoId=${concorsoId}`);
+      if (!res.ok) throw new Error("Failed to fetch materials");
+      return res.json();
+    },
+    enabled: !!concorsoId,
+  });
+
+  const { data: flashcards = [] } = useQuery<Flashcard[]>({
+    queryKey: ["/api/flashcards", concorsoId],
+    queryFn: async () => {
+      const res = await fetch(`/api/flashcards?concorsoId=${concorsoId}`);
+      if (!res.ok) throw new Error("Failed to fetch flashcards");
+      return res.json();
+    },
+    enabled: !!concorsoId,
+  });
+
+  const addMaterialMutation = useMutation({
+    mutationFn: async (data: typeof newMaterial) => {
+      return apiRequest("POST", "/api/materials", {
+        ...data,
+        concorsoId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/materials", concorsoId] });
+      toast({ title: "Materiale aggiunto" });
+      setAddDialogOpen(false);
+      setNewMaterial({ nome: "", tipo: "appunti", materia: "", contenuto: "" });
+    },
+    onError: () => {
+      toast({ title: "Errore", description: "Impossibile aggiungere materiale", variant: "destructive" });
+    },
+  });
+
+  const deleteMaterialMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/materials/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/materials", concorsoId] });
+      toast({ title: "Materiale eliminato" });
+    },
+  });
+
+  const generateFlashcardsMutation = useMutation({
+    mutationFn: async (materialId: string) => {
+      setIsGenerating(materialId);
+      const res = await fetch("/api/generate-flashcards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ materialId, concorsoId }),
+      });
+      if (!res.ok) throw new Error("Failed to generate flashcards");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/flashcards", concorsoId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/materials", concorsoId] });
+      toast({
+        title: "Flashcard generate",
+        description: `${data.count || 0} flashcard create con successo.`,
+      });
+      setIsGenerating(null);
+    },
+    onError: () => {
+      toast({ title: "Errore", description: "Impossibile generare flashcard", variant: "destructive" });
+      setIsGenerating(null);
+    },
+  });
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("concorsoId", concorsoId || "");
+      formData.append("materia", newMaterial.materia || "Generale");
+
+      const res = await fetch("/api/upload-material", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("Upload failed");
+
+      queryClient.invalidateQueries({ queryKey: ["/api/materials", concorsoId] });
+      toast({ title: "File caricato", description: "Il materiale e stato estratto con successo." });
+    } catch (error) {
+      toast({ title: "Errore", description: "Impossibile caricare il file", variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const bandoData = concorso?.bandoAnalysis as BandoData | null;
+  const materie = bandoData?.materie || [];
+  const totalFlashcards = flashcards.length;
+  const materialsWithFlashcards = materials.filter((m) => (m.flashcardGenerate || 0) > 0).length;
+
+  if (!concorsoId) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <Card className="border-destructive">
+          <CardContent className="p-6 text-center">
+            <p>Nessun concorso selezionato. Torna alla dashboard.</p>
+            <Link href="/">
+              <Button className="mt-4">Vai alla Dashboard</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (loadingConcorso) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!concorso?.bandoAnalysis) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <Card className="border-yellow-500/50">
+          <CardContent className="p-6">
+            <div className="flex items-start gap-4">
+              <Target className="h-8 w-8 text-yellow-600" />
+              <div>
+                <h3 className="font-semibold text-lg">Completa prima la Fase 1</h3>
+                <p className="text-muted-foreground mt-1">
+                  Devi analizzare il bando prima di procedere con l'acquisizione dei materiali.
+                </p>
+                <Link href={`/phase1?id=${concorsoId}`}>
+                  <Button className="mt-4">Vai alla Fase 1</Button>
+                </Link>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="flex items-center gap-4 flex-wrap">
+        <Link href="/">
+          <Button variant="ghost" size="icon" data-testid="button-back">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        </Link>
+        <div className="flex-1">
+          <h1 className="text-3xl font-semibold" data-testid="text-phase2-title">
+            FASE 2: Acquisizione Strategica
+          </h1>
+          <p className="text-muted-foreground mt-1">{concorso.nome}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 bg-primary/10 rounded-lg">
+              <FileText className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{materials.length}</p>
+              <p className="text-sm text-muted-foreground">Materiali</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 bg-green-500/10 rounded-lg">
+              <Layers className="h-6 w-6 text-green-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{totalFlashcards}</p>
+              <p className="text-sm text-muted-foreground">Flashcard Generate</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 bg-blue-500/10 rounded-lg">
+              <BookOpen className="h-6 w-6 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{materie.length}</p>
+              <p className="text-sm text-muted-foreground">Materie dal Bando</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Tabs defaultValue="materials" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="materials" data-testid="tab-materials">
+            <FileText className="h-4 w-4 mr-2" />
+            Materiali
+          </TabsTrigger>
+          <TabsTrigger value="materie" data-testid="tab-materie">
+            <BookOpen className="h-4 w-4 mr-2" />
+            Materie
+          </TabsTrigger>
+          <TabsTrigger value="flashcards" data-testid="tab-flashcards">
+            <Layers className="h-4 w-4 mr-2" />
+            Flashcard ({totalFlashcards})
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="materials" className="space-y-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <h2 className="text-xl font-semibold">I tuoi Materiali di Studio</h2>
+            <div className="flex gap-2">
+              <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button data-testid="button-add-material">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Aggiungi Materiale
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Aggiungi Nuovo Materiale</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 mt-4">
+                    <div>
+                      <label className="text-sm font-medium">Nome</label>
+                      <Input
+                        value={newMaterial.nome}
+                        onChange={(e) => setNewMaterial({ ...newMaterial, nome: e.target.value })}
+                        placeholder="Es: Appunti Diritto Amministrativo"
+                        data-testid="input-material-nome"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Tipo</label>
+                      <Select
+                        value={newMaterial.tipo}
+                        onValueChange={(v) => setNewMaterial({ ...newMaterial, tipo: v })}
+                      >
+                        <SelectTrigger data-testid="select-material-tipo">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="appunti">Appunti</SelectItem>
+                          <SelectItem value="libro">Libro/Manuale</SelectItem>
+                          <SelectItem value="dispensa">Dispensa</SelectItem>
+                          <SelectItem value="video">Video/Corso</SelectItem>
+                          <SelectItem value="altro">Altro</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Materia</label>
+                      <Select
+                        value={newMaterial.materia}
+                        onValueChange={(v) => setNewMaterial({ ...newMaterial, materia: v })}
+                      >
+                        <SelectTrigger data-testid="select-material-materia">
+                          <SelectValue placeholder="Seleziona materia" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {materie.map((m) => (
+                            <SelectItem key={m.nome} value={m.nome}>
+                              {m.nome}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="Generale">Generale</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Contenuto (opzionale)</label>
+                      <Textarea
+                        value={newMaterial.contenuto}
+                        onChange={(e) => setNewMaterial({ ...newMaterial, contenuto: e.target.value })}
+                        placeholder="Incolla qui il testo del materiale per generare flashcard..."
+                        rows={6}
+                        data-testid="textarea-material-contenuto"
+                      />
+                    </div>
+                    <Button
+                      className="w-full"
+                      onClick={() => addMaterialMutation.mutate(newMaterial)}
+                      disabled={!newMaterial.nome || addMaterialMutation.isPending}
+                      data-testid="button-save-material"
+                    >
+                      {addMaterialMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : null}
+                      Salva Materiale
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+              <label>
+                <input
+                  type="file"
+                  accept=".pdf,.txt"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={isUploading}
+                />
+                <Button variant="outline" asChild disabled={isUploading}>
+                  <span className="cursor-pointer" data-testid="button-upload-file">
+                    {isUploading ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Upload className="h-4 w-4 mr-2" />
+                    )}
+                    Carica PDF
+                  </span>
+                </Button>
+              </label>
+            </div>
+          </div>
+
+          {loadingMaterials ? (
+            <div className="flex justify-center p-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : materials.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center">
+                <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="font-semibold text-lg">Nessun materiale</h3>
+                <p className="text-muted-foreground mt-1">
+                  Aggiungi materiali di studio per generare flashcard con l'AI.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {materials.map((material) => (
+                <Card key={material.id} data-testid={`card-material-${material.id}`}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <CardTitle className="text-base">{material.nome}</CardTitle>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{material.tipo}</Badge>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => deleteMaterialMutation.mutate(material.id)}
+                          data-testid={`button-delete-material-${material.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {material.materia && (
+                      <Badge variant="secondary">{material.materia}</Badge>
+                    )}
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        Flashcard generate: {material.flashcardGenerate || 0}
+                      </span>
+                      {(material.flashcardGenerate || 0) > 0 && (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      )}
+                    </div>
+                    <Button
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => generateFlashcardsMutation.mutate(material.id)}
+                      disabled={isGenerating === material.id || !material.contenuto}
+                      data-testid={`button-generate-flashcards-${material.id}`}
+                    >
+                      {isGenerating === material.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 mr-2" />
+                      )}
+                      Genera Flashcard AI
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="materie" className="space-y-4">
+          <h2 className="text-xl font-semibold">Materie Estratte dal Bando</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {materie.map((materia, index) => {
+              const materiaFlashcards = flashcards.filter((f) => f.materia === materia.nome).length;
+              const materiaMaterials = materials.filter((m) => m.materia === materia.nome).length;
+              return (
+                <Card key={index} data-testid={`card-materia-${index}`}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Brain className="h-4 w-4 text-primary" />
+                      {materia.nome}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Materiali:</span>
+                      <span className="font-medium">{materiaMaterials}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Flashcard:</span>
+                      <span className="font-medium">{materiaFlashcards}</span>
+                    </div>
+                    {materia.microArgomenti && materia.microArgomenti.length > 0 && (
+                      <div className="pt-2">
+                        <p className="text-xs text-muted-foreground mb-1">Argomenti:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {materia.microArgomenti.slice(0, 3).map((arg, i) => (
+                            <Badge key={i} variant="outline" className="text-xs">
+                              {arg}
+                            </Badge>
+                          ))}
+                          {materia.microArgomenti.length > 3 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{materia.microArgomenti.length - 3}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="flashcards" className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-xl font-semibold">Flashcard Generate</h2>
+            {flashcards.length > 0 && (
+              <Link href="/flashcards">
+                <Button data-testid="button-study-flashcards">
+                  <Layers className="h-4 w-4 mr-2" />
+                  Inizia Studio
+                </Button>
+              </Link>
+            )}
+          </div>
+
+          {flashcards.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center">
+                <Layers className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="font-semibold text-lg">Nessuna flashcard</h3>
+                <p className="text-muted-foreground mt-1">
+                  Aggiungi materiali e genera flashcard con l'AI per iniziare a studiare.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {Object.entries(
+                  flashcards.reduce((acc, f) => {
+                    acc[f.materia] = (acc[f.materia] || 0) + 1;
+                    return acc;
+                  }, {} as Record<string, number>)
+                ).map(([materia, count]) => (
+                  <Card key={materia}>
+                    <CardContent className="p-4">
+                      <p className="text-sm text-muted-foreground truncate">{materia}</p>
+                      <p className="text-2xl font-bold">{count}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium">Progresso Flashcard</span>
+                    <span className="text-sm text-muted-foreground">
+                      {flashcards.filter((f) => f.masterate).length} / {flashcards.length} masterate
+                    </span>
+                  </div>
+                  <Progress
+                    value={(flashcards.filter((f) => f.masterate).length / flashcards.length) * 100}
+                  />
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
