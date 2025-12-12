@@ -105,7 +105,7 @@ Restituisci SOLO un oggetto JSON valido:
   "materie": [
     {
       "nome": "Nome materia ESATTO come da bando",
-      "microArgomenti": ["Riferimenti normativi specifici citati nel bando"],
+      "microArgomenti": ["TUTTI gli argomenti/sotto-argomenti citati nel bando per questa materia, inclusi riferimenti normativi, leggi, decreti, codici"],
       "peso": percentuale_se_indicata
     }
   ],
@@ -133,7 +133,8 @@ ISTRUZIONI CRITICHE:
 - Per le PENALITÀ: cerca parole chiave come "penalità", "punteggio negativo", "risposta errata detrarrà", "meno X punti"
 - Per il PORTALE: quasi tutti i concorsi pubblici usano INPA - verifica nel bando
 - NON inventare informazioni: se un dato non è presente, usa null
-- Estrai TUTTI i riferimenti normativi citati nelle materie d'esame`;
+- Per le MATERIE D'ESAME: estrai TUTTI i sotto-argomenti, riferimenti normativi (leggi, decreti, codici), e aree tematiche specifiche menzionate per OGNI materia. Non riassumere, copia letteralmente dal bando. Cerca nell'articolo relativo alla "prova scritta" o "prova preselettiva" l'elenco completo delle materie e dei loro argomenti.
+- Se una materia cita più argomenti (es. "principi generali", "procedimento amministrativo", "atti e provvedimenti"), elenca OGNUNO separatamente nei microArgomenti`;
 
       const contentToSend = fileContent.substring(0, 100000);
       

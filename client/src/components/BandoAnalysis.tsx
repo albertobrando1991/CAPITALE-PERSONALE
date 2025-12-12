@@ -14,6 +14,7 @@ import {
   ArrowRight,
   Target,
   ListChecks,
+  GraduationCap,
 } from "lucide-react";
 
 export interface BandoData {
@@ -22,6 +23,12 @@ export interface BandoData {
   scadenzaDomanda: string;
   dataPresuntaEsame: string;
   posti: number;
+  profili?: {
+    nome: string;
+    posti: number;
+    titoliStudio: string[];
+    altriRequisiti: string[];
+  }[];
   requisiti: {
     titolo: string;
     soddisfatto: boolean | null;
@@ -146,6 +153,35 @@ export function BandoAnalysis({
           </div>
         </CardContent>
       </Card>
+
+      {data.profili && data.profili.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <GraduationCap className="h-5 w-5 text-primary" />
+              Titoli di Studio Richiesti
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {data.profili.map((profilo, index) => (
+                <div key={index} data-testid={`profilo-${index}`}>
+                  {data.profili && data.profili.length > 1 && (
+                    <p className="font-semibold mb-2">{profilo.nome} ({profilo.posti} posti)</p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {profilo.titoliStudio.map((titolo, i) => (
+                      <Badge key={i} variant="outline" className="text-sm py-1 px-2">
+                        {titolo}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
