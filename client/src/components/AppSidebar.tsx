@@ -36,7 +36,7 @@ interface AppSidebarProps {
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Fase 1: Setup", url: "/phase1", icon: Sparkles },
-  { title: "Materiali", url: "/materials", icon: BookOpen },
+  { title: "Fase 2: Acquisizione", url: "/phase2", icon: BookOpen },
   { title: "Flashcard", url: "/flashcards", icon: Layers },
   { title: "Quiz", url: "/quiz", icon: HelpCircle },
   { title: "Pomodoro", url: "/pomodoro", icon: Timer },

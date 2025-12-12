@@ -46,24 +46,31 @@ export default function FlashcardsPage() {
   const [isStudying, setIsStudying] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [completed, setCompleted] = useState(0);
+  const [sessionComplete, setSessionComplete] = useState(false);
 
   const handleResponse = (id: string, response: "easy" | "hard" | "forgot") => {
     console.log("Response for", id, ":", response);
+    const newCompleted = completed + 1;
+    setCompleted(newCompleted);
+    
     if (currentIndex < flashcards.length - 1) {
       setCurrentIndex((prev) => prev + 1);
+    } else {
+      setSessionComplete(true);
     }
-    setCompleted((prev) => prev + 1);
   };
 
   const startStudying = () => {
     setIsStudying(true);
     setCurrentIndex(0);
     setCompleted(0);
+    setSessionComplete(false);
   };
 
   const stopStudying = () => {
     setIsStudying(false);
     setCurrentIndex(0);
+    setSessionComplete(false);
   };
 
   if (flashcards.length === 0) {
@@ -81,6 +88,30 @@ export default function FlashcardsPage() {
   }
 
   if (isStudying) {
+    if (sessionComplete) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center p-6">
+          <div className="text-center space-y-4">
+            <div className="p-4 bg-green-500/10 rounded-full inline-block">
+              <Layers className="h-12 w-12 text-green-600" />
+            </div>
+            <h2 className="text-2xl font-semibold">Sessione Completata!</h2>
+            <p className="text-muted-foreground">
+              Hai completato <span className="font-bold">{completed}</span> flashcard
+            </p>
+            <div className="flex gap-3 justify-center pt-4">
+              <Button variant="outline" onClick={stopStudying} data-testid="button-back-to-list">
+                Torna alla Lista
+              </Button>
+              <Button onClick={startStudying} data-testid="button-restart-study">
+                Ricomincia
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen flex flex-col">
         <header className="flex items-center justify-between gap-4 p-4 border-b">
@@ -110,7 +141,7 @@ export default function FlashcardsPage() {
 
         <footer className="p-4 border-t text-center">
           <p className="text-sm text-muted-foreground">
-            Completate oggi: <span className="font-medium">{completed}</span>
+            Completate: <span className="font-medium">{completed}</span> / {flashcards.length}
           </p>
         </footer>
       </div>
