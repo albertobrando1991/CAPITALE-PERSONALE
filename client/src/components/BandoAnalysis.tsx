@@ -3,6 +3,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
 import {
   CheckCircle,
   XCircle,
@@ -15,6 +17,7 @@ import {
   Target,
   ListChecks,
   GraduationCap,
+  Settings2,
 } from "lucide-react";
 
 export interface BandoData {
@@ -59,12 +62,16 @@ export interface BandoData {
   }[];
   oreTotaliDisponibili: number;
   giorniTapering: number;
+  mesiPreparazione?: number;
+  oreSettimanali?: number;
+  dataInizioStudio?: string;
 }
 
 interface BandoAnalysisProps {
   data: BandoData;
   onUpdateRequisito: (index: number, value: boolean) => void;
   onUpdatePassaggio: (index: number, value: boolean) => void;
+  onUpdateCalendario?: (mesi: number, oreSettimanali: number) => void;
   onConfirm: () => void;
 }
 
@@ -72,10 +79,14 @@ export function BandoAnalysis({
   data,
   onUpdateRequisito,
   onUpdatePassaggio,
+  onUpdateCalendario,
   onConfirm,
 }: BandoAnalysisProps) {
   const allRequisitiSoddisfatti = data.requisiti.every((r) => r.soddisfatto === true);
   const hasBlockingRequisiti = data.requisiti.some((r) => r.soddisfatto === false);
+  
+  const mesiPreparazione = data.mesiPreparazione ?? 6;
+  const oreSettimanali = data.oreSettimanali ?? 15;
 
   return (
     <div className="space-y-6" data-testid="bando-analysis">
@@ -307,6 +318,57 @@ export function BandoAnalysis({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {onUpdateCalendario && (
+            <div className="p-4 bg-muted rounded-lg space-y-4" data-testid="calendario-controls">
+              <div className="flex items-center gap-2 mb-2">
+                <Settings2 className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Personalizza il tuo piano di studio</span>
+              </div>
+              
+              <div className="space-y-3">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label htmlFor="mesi-slider" className="text-sm">Mesi di preparazione</Label>
+                    <Badge variant="outline" data-testid="text-mesi-value">{mesiPreparazione} mesi</Badge>
+                  </div>
+                  <Slider
+                    id="mesi-slider"
+                    min={1}
+                    max={12}
+                    step={1}
+                    value={[mesiPreparazione]}
+                    onValueChange={(value) => onUpdateCalendario(value[0], oreSettimanali)}
+                    data-testid="slider-mesi"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>1 mese</span>
+                    <span>12 mesi</span>
+                  </div>
+                </div>
+                
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label htmlFor="ore-slider" className="text-sm">Ore settimanali</Label>
+                    <Badge variant="outline" data-testid="text-ore-value">{oreSettimanali}h/settimana</Badge>
+                  </div>
+                  <Slider
+                    id="ore-slider"
+                    min={5}
+                    max={40}
+                    step={1}
+                    value={[oreSettimanali]}
+                    onValueChange={(value) => onUpdateCalendario(mesiPreparazione, value[0])}
+                    data-testid="slider-ore"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>5h</span>
+                    <span>40h</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div className="p-4 bg-primary/10 rounded-lg text-center">
               <Clock className="h-6 w-6 text-primary mx-auto mb-2" />
