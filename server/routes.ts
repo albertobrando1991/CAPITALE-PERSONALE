@@ -196,6 +196,40 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/flashcard-session", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const progress = await storage.getUserProgress(userId);
+      res.json(progress?.flashcardSession || null);
+    } catch (error) {
+      console.error("Error fetching flashcard session:", error);
+      res.status(500).json({ error: "Errore nel recupero sessione" });
+    }
+  });
+
+  app.post("/api/flashcard-session", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const sessionData = req.body;
+      await storage.upsertUserProgress({ userId, flashcardSession: sessionData });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error saving flashcard session:", error);
+      res.status(500).json({ error: "Errore nel salvataggio sessione" });
+    }
+  });
+
+  app.delete("/api/flashcard-session", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      await storage.upsertUserProgress({ userId, flashcardSession: null });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error clearing flashcard session:", error);
+      res.status(500).json({ error: "Errore nella cancellazione sessione" });
+    }
+  });
+
   app.post("/api/upload-material", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
     try {
       const userId = getUserId(req);

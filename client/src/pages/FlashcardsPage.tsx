@@ -1,44 +1,19 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Flashcard } from "@/components/Flashcard";
 import { EmptyState } from "@/components/EmptyState";
 import { ArrowLeft, Layers, X, Loader2, Play, RotateCcw } from "lucide-react";
 import { Link } from "wouter";
 import { Progress } from "@/components/ui/progress";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Flashcard as FlashcardType } from "@shared/schema";
-
-const STORAGE_KEY = "flashcard_session_progress";
 
 interface SessionProgress {
   currentIndex: number;
   completedIds: string[];
   totalCards: number;
   savedAt: number;
-}
-
-function saveProgress(progress: SessionProgress) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
-}
-
-function loadProgress(): SessionProgress | null {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return null;
-  try {
-    const progress = JSON.parse(saved) as SessionProgress;
-    const hoursSinceSaved = (Date.now() - progress.savedAt) / (1000 * 60 * 60);
-    if (hoursSinceSaved > 24) {
-      localStorage.removeItem(STORAGE_KEY);
-      return null;
-    }
-    return progress;
-  } catch {
-    return null;
-  }
-}
-
-function clearProgress() {
-  localStorage.removeItem(STORAGE_KEY);
 }
 
 function mapFlashcardForDisplay(card: FlashcardType) {
@@ -67,18 +42,26 @@ export default function FlashcardsPage() {
     queryKey: ["/api/flashcards"],
   });
 
+  const { data: savedProgress, isLoading: isLoadingSession } = useQuery<SessionProgress | null>({
+    queryKey: ["/api/flashcard-session"],
+  });
+
+  const saveSessionMutation = useMutation({
+    mutationFn: (data: SessionProgress) => apiRequest("/api/flashcard-session", { method: "POST", body: JSON.stringify(data), headers: { "Content-Type": "application/json" } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/flashcard-session"] }),
+  });
+
+  const clearSessionMutation = useMutation({
+    mutationFn: () => apiRequest("/api/flashcard-session", { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/flashcard-session"] }),
+  });
+
   const flashcards = flashcardsRaw.map(mapFlashcardForDisplay);
 
   const [isStudying, setIsStudying] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [sessionComplete, setSessionComplete] = useState(false);
-  const [savedProgress, setSavedProgress] = useState<SessionProgress | null>(null);
-
-  useEffect(() => {
-    const progress = loadProgress();
-    setSavedProgress(progress);
-  }, []);
 
   const handleResponse = (id: string, response: "easy" | "hard" | "forgot") => {
     console.log("Response for", id, ":", response);
@@ -88,7 +71,7 @@ export default function FlashcardsPage() {
     if (currentIndex < flashcards.length - 1) {
       const newIndex = currentIndex + 1;
       setCurrentIndex(newIndex);
-      saveProgress({
+      saveSessionMutation.mutate({
         currentIndex: newIndex,
         completedIds: newCompletedIds,
         totalCards: flashcards.length,
@@ -96,7 +79,7 @@ export default function FlashcardsPage() {
       });
     } else {
       setSessionComplete(true);
-      clearProgress();
+      clearSessionMutation.mutate();
     }
   };
 
@@ -104,7 +87,7 @@ export default function FlashcardsPage() {
     if (fromBeginning) {
       setCurrentIndex(0);
       setCompletedIds([]);
-      clearProgress();
+      clearSessionMutation.mutate();
     }
     setIsStudying(true);
     setSessionComplete(false);
@@ -123,13 +106,7 @@ export default function FlashcardsPage() {
 
   const stopStudying = () => {
     if (completedIds.length > 0 && currentIndex < flashcards.length) {
-      saveProgress({
-        currentIndex,
-        completedIds,
-        totalCards: flashcards.length,
-        savedAt: Date.now(),
-      });
-      setSavedProgress({
+      saveSessionMutation.mutate({
         currentIndex,
         completedIds,
         totalCards: flashcards.length,
@@ -141,11 +118,10 @@ export default function FlashcardsPage() {
   };
 
   const discardProgress = () => {
-    clearProgress();
-    setSavedProgress(null);
+    clearSessionMutation.mutate();
   };
 
-  if (isLoading) {
+  if (isLoading || isLoadingSession) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -180,7 +156,7 @@ export default function FlashcardsPage() {
               Hai completato <span className="font-bold">{completedIds.length}</span> flashcard
             </p>
             <div className="flex gap-3 justify-center pt-4">
-              <Button variant="outline" onClick={stopStudying} data-testid="button-back-to-list">
+              <Button variant="outline" onClick={() => { setIsStudying(false); setSessionComplete(false); }} data-testid="button-back-to-list">
                 Torna alla Lista
               </Button>
               <Button onClick={() => startStudying(true)} data-testid="button-restart-study">
@@ -240,6 +216,8 @@ export default function FlashcardsPage() {
     );
   }
 
+  const hasValidProgress = savedProgress && savedProgress.currentIndex < flashcards.length;
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center gap-4">
@@ -254,8 +232,8 @@ export default function FlashcardsPage() {
             {flashcards.length} flashcard disponibili
           </p>
         </div>
-        <div className="flex gap-2">
-          {savedProgress && savedProgress.currentIndex < flashcards.length && (
+        <div className="flex gap-2 flex-wrap justify-end">
+          {hasValidProgress && (
             <>
               <Button variant="outline" onClick={discardProgress} data-testid="button-discard-progress">
                 Scarta Progresso
@@ -268,18 +246,18 @@ export default function FlashcardsPage() {
           )}
           <Button 
             onClick={() => startStudying(true)} 
-            variant={savedProgress ? "outline" : "default"}
+            variant={hasValidProgress ? "outline" : "default"}
             data-testid="button-start-study"
           >
             <Layers className="h-4 w-4 mr-2" />
-            {savedProgress ? "Ricomincia" : "Inizia Ripasso"}
+            {hasValidProgress ? "Ricomincia" : "Inizia Ripasso"}
           </Button>
         </div>
       </div>
 
-      {savedProgress && savedProgress.currentIndex < flashcards.length && (
+      {hasValidProgress && (
         <div className="bg-muted/50 border rounded-lg p-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div>
               <p className="font-medium">Sessione in sospeso</p>
               <p className="text-sm text-muted-foreground">
@@ -299,10 +277,11 @@ export default function FlashcardsPage() {
           <div
             key={card.id}
             className={`p-4 bg-card border border-card-border rounded-lg hover-elevate cursor-pointer ${
-              savedProgress?.completedIds.includes(card.id) ? "opacity-50" : ""
+              savedProgress?.completedIds?.includes(card.id) ? "opacity-50" : ""
             }`}
             onClick={() => {
               setCurrentIndex(index);
+              setCompletedIds([]);
               setIsStudying(true);
               setSessionComplete(false);
             }}

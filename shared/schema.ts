@@ -68,6 +68,7 @@ export const userProgress = pgTable("user_progress", {
   oreStudioTotali: real("ore_studio_totali").default(0),
   serieAttiva: integer("serie_attiva").default(0),
   recordSerie: integer("record_serie").default(0),
+  flashcardSession: jsonb("flashcard_session"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
