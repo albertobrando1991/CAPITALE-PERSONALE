@@ -15,8 +15,26 @@ import FlashcardsPage from "@/pages/FlashcardsPage";
 import QuizPage from "@/pages/QuizPage";
 import PomodoroPage from "@/pages/PomodoroPage";
 import StatsPage from "@/pages/StatsPage";
-import Phase1Page from "@/pages/Phase1Page";
+
 import Phase2Page from "@/pages/Phase2Page";
+import SimulazioneSetupPage from "@/pages/SimulazioneSetupPage";
+import SimulazioneEsamePage from "@/pages/SimulazioneEsamePage";
+import SimulazioneReportPage from "@/pages/SimulazioneReportPage";
+import SimulazioneRivediPage from "@/pages/SimulazioneRivediPage";
+import SimulazioniListPage from "@/pages/SimulazioniListPage";
+import SimulazioniPage from "@/pages/SimulazioniPage";
+import Fase0SetupPage from "@/pages/Fase0SetupPage";
+import Fase1SQ3RPage from "@/pages/Fase1SQ3RPage";
+import CapitoloPage from "@/pages/CapitoloPage";
+import LibreriaPubblicaPage from "@/pages/LibreriaPubblicaPage";
+import SetupFontiPage from "@/pages/SetupFontiPage";
+import UploadDispensePage from "@/pages/UploadDispensePage";
+import RisorseConsigliePage from "@/pages/RisorseConsigliePage";
+import PricingPage from "@/pages/PricingPage";
+import PodcastDatabasePage from "@/pages/PodcastDatabasePage";
+import MyPodcastRequestsPage from "@/pages/MyPodcastRequestsPage";
+import AdminDashboard from "@/pages/AdminDashboard";
+import { SpecialistaProvider } from "@/contexts/SpecialistaContext";
 
 function ProtectedRoutes() {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
@@ -54,13 +72,32 @@ function ProtectedRoutes() {
           <main className="flex-1 overflow-auto">
             <Switch>
               <Route path="/" component={DashboardPage} />
-              <Route path="/phase1" component={Phase1Page} />
+
               <Route path="/phase2" component={Phase2Page} />
               <Route path="/materials" component={MaterialsPage} />
+              <Route path="/libreria" component={LibreriaPubblicaPage} />
               <Route path="/flashcards" component={FlashcardsPage} />
               <Route path="/quiz" component={QuizPage} />
+              <Route path="/simulazioni" component={SimulazioniPage} />
               <Route path="/pomodoro" component={PomodoroPage} />
               <Route path="/stats" component={StatsPage} />
+              <Route path="/concorsi/:id/simulazione/setup" component={SimulazioneSetupPage} />
+              <Route path="/concorsi/:id/simulazione/:simId" component={SimulazioneEsamePage} />
+              <Route path="/concorsi/:id/simulazione/:simId/report" component={SimulazioneReportPage} />
+              <Route path="/concorsi/:id/simulazione/:simId/rivedi" component={SimulazioneRivediPage} />
+              <Route path="/concorsi/:id/simulazioni" component={SimulazioniListPage} />
+              <Route path="/concorsi/:concorsoId/fase0" component={Fase0SetupPage} />
+              <Route path="/concorsi/:concorsoId/setup-fonti" component={SetupFontiPage} />
+              <Route path="/concorsi/:concorsoId/upload-dispense" component={UploadDispensePage} />
+              <Route path="/concorsi/:concorsoId/risorse-consigliate" component={RisorseConsigliePage} />
+              <Route path="/pricing" component={PricingPage} />
+              <Route path="/concorsi/:concorsoId/premium" component={PricingPage} />
+              <Route path="/concorsi/:concorsoId/podcast" component={PodcastDatabasePage} />
+              <Route path="/podcast/my-requests" component={MyPodcastRequestsPage} />
+              <Route path="/concorsi/:concorsoId/fase1/capitolo/:id" component={CapitoloPage} />
+              <Route path="/concorsi/:concorsoId/fase1" component={Fase1SQ3RPage} />
+              <Route path="/concorsi/:concorsoId/fase2" component={Phase2Page} />
+              <Route path="/admin" component={AdminDashboard} />
               <Route component={NotFound} />
             </Switch>
           </main>
@@ -98,8 +135,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <Toaster />
-          <Router />
+          <SpecialistaProvider>
+            <Toaster />
+            <Router />
+          </SpecialistaProvider>
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>

@@ -94,31 +94,38 @@ export function PhaseProgress({ phases, onPhaseClick }: PhaseProgressProps) {
 
 export const defaultPhases: Phase[] = [
   {
-    id: 1,
+    id: 0,
     title: "Intelligence & Setup",
     description: "Decodifica del bando e configurazione del motore di studio",
     levelRange: "0-10%",
     status: "active",
   },
   {
+    id: 1,
+    title: "Apprendimento Base (SQ3R)",
+    description: "Costruzione delle fondamenta e studio attivo",
+    levelRange: "10-40%",
+    status: "available",
+  },
+  {
     id: 2,
     title: "Acquisizione Strategica",
-    description: "Studio mirato delle materie con priorita basata sul peso",
-    levelRange: "10-50%",
+    description: "Studio mirato delle materie con priorità basata sul peso",
+    levelRange: "40-70%",
     status: "locked",
   },
   {
     id: 3,
     title: "Consolidamento e Memorizzazione",
     description: "Flashcard, ripetizione spaziata e quiz mirati",
-    levelRange: "50-80%",
+    levelRange: "70-90%",
     status: "locked",
   },
   {
     id: 4,
-    title: "Simulazione ad Alta Fedelta",
+    title: "Simulazione ad Alta Fedeltà",
     description: "Simulazioni complete in condizioni d'esame reali",
-    levelRange: "80-100%",
+    levelRange: "90-100%",
     status: "locked",
   },
 ];

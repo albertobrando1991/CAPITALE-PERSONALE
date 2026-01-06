@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useSearch, useLocation } from "wouter";
+import { Link, useSearch, useLocation, useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,9 +47,12 @@ interface BandoData {
 export default function Phase2Page() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  
+  // Support both new route param and old query param
+  const [match, params] = useRoute("/concorsi/:concorsoId/fase2");
   const searchString = useSearch();
-  const params = new URLSearchParams(searchString);
-  const concorsoId = params.get("id");
+  const searchParams = new URLSearchParams(searchString);
+  const concorsoId = match ? params.concorsoId : searchParams.get("id");
 
   const [isUploading, setIsUploading] = useState(false);
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
@@ -60,6 +63,8 @@ export default function Phase2Page() {
     materia: "",
     contenuto: "",
   });
+
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const { data: concorso, isLoading: loadingConcorso } = useQuery<Concorso>({
     queryKey: ["/api/concorsi", concorsoId],
@@ -109,6 +114,58 @@ export default function Phase2Page() {
     },
   });
 
+  const getAcceptTypes = (tipo: string) => {
+    switch (tipo) {
+      case "video":
+      case "audio":
+        return "video/*,audio/*,.mp4,.avi,.mov,.mp3,.wav";
+      case "libro":
+      case "dispensa":
+        return ".pdf,.doc,.docx,.txt";
+      case "appunti":
+        return ".pdf,.doc,.docx,.txt";
+      default:
+        return "*/*";
+    }
+  };
+
+  const uploadMaterialMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("concorsoId", concorsoId || "");
+      formData.append("nome", newMaterial.nome);
+      formData.append("tipo", newMaterial.tipo);
+      formData.append("materia", newMaterial.materia);
+
+      const res = await fetch("/api/upload-material", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("Failed to upload material");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/materials", concorsoId] });
+      toast({ title: "Materiale caricato con successo" });
+      setAddDialogOpen(false);
+      setNewMaterial({ nome: "", tipo: "appunti", materia: "", contenuto: "" });
+      setSelectedFile(null);
+    },
+    onError: () => {
+      toast({ title: "Errore", description: "Impossibile caricare il file", variant: "destructive" });
+    },
+  });
+
+  const handleSaveMaterial = () => {
+    if (selectedFile) {
+      uploadMaterialMutation.mutate(selectedFile);
+    } else {
+      addMaterialMutation.mutate(newMaterial);
+    }
+  };
+
   const deleteMaterialMutation = useMutation({
     mutationFn: async (id: string) => {
       return apiRequest("DELETE", `/api/materials/${id}`);
@@ -145,31 +202,12 @@ export default function Phase2Page() {
     },
   });
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("concorsoId", concorsoId || "");
-      formData.append("materia", newMaterial.materia || "Generale");
-
-      const res = await fetch("/api/upload-material", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) throw new Error("Upload failed");
-
-      queryClient.invalidateQueries({ queryKey: ["/api/materials", concorsoId] });
-      toast({ title: "File caricato", description: "Il materiale e stato estratto con successo." });
-    } catch (error) {
-      toast({ title: "Errore", description: "Impossibile caricare il file", variant: "destructive" });
-    } finally {
-      setIsUploading(false);
-    }
+    setSelectedFile(file);
   };
 
   const bandoData = concorso?.bandoAnalysis as BandoData | null;
@@ -208,12 +246,12 @@ export default function Phase2Page() {
             <div className="flex items-start gap-4">
               <Target className="h-8 w-8 text-yellow-600" />
               <div>
-                <h3 className="font-semibold text-lg">Completa prima la Fase 1</h3>
+                <h3 className="font-semibold text-lg">Completa prima la Fase 0</h3>
                 <p className="text-muted-foreground mt-1">
                   Devi analizzare il bando prima di procedere con l'acquisizione dei materiali.
                 </p>
-                <Link href={`/phase1?id=${concorsoId}`}>
-                  <Button className="mt-4">Vai alla Fase 1</Button>
+                <Link href={`/concorsi/${concorsoId}/fase0`}>
+                  <Button className="mt-4">Vai alla Fase 0</Button>
                 </Link>
               </div>
             </div>
@@ -320,7 +358,10 @@ export default function Phase2Page() {
                       <label className="text-sm font-medium">Tipo</label>
                       <Select
                         value={newMaterial.tipo}
-                        onValueChange={(v) => setNewMaterial({ ...newMaterial, tipo: v })}
+                        onValueChange={(v) => {
+                          setNewMaterial({ ...newMaterial, tipo: v });
+                          setSelectedFile(null);
+                        }}
                       >
                         <SelectTrigger data-testid="select-material-tipo">
                           <SelectValue />
@@ -330,6 +371,7 @@ export default function Phase2Page() {
                           <SelectItem value="libro">Libro/Manuale</SelectItem>
                           <SelectItem value="dispensa">Dispensa</SelectItem>
                           <SelectItem value="video">Video/Corso</SelectItem>
+                          <SelectItem value="audio">Podcast/Audio</SelectItem>
                           <SelectItem value="altro">Altro</SelectItem>
                         </SelectContent>
                       </Select>
@@ -353,23 +395,54 @@ export default function Phase2Page() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium">Contenuto (opzionale)</label>
-                      <Textarea
-                        value={newMaterial.contenuto}
-                        onChange={(e) => setNewMaterial({ ...newMaterial, contenuto: e.target.value })}
-                        placeholder="Incolla qui il testo del materiale per generare flashcard..."
-                        rows={6}
-                        data-testid="textarea-material-contenuto"
-                      />
-                    </div>
+
+                    {(newMaterial.tipo === "libro" || newMaterial.tipo === "dispensa" || newMaterial.tipo === "video" || newMaterial.tipo === "audio") && (
+                      <div>
+                        <label className="text-sm font-medium">Carica File ({newMaterial.tipo})</label>
+                        <Input
+                          type="file"
+                          accept={getAcceptTypes(newMaterial.tipo)}
+                          onChange={handleFileUpload}
+                          className="cursor-pointer"
+                          data-testid="input-material-file"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Formati accettati: {getAcceptTypes(newMaterial.tipo)}
+                        </p>
+                      </div>
+                    )}
+
+                    {(newMaterial.tipo === "appunti" || newMaterial.tipo === "altro") && (
+                      <div>
+                        <label className="text-sm font-medium">Contenuto o File</label>
+                        <div className="space-y-2">
+                          <Input
+                            type="file"
+                            accept={getAcceptTypes(newMaterial.tipo)}
+                            onChange={handleFileUpload}
+                            className="cursor-pointer"
+                            data-testid="input-material-file"
+                          />
+                          <div className="text-center text-xs text-muted-foreground">- OPPURE -</div>
+                          <Textarea
+                            value={newMaterial.contenuto}
+                            onChange={(e) => setNewMaterial({ ...newMaterial, contenuto: e.target.value })}
+                            placeholder="Incolla qui il testo dei tuoi appunti..."
+                            rows={6}
+                            disabled={!!selectedFile}
+                            data-testid="textarea-material-contenuto"
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     <Button
                       className="w-full"
-                      onClick={() => addMaterialMutation.mutate(newMaterial)}
-                      disabled={!newMaterial.nome || addMaterialMutation.isPending}
+                      onClick={handleSaveMaterial}
+                      disabled={!newMaterial.nome || (addMaterialMutation.isPending || uploadMaterialMutation.isPending)}
                       data-testid="button-save-material"
                     >
-                      {addMaterialMutation.isPending ? (
+                      {(addMaterialMutation.isPending || uploadMaterialMutation.isPending) ? (
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       ) : null}
                       Salva Materiale
@@ -377,25 +450,6 @@ export default function Phase2Page() {
                   </div>
                 </DialogContent>
               </Dialog>
-              <label>
-                <input
-                  type="file"
-                  accept=".pdf,.txt"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                  disabled={isUploading}
-                />
-                <Button variant="outline" asChild disabled={isUploading}>
-                  <span className="cursor-pointer" data-testid="button-upload-file">
-                    {isUploading ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <Upload className="h-4 w-4 mr-2" />
-                    )}
-                    Carica PDF
-                  </span>
-                </Button>
-              </label>
             </div>
           </div>
 

@@ -9,14 +9,12 @@ import {
   type InsertMaterial,
   type Flashcard,
   type InsertFlashcard,
-  users, 
-  concorsi,
-  userProgress,
-  materials,
-  flashcards
+  type Simulazione,
+  type InsertSimulazione
 } from "@shared/schema";
+import { users, concorsi, userProgress, materials, flashcards, simulazioni } from "@shared/schema";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -27,20 +25,21 @@ export interface IStorage {
   createConcorso(concorso: InsertConcorso): Promise<Concorso>;
   updateConcorso(id: string, userId: string, data: Partial<InsertConcorso>): Promise<Concorso | undefined>;
   deleteConcorso(id: string, userId: string): Promise<boolean>;
-  
-  getUserProgress(userId: string, concorsoId?: string): Promise<UserProgress | undefined>;
-  upsertUserProgress(progress: InsertUserProgress): Promise<UserProgress>;
 
+  getUserProgress(userId: string, concorsoId?: string): Promise<UserProgress | undefined>;
+  upsertUserProgress(progress: Partial<UserProgress> & { userId: string }): Promise<UserProgress>;
+
+  createMaterial(material: InsertMaterial): Promise<Material>;
   getMaterials(userId: string, concorsoId: string): Promise<Material[]>;
   getMaterial(id: string, userId: string): Promise<Material | undefined>;
-  createMaterial(material: InsertMaterial): Promise<Material>;
-  updateMaterial(id: string, userId: string, data: Partial<InsertMaterial>): Promise<Material | undefined>;
   deleteMaterial(id: string, userId: string): Promise<boolean>;
+  updateMaterial(id: string, userId: string, data: Partial<InsertMaterial>): Promise<Material | undefined>;
 
+  createFlashcards(flashcards: InsertFlashcard[]): Promise<Flashcard[]>;
   getFlashcards(userId: string, concorsoId?: string): Promise<Flashcard[]>;
-  createFlashcard(flashcard: InsertFlashcard): Promise<Flashcard>;
-  createFlashcards(flashcardList: InsertFlashcard[]): Promise<Flashcard[]>;
+  getFlashcard(id: string, userId: string): Promise<Flashcard | undefined>;
   updateFlashcard(id: string, userId: string, data: Partial<InsertFlashcard>): Promise<Flashcard | undefined>;
+  deleteFlashcard(id: string, userId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -49,26 +48,26 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async upsertUser(userData: UpsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(userData)
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          email: userData.email,
-          firstName: userData.firstName,
-          lastName: userData.lastName,
-          profileImageUrl: userData.profileImageUrl,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
-    return user;
+  async upsertUser(user: UpsertUser): Promise<User> {
+    const [existingUser] = await db.select().from(users).where(eq(users.id, user.id));
+    if (existingUser) {
+      const [updatedUser] = await db
+        .update(users)
+        .set(user)
+        .where(eq(users.id, user.id))
+        .returning();
+      return updatedUser;
+    }
+    const [newUser] = await db.insert(users).values(user).returning();
+    return newUser;
   }
 
   async getConcorsi(userId: string): Promise<Concorso[]> {
-    return await db.select().from(concorsi).where(eq(concorsi.userId, userId));
+    return await db
+      .select()
+      .from(concorsi)
+      .where(eq(concorsi.userId, userId))
+      .orderBy(desc(concorsi.createdAt));
   }
 
   async getConcorso(id: string, userId: string): Promise<Concorso | undefined> {
@@ -80,122 +79,174 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createConcorso(concorso: InsertConcorso): Promise<Concorso> {
-    const [created] = await db.insert(concorsi).values(concorso).returning();
-    return created;
+    const [newConcorso] = await db.insert(concorsi).values(concorso).returning();
+    return newConcorso;
   }
 
   async updateConcorso(id: string, userId: string, data: Partial<InsertConcorso>): Promise<Concorso | undefined> {
-    const [updated] = await db
+    const [updatedConcorso] = await db
       .update(concorsi)
       .set({ ...data, updatedAt: new Date() })
       .where(and(eq(concorsi.id, id), eq(concorsi.userId, userId)))
       .returning();
-    return updated;
+    return updatedConcorso;
   }
 
   async deleteConcorso(id: string, userId: string): Promise<boolean> {
-    await db.delete(userProgress).where(eq(userProgress.concorsoId, id));
-    
-    const result = await db
+    const [deleted] = await db
       .delete(concorsi)
       .where(and(eq(concorsi.id, id), eq(concorsi.userId, userId)))
       .returning();
-    return result.length > 0;
+    return !!deleted;
   }
 
   async getUserProgress(userId: string, concorsoId?: string): Promise<UserProgress | undefined> {
+    let query = db.select().from(userProgress).where(eq(userProgress.userId, userId));
+    
     if (concorsoId) {
-      const [progress] = await db
+      query = db
         .select()
         .from(userProgress)
         .where(and(eq(userProgress.userId, userId), eq(userProgress.concorsoId, concorsoId)));
-      return progress;
+    } else {
+      // Se non c'è concorsoId, prendiamo l'ultimo aggiornato o quello globale
+      // In questa implementazione semplificata, ritorniamo il più recente
+      // In futuro potremmo volere un record 'globale' o aggregare i dati
+      return (await query.orderBy(desc(userProgress.updatedAt)).limit(1))[0];
     }
-    const [progress] = await db
-      .select()
-      .from(userProgress)
-      .where(eq(userProgress.userId, userId));
+    
+    const [progress] = await query;
     return progress;
   }
 
-  async upsertUserProgress(progressData: InsertUserProgress): Promise<UserProgress> {
-    const existing = await this.getUserProgress(progressData.userId, progressData.concorsoId || undefined);
+  async upsertUserProgress(progress: Partial<UserProgress> & { userId: string }): Promise<UserProgress> {
+    // Cerca se esiste già un record per questo utente (e concorso se specificato)
+    let existing;
     
+    if (progress.concorsoId) {
+      [existing] = await db
+        .select()
+        .from(userProgress)
+        .where(and(eq(userProgress.userId, progress.userId), eq(userProgress.concorsoId, progress.concorsoId)));
+    } else {
+      // Se non è specificato il concorso, cerchiamo un record generico o l'ultimo
+      // Ma per upsert, se manca concorsoId, assumiamo che si voglia aggiornare un record esistente o crearne uno nuovo
+      // Per semplicità, richiediamo concorsoId per creare nuovi record specifici, 
+      // o usiamo una logica diversa.
+      // Qui: se manca concorsoId, cerchiamo l'ultimo modificato
+       [existing] = await db
+        .select()
+        .from(userProgress)
+        .where(eq(userProgress.userId, progress.userId))
+        .orderBy(desc(userProgress.updatedAt))
+        .limit(1);
+    }
+
     if (existing) {
       const [updated] = await db
         .update(userProgress)
-        .set({ ...progressData, updatedAt: new Date() })
+        .set({ ...progress, updatedAt: new Date() })
         .where(eq(userProgress.id, existing.id))
         .returning();
       return updated;
     }
-    
-    const [created] = await db.insert(userProgress).values(progressData).returning();
-    return created;
-  }
 
-  async getMaterials(userId: string, concorsoId: string): Promise<Material[]> {
-    return await db.select().from(materials).where(
-      and(eq(materials.userId, userId), eq(materials.concorsoId, concorsoId))
-    );
-  }
-
-  async getMaterial(id: string, userId: string): Promise<Material | undefined> {
-    const [material] = await db.select().from(materials).where(
-      and(eq(materials.id, id), eq(materials.userId, userId))
-    );
-    return material;
+    // Se non esiste, crea nuovo (richiede concorsoId per essere utile nel nostro schema attuale)
+    // Se manca concorsoId in creazione, potrebbe fallire se il DB lo richiede not null
+    // Nel nostro schema, concorsoId è references concorsi, quindi potrebbe essere null?
+    // Controlliamo schema: concorsoId: uuid('concorso_id').references(() => concorsi.id), (nullable by default)
+    const [newProgress] = await db.insert(userProgress).values(progress as any).returning();
+    return newProgress;
   }
 
   async createMaterial(material: InsertMaterial): Promise<Material> {
-    const [created] = await db.insert(materials).values(material).returning();
-    return created;
+    const [newMaterial] = await db.insert(materials).values(material).returning();
+    return newMaterial;
   }
 
+  async getMaterials(userId: string, concorsoId: string): Promise<Material[]> {
+    return await db
+      .select()
+      .from(materials)
+      .where(and(eq(materials.userId, userId), eq(materials.concorsoId, concorsoId)))
+      .orderBy(desc(materials.createdAt));
+  }
+  
+  async getMaterial(id: string, userId: string): Promise<Material | undefined> {
+    const [material] = await db
+      .select()
+      .from(materials)
+      .where(and(eq(materials.id, id), eq(materials.userId, userId)));
+    return material;
+  }
+
+  async deleteMaterial(id: string, userId: string): Promise<boolean> {
+    const [deleted] = await db
+      .delete(materials)
+      .where(and(eq(materials.id, id), eq(materials.userId, userId)))
+      .returning();
+    return !!deleted;
+  }
+  
   async updateMaterial(id: string, userId: string, data: Partial<InsertMaterial>): Promise<Material | undefined> {
     const [updated] = await db
       .update(materials)
-      .set(data)
+      .set({ ...data, updatedAt: new Date() })
       .where(and(eq(materials.id, id), eq(materials.userId, userId)))
       .returning();
     return updated;
   }
 
-  async deleteMaterial(id: string, userId: string): Promise<boolean> {
-    const result = await db
-      .delete(materials)
-      .where(and(eq(materials.id, id), eq(materials.userId, userId)))
-      .returning();
-    return result.length > 0;
+  async createFlashcards(newFlashcards: InsertFlashcard[]): Promise<Flashcard[]> {
+    if (newFlashcards.length === 0) return [];
+    return await db.insert(flashcards).values(newFlashcards).returning();
   }
 
   async getFlashcards(userId: string, concorsoId?: string): Promise<Flashcard[]> {
     if (concorsoId) {
-      return await db.select().from(flashcards).where(
-        and(eq(flashcards.userId, userId), eq(flashcards.concorsoId, concorsoId))
-      );
+      return await db
+        .select()
+        .from(flashcards)
+        .where(and(eq(flashcards.userId, userId), eq(flashcards.concorsoId, concorsoId)))
+        .orderBy(desc(flashcards.createdAt));
     }
-    return await db.select().from(flashcards).where(eq(flashcards.userId, userId));
+    return await db
+      .select()
+      .from(flashcards)
+      .where(eq(flashcards.userId, userId))
+      .orderBy(desc(flashcards.createdAt));
   }
-
-  async createFlashcard(flashcard: InsertFlashcard): Promise<Flashcard> {
-    const [created] = await db.insert(flashcards).values(flashcard).returning();
-    return created;
+  
+  async getFlashcard(id: string, userId: string): Promise<Flashcard | undefined> {
+    const [flashcard] = await db
+      .select()
+      .from(flashcards)
+      .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)));
+    return flashcard;
   }
-
-  async createFlashcards(flashcardList: InsertFlashcard[]): Promise<Flashcard[]> {
-    if (flashcardList.length === 0) return [];
-    return await db.insert(flashcards).values(flashcardList).returning();
-  }
-
+  
   async updateFlashcard(id: string, userId: string, data: Partial<InsertFlashcard>): Promise<Flashcard | undefined> {
     const [updated] = await db
       .update(flashcards)
-      .set(data)
+      .set({ ...data }) // updatedAt removed as it's not in schema or managed manually
       .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)))
       .returning();
     return updated;
   }
+  
+  async deleteFlashcard(id: string, userId: string): Promise<boolean> {
+    const [deleted] = await db
+      .delete(flashcards)
+      .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)))
+      .returning();
+    return !!deleted;
+  }
 }
 
 export const storage = new DatabaseStorage();
+export { simulazioniStorage } from './storage-simulazioni';
+// Export SQ3R storage 
+export { storageSQ3R } from './storage-sq3r';
+// Export Libreria storage 
+export { storageLibreria } from './storage-libreria';
+export { storageNormativa } from './storage-normativa';

@@ -1,39 +1,165 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage, simulazioniStorage } from "./storage";
+import { registerSQ3RRoutes } from './routes-sq3r';
+import { registerLibreriaRoutes } from './routes-libreria';
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertConcorsoSchema, insertMaterialSchema } from "@shared/schema";
+import { insertConcorsoSchema, insertMaterialSchema, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "@shared/schema";
+import { calculateSM2, initializeSM2 } from "./sm2-algorithm";
 import { z } from "zod";
 import OpenAI from "openai";
 import multer from "multer";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { readFileSync, mkdirSync, existsSync } from "fs";
+import { join } from "path";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const upload = multer({ storage: multer.memoryStorage() });
+// Configura multer per salvare file su disco
+const uploadDir = join(process.cwd(), "uploads", "materials");
+if (!existsSync(uploadDir)) {
+  mkdirSync(uploadDir, { recursive: true });
+}
+
+const multerStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = file.originalname.split(".").pop();
+    cb(null, `${uniqueSuffix}.${ext}`);
+  },
+});
+
+const upload = multer({ 
+  storage: multerStorage,
+  limits: {
+    fileSize: 500 * 1024 * 1024, // 500MB max (per video/audio)
+  },
+  fileFilter: (req, file, cb) => {
+    console.log("[MULTER] File ricevuto:", {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      fieldname: file.fieldname
+    });
+    
+    const allowedMimes = [
+      // Documenti
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      // Video
+      'video/mp4',
+      'video/x-msvideo', // AVI
+      // Audio
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/mpeg3',
+      'audio/x-mpeg-3',
+    ];
+    
+    // Controlla anche l'estensione del file come fallback
+    const fileExt = file.originalname.split('.').pop()?.toLowerCase();
+    const allowedExts = ['pdf', 'doc', 'docx', 'mp4', 'mp3', 'avi'];
+    
+    if (allowedMimes.includes(file.mimetype) || (fileExt && allowedExts.includes(fileExt))) {
+      console.log("[MULTER] File accettato");
+      cb(null, true);
+    } else {
+      console.log("[MULTER] File rifiutato - mimetype:", file.mimetype, "ext:", fileExt);
+      cb(new Error(`Tipo di file non supportato: ${file.mimetype || 'sconosciuto'}. Tipi supportati: PDF, Word (.doc, .docx), MP4, MP3`));
+    }
+  },
+});
 
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
+  console.log("[extractTextFromPDF] Inizio estrazione PDF");
   const data = new Uint8Array(buffer);
+  console.log("[extractTextFromPDF] Buffer convertito, dimensione:", data.length);
+  
   const loadingTask = getDocument({ data });
   const pdfDocument = await loadingTask.promise;
+  console.log("[extractTextFromPDF] PDF caricato, pagine:", pdfDocument.numPages);
   
   let fullText = "";
   
   for (let i = 1; i <= pdfDocument.numPages; i++) {
-    const page = await pdfDocument.getPage(i);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .map((item: any) => item.str)
-      .join(" ");
-    fullText += pageText + "\n";
+    try {
+      const page = await pdfDocument.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(" ");
+      fullText += pageText + "\n";
+      console.log(`[extractTextFromPDF] Pagina ${i} estratta: ${pageText.length} caratteri`);
+    } catch (pageError) {
+      console.error(`[extractTextFromPDF] Errore pagina ${i}:`, pageError);
+    }
   }
   
+  console.log("[extractTextFromPDF] Testo totale estratto: " + fullText.length + " caratteri");
   return fullText;
 }
 
+let openai: OpenAI | null = null;
+let genAI: GoogleGenerativeAI | null = null;
+
 function getOpenAIClient() {
-  return new OpenAI({
-    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY,
-    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-  });
+  if (!openai) {
+    console.log("[getOpenAIClient] Controllo chiave API...");
+    const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    
+    if (!apiKey) {
+      console.error("[getOpenAIClient] ERRORE: OPENAI_API_KEY non configurata!");
+      throw new Error("OPENAI_API_KEY non configurata. Aggiungi OPENAI_API_KEY nel file .env");
+    }
+    
+    console.log("[getOpenAIClient] Creazione client OpenAI...");
+    openai = new OpenAI({
+      apiKey: apiKey,
+      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+    });
+    console.log("[getOpenAIClient] Client creato con successo");
+  }
+  return openai;
+}
+
+function getGeminiClient() {
+  if (!genAI) {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (apiKey) {
+      genAI = new GoogleGenerativeAI(apiKey);
+    }
+  }
+  return genAI;
+}
+
+function cleanJson(text: string): string {
+  if (!text) return "{}";
+  // Rimuovi blocchi markdown json
+  let cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
+  // Trova la prima graffa aperta e l'ultima chiusa
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+  }
+  return cleaned;
+}
+
+// Helper to use Gemini for analysis
+async function analyzeWithGemini(prompt: string, content: string): Promise<string> {
+  const client = getGeminiClient();
+  if (!client) throw new Error("Gemini API key not configured");
+  
+  const model = client.getGenerativeModel({ model: "gemini-2.0-flash" });
+  
+  const result = await model.generateContent([
+    prompt,
+    content
+  ]);
+  
+  return result.response.text();
 }
 
 interface MulterRequest extends Request {
@@ -45,6 +171,11 @@ function getUserId(req: Request): string {
   return user?.claims?.sub;
 }
 
+import { registerEdisesRoutes } from "./routes-edises";
+import { registerNormativaRoutes } from './routes-normativa';
+import { registerPodcastRoutes } from './routes-podcast';
+import { registerSubscriptionRoutes } from './routes-subscription';
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -52,28 +183,355 @@ export async function registerRoutes(
   
   await setupAuth(app);
 
+  console.log("Registering routes...");
+
+  // Registra routes
+  registerSQ3RRoutes(app);
+  registerLibreriaRoutes(app);
+  registerEdisesRoutes(app);
+  registerNormativaRoutes(app);
+  registerPodcastRoutes(app);
+  registerSubscriptionRoutes(app);
+  app.post('/api/flashcards/:id/spiega', isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = getUserId(req);
+      
+      console.log(`💡 POST /api/flashcards/${id}/spiega`);
+      
+      // Controlla se esiste già una spiegazione in cache
+      // Nota: db.query non è disponibile qui, usiamo storage o implementiamo query diretta se necessario
+      // Per semplicità ora, generiamo sempre (ma potremmo aggiungere cache su storage.ts)
+      
+      // Ottieni la flashcard
+      const flashcard = await storage.getFlashcard(id, userId);
+      
+      if (!flashcard) {
+        return res.status(404).json({ error: 'Flashcard non trovata' });
+      }
+      
+      // Ottieni il concorso per contesto
+      const concorso = await storage.getConcorso(flashcard.concorsoId, userId);
+      
+      if (!concorso) {
+        return res.status(404).json({ error: 'Concorso non trovato' });
+      }
+      
+      console.log('📚 Generazione spiegazione per:', {
+        materia: flashcard.materia,
+        domanda: flashcard.fronte.substring(0, 50) + '...'
+      });
+      
+      // Prepara il prompt per OpenAI
+      const prompt = `Sei un tutor esperto per concorsi pubblici italiani.
+
+CONTESTO CONCORSO:
+- Ente: ${concorso.titoloEnte}
+- Tipo: ${concorso.tipoConcorso}
+- Materia: ${flashcard.materia}
+
+DOMANDA DELLA FLASHCARD:
+${flashcard.fronte}
+
+RISPOSTA CORRETTA:
+${flashcard.retro}
+
+COMPITO:
+Fornisci una spiegazione SEMPLICE e APPROFONDITA di questo argomento, come se stessi spiegando a uno studente che deve preparare questo concorso pubblico.
+
+STRUTTURA DELLA SPIEGAZIONE:
+1. **Spiegazione Semplice** (2-3 frasi chiare, come se parlassi a un bambino)
+2. **Contesto e Importanza** (perché è rilevante per il concorso)
+3. **Dettagli Chiave** (i punti fondamentali da ricordare)
+4. **Esempio Pratico** (un caso concreto nella Pubblica Amministrazione italiana)
+5. **Come Ricordarlo** (un trucco mnemonico o analogia)
+
+VINCOLI:
+- Usa un linguaggio SEMPLICE e DIRETTO
+- Massimo 300 parole
+- Evita tecnicismi eccessivi
+- Focalizzati sulla preparazione al concorso
+- Sii pratico e concreto
+
+Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
+
+      // SYSTEM HYBRID: Use Gemini if available (faster/cheaper), fallback to OpenAI
+      let spiegazione: string | null = null;
+      const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+
+      if (shouldUseGemini) {
+        try {
+           console.log("Tentativo generazione con Gemini...");
+           const geminiPrompt = `${prompt} Restituisci SOLO il testo della spiegazione.`;
+           spiegazione = await analyzeWithGemini(geminiPrompt, "");
+           // Clean markdown
+           if (spiegazione) {
+             spiegazione = spiegazione.replace(/```/g, "").trim();
+             console.log("Gemini ha generato una spiegazione di lunghezza:", spiegazione.length);
+           }
+        } catch (err: any) {
+           console.error("Gemini explanation failed, falling back to OpenAI", err.message);
+           spiegazione = null;
+        }
+      } else {
+        console.log("Gemini non configurato, skip.");
+      }
+
+      if (!spiegazione) {
+        // Chiama OpenAI
+        try {
+          const openai = getOpenAIClient();
+          if (!openai) throw new Error("OpenAI Client non inizializzato");
+          
+          console.log('🤖 Chiamata OpenAI per spiegazione...');
+          
+          const completion = await openai.chat.completions.create({
+            model: 'gpt-4o-mini', // Modello veloce ed economico
+            messages: [
+              {
+                role: 'system',
+                content: 'Sei un tutor esperto e paziente per concorsi pubblici italiani. Spiega concetti complessi in modo semplice e memorabile.'
+              },
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            temperature: 0.7,
+            max_tokens: 800,
+            top_p: 1,
+            frequency_penalty: 0.3,
+            presence_penalty: 0.3
+          });
+          
+          spiegazione = completion.choices[0]?.message?.content;
+        } catch (openaiErr: any) {
+          console.error("Errore OpenAI:", openaiErr.message);
+          // Rilancia l'errore per farlo catturare dal catch generale
+          throw new Error(`Errore generazione AI: ${openaiErr.message}`);
+        }
+      }
+      
+      if (!spiegazione) {
+        throw new Error('Nessuna spiegazione ricevuta da AI (risposta vuota)');
+      }
+      
+      console.log('✅ Spiegazione generata:', spiegazione.substring(0, 100) + '...');
+      
+      // Salva la spiegazione in cache (opzionale)
+      // Puoi creare una tabella spiegazioni_cache per non rigenerare le stesse
+      
+      res.json({
+        success: true,
+        spiegazione,
+        flashcard: {
+          id: flashcard.id,
+          fronte: flashcard.fronte,
+          materia: flashcard.materia
+        }
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Errore generazione spiegazione:', error);
+      res.status(500).json({
+        error: 'Errore nella generazione della spiegazione',
+        dettagli: error instanceof Error ? error.message : 'Errore sconosciuto'
+      });
+    }
+  });
+
+  // Test endpoint per verificare la configurazione e i componenti
+  app.get("/api/test-config", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const hasOpenAIKey = !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY);
+      const hasGeminiKey = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+      const hasDatabaseUrl = !!process.env.DATABASE_URL;
+      
+      // Test OpenAI client creation
+      let openaiTest = false;
+      let openaiError = null;
+      try {
+        const client = getOpenAIClient();
+        openaiTest = true;
+      } catch (error: any) {
+        openaiError = error.message;
+      }
+      
+      // Test PDF extraction (with a dummy buffer)
+      let pdfTest = false;
+      let pdfError = null;
+      try {
+        // Just test if getDocument is available
+        if (typeof getDocument === 'function') {
+          pdfTest = true;
+        } else {
+          pdfError = "getDocument is not a function";
+        }
+      } catch (error: any) {
+        pdfError = error.message;
+      }
+      
+      res.json({
+        hasOpenAIKey,
+        hasGeminiKey,
+        hasDatabaseUrl,
+        openaiClientCreated: openaiTest,
+        openaiError,
+        pdfLibraryLoaded: pdfTest,
+        pdfError,
+        envVars: {
+          OPENAI_API_KEY: process.env.OPENAI_API_KEY ? "present" : "missing",
+          GEMINI_API_KEY: process.env.GEMINI_API_KEY ? "present" : "missing",
+          DATABASE_URL: process.env.DATABASE_URL ? "present" : "missing",
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Test endpoint per testare l'analisi con un PDF di esempio
+  app.post("/api/test-analyze", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
+    try {
+      console.log("=== TEST ANALISI BANDO ===");
+      
+      if (!req.file) {
+        return res.status(400).json({ error: "Nessun file caricato" });
+      }
+      
+      console.log("1. File ricevuto:", req.file.originalname, req.file.size, "bytes");
+      
+      // Test OpenAI client
+      console.log("2. Test creazione client OpenAI...");
+      let openai;
+      try {
+        openai = getOpenAIClient();
+        console.log("   ✓ Client OpenAI creato");
+      } catch (error: any) {
+        console.error("   ✗ Errore creazione client:", error.message);
+        return res.status(500).json({ 
+          step: "openai_client",
+          error: error.message 
+        });
+      }
+      
+      // Test PDF extraction
+      console.log("3. Test estrazione PDF...");
+      let fileContent: string;
+      try {
+        if (req.file.mimetype === "application/pdf") {
+          fileContent = await extractTextFromPDF(req.file.buffer);
+          console.log("   ✓ PDF estratto:", fileContent.length, "caratteri");
+        } else {
+          fileContent = req.file.buffer.toString("utf-8");
+          console.log("   ✓ File testo:", fileContent.length, "caratteri");
+        }
+      } catch (error: any) {
+        console.error("   ✗ Errore estrazione PDF:", error.message);
+        return res.status(500).json({ 
+          step: "pdf_extraction",
+          error: error.message 
+        });
+      }
+      
+      if (!fileContent || fileContent.trim().length < 100) {
+        return res.status(400).json({ 
+          step: "pdf_content",
+          error: "File vuoto o troppo corto",
+          contentLength: fileContent?.length || 0
+        });
+      }
+      
+      // Test OpenAI API call (with minimal content)
+      console.log("4. Test chiamata API OpenAI...");
+      const testContent = fileContent.substring(0, 1000);
+      try {
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: "You are a helpful assistant." },
+            { role: "user", content: `Test: extract the first 10 words from this text: ${testContent}` }
+          ],
+          max_tokens: 50,
+        });
+        console.log("   ✓ API OpenAI risponde correttamente");
+        res.json({ 
+          success: true,
+          message: "Tutti i test passati",
+          steps: {
+            fileReceived: true,
+            openaiClient: true,
+            pdfExtraction: true,
+            openaiApi: true
+          }
+        });
+      } catch (error: any) {
+        console.error("   ✗ Errore chiamata API:", error.message);
+        return res.status(500).json({ 
+          step: "openai_api",
+          error: error.message,
+          details: error.response?.data || "Nessun dettaglio disponibile"
+        });
+      }
+    } catch (error: any) {
+      console.error("Errore generale nel test:", error);
+      res.status(500).json({ 
+        step: "unknown",
+        error: error.message || "Errore sconosciuto",
+        stack: error.stack
+      });
+    }
+  });
+
   app.get("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
+      console.log("Fetching user with ID:", userId);
+      
+      let user = await storage.getUser(userId);
+      
+      // If user doesn't exist, create it (mock mode)
       if (!user) {
-        return res.status(404).json({ error: "Utente non trovato" });
+        console.log("User not found, creating admin user");
+        user = await storage.upsertUser({
+          id: userId || "admin",
+          email: "admin@test.com",
+          firstName: "Admin",
+          lastName: "User",
+        });
       }
+      
       res.json(user);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching user:", error);
-      res.status(500).json({ error: "Errore nel recupero utente" });
+      // In mock mode, return a default user even on error
+      const defaultUser = {
+        id: "admin",
+        email: "admin@test.com",
+        firstName: "Admin",
+        lastName: "User",
+        profileImageUrl: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      res.json(defaultUser);
     }
   });
 
   app.get("/api/concorsi", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
+      console.log("GET /api/concorsi - UserId:", userId);
       const concorsi = await storage.getConcorsi(userId);
+      console.log("GET /api/concorsi - Found", concorsi.length, "concorsi");
       res.json(concorsi);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching concorsi:", error);
-      res.status(500).json({ error: "Errore nel recupero concorsi" });
+      console.error("Error stack:", error?.stack);
+      res.status(500).json({ 
+        error: "Errore nel recupero concorsi",
+        details: error?.message || "Errore sconosciuto"
+      });
     }
   });
 
@@ -196,6 +654,18 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/user-progress", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const concorsoId = req.query.concorsoId as string | undefined;
+      const progress = await storage.getUserProgress(userId, concorsoId);
+      res.json(progress || null);
+    } catch (error) {
+      console.error("Error fetching user progress:", error);
+      res.status(500).json({ error: "Errore nel recupero progresso utente" });
+    }
+  });
+
   app.get("/api/flashcard-session", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
@@ -230,43 +700,130 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/upload-material", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
-    try {
-      const userId = getUserId(req);
-      const concorsoId = req.body.concorsoId;
-      const materia = req.body.materia || "Generale";
+  app.post("/api/upload-material", isAuthenticated, (req: Request, res: Response, next: NextFunction) => {
+    console.log("[UPLOAD-MATERIAL] === MIDDLEWARE MULTER ===");
+    console.log("[UPLOAD-MATERIAL] Content-Type:", req.headers['content-type']);
+    console.log("[UPLOAD-MATERIAL] Body keys:", Object.keys(req.body || {}));
+    
+    upload.single("file")(req as any, res, async (err: any) => {
+      if (err) {
+        console.error("[UPLOAD-MATERIAL] Errore multer:", err.message);
+        console.error("[UPLOAD-MATERIAL] Stack multer:", err.stack);
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res.status(400).json({ error: "File troppo grande. Dimensione massima: 500MB" });
+        }
+        if (err.message && err.message.includes("Tipo di file non supportato")) {
+          return res.status(400).json({ error: err.message });
+        }
+        return res.status(400).json({ error: "Errore nel caricamento file", details: err.message });
+      }
       
-      if (!req.file || !concorsoId) {
-        return res.status(400).json({ error: "File e concorsoId richiesti" });
+      console.log("[UPLOAD-MATERIAL] Multer completato, file:", (req as MulterRequest).file ? "PRESENTE" : "NON PRESENTE");
+      
+      // Se non ci sono errori, procedi con l'handler
+      try {
+        const reqWithFile = req as MulterRequest;
+        console.log("[UPLOAD-MATERIAL] === INIZIO UPLOAD ===");
+        const userId = getUserId(reqWithFile);
+        const concorsoId = reqWithFile.body.concorsoId;
+        const materia = reqWithFile.body.materia || "Generale";
+        const tipoMateriale = reqWithFile.body.tipo || "libro";
+        
+        console.log("[UPLOAD-MATERIAL] UserId:", userId);
+        console.log("[UPLOAD-MATERIAL] ConcorsoId:", concorsoId);
+        console.log("[UPLOAD-MATERIAL] Materia:", materia);
+        console.log("[UPLOAD-MATERIAL] Tipo:", tipoMateriale);
+        console.log("[UPLOAD-MATERIAL] File:", reqWithFile.file ? {
+          originalname: reqWithFile.file.originalname,
+          mimetype: reqWithFile.file.mimetype,
+          size: reqWithFile.file.size,
+          filename: reqWithFile.file.filename
+        } : "NON PRESENTE");
+        
+        if (!reqWithFile.file || !concorsoId) {
+          console.log("[UPLOAD-MATERIAL] ERRORE: File o concorsoId mancante");
+          return res.status(400).json({ error: "File e concorsoId richiesti" });
+        }
+
+        console.log("[UPLOAD-MATERIAL] Verifica concorso...");
+        const concorso = await storage.getConcorso(concorsoId, userId);
+        if (!concorso) {
+          console.log("[UPLOAD-MATERIAL] ERRORE: Concorso non trovato");
+          return res.status(403).json({ error: "Concorso non trovato o non autorizzato" });
+        }
+        console.log("[UPLOAD-MATERIAL] Concorso trovato:", concorso.id);
+
+        // Salva il file e ottieni il percorso
+        const fileUrl = `/uploads/materials/${reqWithFile.file.filename}`;
+        console.log("[UPLOAD-MATERIAL] FileUrl:", fileUrl);
+        
+        // Estrai contenuto solo per PDF e Word (per generare flashcard)
+        let contenuto: string | undefined = undefined;
+        const mimeType = reqWithFile.file.mimetype;
+        
+        if (mimeType === "application/pdf") {
+          console.log("[UPLOAD-MATERIAL] Estrazione testo da PDF...");
+          try {
+            // Leggi il file dal disco per estrarre il testo
+            const filePath = join(uploadDir, reqWithFile.file.filename);
+            const fileBuffer = readFileSync(filePath);
+            contenuto = await extractTextFromPDF(fileBuffer);
+            console.log("[UPLOAD-MATERIAL] Testo estratto:", contenuto ? `${contenuto.length} caratteri` : "vuoto");
+          } catch (pdfError: any) {
+            console.error("[UPLOAD-MATERIAL] Error extracting PDF text:", pdfError);
+            // Continua comunque, il file è salvato
+          }
+        } else if (
+          mimeType === "application/msword" || 
+          mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ) {
+          // Per Word, per ora salviamo solo il file (estrazione testo Word richiede librerie aggiuntive)
+          contenuto = `File Word caricato: ${reqWithFile.file.originalname}`;
+          console.log("[UPLOAD-MATERIAL] File Word, contenuto placeholder creato");
+        } else {
+          console.log("[UPLOAD-MATERIAL] File video/audio, nessun contenuto estratto");
+        }
+        // Per MP4 e MP3, non estraiamo contenuto, solo salviamo il file
+        // Per video e audio, contenuto rimane undefined
+
+        console.log("[UPLOAD-MATERIAL] Creazione materiale nel database...");
+        const materialData = {
+          userId,
+          concorsoId,
+          nome: reqWithFile.body.nome || reqWithFile.file.originalname,
+          tipo: tipoMateriale,
+          materia,
+          contenuto,
+          fileUrl,
+          estratto: tipoMateriale === "appunti" ? false : true,
+        };
+        console.log("[UPLOAD-MATERIAL] Material data:", {
+          ...materialData,
+          contenuto: contenuto ? `${contenuto.length} caratteri` : undefined
+        });
+        
+        const material = await storage.createMaterial(materialData);
+        console.log("[UPLOAD-MATERIAL] Materiale creato con successo:", material.id);
+
+        res.status(201).json(material);
+      } catch (error: any) {
+        console.error("[UPLOAD-MATERIAL] === ERRORE ===");
+        console.error("[UPLOAD-MATERIAL] Tipo:", typeof error);
+        console.error("[UPLOAD-MATERIAL] Nome:", error?.name);
+        console.error("[UPLOAD-MATERIAL] Messaggio:", error?.message);
+        console.error("[UPLOAD-MATERIAL] Stack:", error?.stack);
+        if (error?.code) {
+          console.error("[UPLOAD-MATERIAL] Code:", error.code);
+        }
+        if (error?.errors) {
+          console.error("[UPLOAD-MATERIAL] Validation errors:", JSON.stringify(error.errors, null, 2));
+        }
+        res.status(500).json({ 
+          error: "Errore nel caricamento materiale",
+          details: error?.message || "Errore sconosciuto"
+        });
       }
-
-      const concorso = await storage.getConcorso(concorsoId, userId);
-      if (!concorso) {
-        return res.status(403).json({ error: "Concorso non trovato o non autorizzato" });
-      }
-
-      let contenuto: string;
-      if (req.file.mimetype === "application/pdf") {
-        contenuto = await extractTextFromPDF(req.file.buffer);
-      } else {
-        contenuto = req.file.buffer.toString("utf-8");
-      }
-
-      const material = await storage.createMaterial({
-        userId,
-        concorsoId,
-        nome: req.file.originalname,
-        tipo: "pdf",
-        materia,
-        contenuto,
-        estratto: true,
-      });
-
-      res.status(201).json(material);
-    } catch (error) {
-      console.error("Error uploading material:", error);
-      res.status(500).json({ error: "Errore nel caricamento materiale" });
-    }
+    });
   });
 
   app.post("/api/generate-flashcards", isAuthenticated, async (req: Request, res: Response) => {
@@ -291,15 +848,45 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Concorso non autorizzato" });
       }
 
-      const openai = getOpenAIClient();
       const contentToAnalyze = material.contenuto.substring(0, 30000);
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: `Sei un esperto creatore di flashcard per la preparazione ai concorsi pubblici italiani. 
+      // SYSTEM HYBRID: Use Gemini if available, fallback to OpenAI
+      let content = "[]";
+      const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+
+      if (shouldUseGemini) {
+        try {
+           const geminiPrompt = `Sei un esperto creatore di flashcard per la preparazione ai concorsi pubblici italiani. 
+Genera ALMENO 50 flashcard diverse dal testo fornito. Crea domande precise e risposte concise che coprono tutti i concetti importanti.
+
+ISTRUZIONI:
+- Genera il maggior numero possibile di flashcard (minimo 50, idealmente 60-80)
+- Copri TUTTI i concetti chiave, definizioni, articoli di legge, date, numeri
+- Varia i tipi di domande: definizioni, applicazioni, confronti, casi pratici
+- Ogni flashcard deve essere unica e non ripetitiva
+
+Restituisci SOLO un array JSON di flashcard:
+[
+  {"fronte": "Domanda?", "retro": "Risposta"},
+  ...
+]`;
+           content = await analyzeWithGemini(geminiPrompt, contentToAnalyze);
+           // Clean markdown
+           content = content.replace(/```json/g, "").replace(/```/g, "").trim();
+        } catch (err) {
+           console.error("Gemini flashcard generation failed, falling back to OpenAI", err);
+           content = "[]"; // Reset to trigger fallback
+        }
+      }
+
+      if (content === "[]" || !content) {
+        const openaiClient = getOpenAIClient();
+        const response = await openaiClient.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content: `Sei un esperto creatore di flashcard per la preparazione ai concorsi pubblici italiani. 
 Genera ALMENO 50 flashcard diverse dal testo fornito. Crea domande precise e risposte concise che coprono tutti i concetti importanti.
 
 ISTRUZIONI:
@@ -313,17 +900,22 @@ Restituisci SOLO un array JSON di flashcard:
   {"fronte": "Domanda?", "retro": "Risposta"},
   ...
 ]`
-          },
-          { role: "user", content: contentToAnalyze }
-        ],
-        temperature: 0.4,
-        max_tokens: 16000,
-      });
-
-      const content = response.choices[0]?.message?.content || "[]";
+            },
+            { role: "user", content: contentToAnalyze }
+          ],
+          temperature: 0.4,
+          max_tokens: 16000,
+        });
+        content = response.choices[0]?.message?.content || "[]";
+      }
+      
       const jsonMatch = content.match(/\[[\s\S]*\]/);
       const flashcardsData = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
 
+      // Inizializza parametri SM-2 per nuove flashcard
+      const sm2Initial = initializeSM2();
+      const now = new Date();
+      
       const flashcardsToInsert = flashcardsData.map((f: any) => ({
         userId,
         concorsoId: material.concorsoId,
@@ -332,6 +924,12 @@ Restituisci SOLO un array JSON di flashcard:
         fronte: f.fronte,
         retro: f.retro,
         tipo: "concetto",
+        // Inizializza parametri SM-2
+        easeFactor: sm2Initial.easeFactor,
+        intervalloGiorni: sm2Initial.intervalloGiorni,
+        numeroRipetizioni: sm2Initial.numeroRipetizioni,
+        prossimoRipasso: now,
+        prossimRevisione: now, // Retrocompatibilità
       }));
 
       const created = await storage.createFlashcards(flashcardsToInsert);
@@ -349,316 +947,529 @@ Restituisci SOLO un array JSON di flashcard:
   app.patch("/api/flashcards/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
-      const { livelloSRS } = req.body;
+      const { id } = req.params;
       
-      if (livelloSRS === undefined || typeof livelloSRS !== "number" || !Number.isInteger(livelloSRS)) {
-        return res.status(400).json({ error: "livelloSRS (numero intero) richiesto" });
+      // Accetta sia quality che livelloSRS per retrocompatibilità
+      // IMPORTANTE: gestire correttamente il caso in cui il valore sia 0
+      let quality: number | undefined;
+      
+      if (req.body.quality !== undefined) {
+        quality = req.body.quality;
+      } else if (req.body.livelloSRS !== undefined) {
+        quality = req.body.livelloSRS;
       }
       
-      const updated = await storage.updateFlashcard(req.params.id, userId, { livelloSRS });
+      console.log(`[PATCH FLASHCARD] id=${id}, body=${JSON.stringify(req.body)}, quality=${quality}`);
+      
+      if (quality === undefined || typeof quality !== "number" || !Number.isInteger(quality)) {
+        console.error(`[PATCH FLASHCARD] Valore non valido per quality/livelloSRS: ${quality}`);
+        return res.status(400).json({ error: "livelloSRS o quality (numero intero) richiesto" });
+      }
+      
+      // Valori accettati: 0 (Non Ricordo) o 3 (Facile)
+      if (quality !== 0 && quality !== 3) {
+        console.error(`[PATCH FLASHCARD] Valore non accettato per quality/livelloSRS: ${quality}`);
+        return res.status(400).json({ error: "livelloSRS/quality deve essere 0 (Non Ricordo) o 3 (Facile)" });
+      }
+      
+      // Ottieni flashcard corrente
+      const flashcard = await storage.getFlashcard(id, userId);
+      if (!flashcard) {
+        return res.status(404).json({ error: "Flashcard non trovata" });
+      }
+      
+      // Calcola nuovi valori con SM-2 (quality è già 0 o 3)
+      const sm2Result = calculateSM2(
+        quality,
+        flashcard.easeFactor || 2.5,
+        flashcard.intervalloGiorni || 0,
+        flashcard.numeroRipetizioni || 0
+      );
+      
+      // Determina se è masterata (almeno 3 ripetizioni consecutive OPPURE se l'utente ha segnato "Facile" (quality=3))
+      // Se l'utente segna "Facile", consideriamola masterata per l'interfaccia utente
+      const masterate = quality === 3 || sm2Result.numeroRipetizioni >= 3;
+      
+      // Aggiorna flashcard
+      const updated = await storage.updateFlashcard(id, userId, {
+        livelloSRS: quality,
+        masterate,
+        intervalloGiorni: sm2Result.intervalloGiorni,
+        numeroRipetizioni: sm2Result.numeroRipetizioni,
+        easeFactor: sm2Result.easeFactor,
+        ultimoRipasso: new Date(),
+        prossimoRipasso: sm2Result.prossimoRipasso,
+        prossimRevisione: sm2Result.prossimoRipasso, // Retrocompatibilità
+        tentativiTotali: (flashcard.tentativiTotali || 0) + 1,
+        tentativiCorretti: quality === 3 
+          ? (flashcard.tentativiCorretti || 0) + 1 
+          : (flashcard.tentativiCorretti || 0)
+      });
+      
       if (!updated) {
         return res.status(404).json({ error: "Flashcard non trovata" });
       }
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating flashcard:", error);
-      res.status(500).json({ error: "Errore nell'aggiornamento flashcard" });
-    }
-  });
-
-  app.post("/api/analyze-bando", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: "Nessun file caricato" });
-      }
-
-      const openai = getOpenAIClient();
       
-      let fileContent: string;
-      
-      if (req.file.mimetype === "application/pdf") {
-        console.log("Parsing PDF file...");
-        fileContent = await extractTextFromPDF(req.file.buffer);
-        console.log(`PDF parsed: ${fileContent.length} characters extracted`);
-      } else {
-        fileContent = req.file.buffer.toString("utf-8");
-      }
-      
-      if (!fileContent || fileContent.trim().length < 100) {
-        return res.status(400).json({ 
-          error: "Il file sembra vuoto o non contiene testo leggibile. Assicurati di caricare un PDF con testo selezionabile (non scansionato come immagine)." 
+      // Ricalcola count masterate
+      if (updated.concorsoId) {
+        const allFlashcards = await storage.getFlashcards(userId, updated.concorsoId);
+        const flashcardMasterate = allFlashcards.filter(f => f.masterate).length;
+        
+        await storage.upsertUserProgress({
+          userId,
+          concorsoId: updated.concorsoId,
+          flashcardMasterate,
+          flashcardTotali: allFlashcards.length
         });
       }
       
-      const systemPrompt = `Sei un esperto analista di bandi di concorsi pubblici italiani. Il tuo compito è estrarre TUTTE le informazioni dal bando con precisione assoluta.
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating flashcard:", error);
+      res.status(500).json({ error: "Errore aggiornamento flashcard", details: error.message });
+    }
+  });
 
-REGOLE FONDAMENTALI:
-1. TITOLI DI STUDIO: Estrai ESATTAMENTE le classi di laurea richieste con i codici specifici (es. "LM-63 Scienze delle pubbliche amministrazioni", "L-14 Scienze dei servizi giuridici", "LMG/01 Giurisprudenza"). Per OGNI profilo a bando, elenca separatamente i titoli richiesti.
-2. PENALITÀ ERRORI: Cerca nel bando frasi come "penalità", "punteggio negativo", "risposta errata", "-0.25", "-0.33", "decurtazione". Se presenti, estrai il valore ESATTO.
-3. PORTALE ISCRIZIONE: I concorsi pubblici italiani usano il portale INPA (inPA.gov.it). Cerca nel bando il portale esatto menzionato.
-4. PROVA PRESELETTIVA: Cerca se è prevista una prova preselettiva e se esiste una banca dati ufficiale.
+  /**
+   * POST /api/flashcards/reset
+   * Resetta tutte le flashcard di un concorso (livelloSRS=0, masterate=false, tentativiTotali=0, tentativiCorretti=0)
+   * Body: { concorsoId }
+   */
+  app.post("/api/flashcards/reset", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { concorsoId } = req.body;
+      
+      if (!concorsoId) {
+        return res.status(400).json({ error: "concorsoId richiesto" });
+      }
+      
+      // Ottieni tutte le flashcard del concorso
+      const allFlashcards = await storage.getFlashcards(userId, concorsoId);
+      
+      // Reset di tutte le flashcard (inclusi parametri SM-2)
+      const sm2Initial = initializeSM2();
+      const resetPromises = allFlashcards.map(flashcard => 
+        storage.updateFlashcard(flashcard.id, userId, {
+          livelloSRS: 0,
+          masterate: false,
+          tentativiTotali: 0,
+          tentativiCorretti: 0,
+          // Reset parametri SM-2
+          easeFactor: sm2Initial.easeFactor,
+          intervalloGiorni: sm2Initial.intervalloGiorni,
+          numeroRipetizioni: sm2Initial.numeroRipetizioni,
+          ultimoRipasso: null,
+          prossimoRipasso: new Date(),
+          prossimRevisione: new Date(),
+        })
+      );
+      
+      await Promise.all(resetPromises);
+      
+      // Aggiorna userProgress con i nuovi count (tutti a 0)
+      await storage.upsertUserProgress({
+        userId,
+        concorsoId,
+        flashcardMasterate: 0,
+        flashcardTotali: allFlashcards.length,
+      });
+      
+      res.json({ 
+        success: true, 
+        message: "Flashcard resettate con successo",
+        count: allFlashcards.length 
+      });
+    } catch (error: any) {
+      console.error("Error resetting flashcards:", error);
+      res.status(500).json({ error: "Errore nel reset delle flashcard", details: error.message });
+    }
+  });
 
-Restituisci SOLO un oggetto JSON valido:
+  // Endpoint per spiegazioni AI durante studio flashcard
+  app.post('/api/flashcards/:id/spiega', isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = getUserId(req);
+      
+      console.log(`💡 POST /api/flashcards/${id}/spiega`);
+      
+      // Controlla se esiste già una spiegazione in cache
+      // Nota: db.query non è disponibile qui, usiamo storage o implementiamo query diretta se necessario
+      // Per semplicità ora, generiamo sempre (ma potremmo aggiungere cache su storage.ts)
+      
+      // Ottieni la flashcard
+      const flashcard = await storage.getFlashcard(id, userId);
+      
+      if (!flashcard) {
+        return res.status(404).json({ error: 'Flashcard non trovata' });
+      }
+      
+      // Ottieni il concorso per contesto
+      const concorso = await storage.getConcorso(flashcard.concorsoId, userId);
+      
+      if (!concorso) {
+        return res.status(404).json({ error: 'Concorso non trovato' });
+      }
+      
+      console.log('📚 Generazione spiegazione per:', {
+        materia: flashcard.materia,
+        domanda: flashcard.fronte.substring(0, 50) + '...'
+      });
+      
+      // Prepara il prompt per OpenAI
+      const prompt = `Sei un tutor esperto per concorsi pubblici italiani.
+
+CONTESTO CONCORSO:
+- Ente: ${concorso.titoloEnte}
+- Tipo: ${concorso.tipoConcorso}
+- Materia: ${flashcard.materia}
+
+DOMANDA DELLA FLASHCARD:
+${flashcard.fronte}
+
+RISPOSTA CORRETTA:
+${flashcard.retro}
+
+COMPITO:
+Fornisci una spiegazione SEMPLICE e APPROFONDITA di questo argomento, come se stessi spiegando a uno studente che deve preparare questo concorso pubblico.
+
+STRUTTURA DELLA SPIEGAZIONE:
+1. **Spiegazione Semplice** (2-3 frasi chiare, come se parlassi a un bambino)
+2. **Contesto e Importanza** (perché è rilevante per il concorso)
+3. **Dettagli Chiave** (i punti fondamentali da ricordare)
+4. **Esempio Pratico** (un caso concreto nella Pubblica Amministrazione italiana)
+5. **Come Ricordarlo** (un trucco mnemonico o analogia)
+
+VINCOLI:
+- Usa un linguaggio SEMPLICE e DIRETTO
+- Massimo 300 parole
+- Evita tecnicismi eccessivi
+- Focalizzati sulla preparazione al concorso
+- Sii pratico e concreto
+
+Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
+
+      // SYSTEM HYBRID: Use Gemini if available (faster/cheaper), fallback to OpenAI
+      let spiegazione: string | null = null;
+      const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+
+      if (shouldUseGemini) {
+        try {
+           console.log("Tentativo generazione con Gemini...");
+           const geminiPrompt = `${prompt} Restituisci SOLO il testo della spiegazione.`;
+           spiegazione = await analyzeWithGemini(geminiPrompt, "");
+           // Clean markdown
+           if (spiegazione) {
+             spiegazione = spiegazione.replace(/```/g, "").trim();
+             console.log("Gemini ha generato una spiegazione di lunghezza:", spiegazione.length);
+           }
+        } catch (err: any) {
+           console.error("Gemini explanation failed, falling back to OpenAI", err.message);
+           spiegazione = null;
+        }
+      } else {
+        console.log("Gemini non configurato, skip.");
+      }
+
+      if (!spiegazione) {
+        // Chiama OpenAI
+        try {
+          const openai = getOpenAIClient();
+          if (!openai) throw new Error("OpenAI Client non inizializzato");
+          
+          console.log('🤖 Chiamata OpenAI per spiegazione...');
+          
+          const completion = await openai.chat.completions.create({
+            model: 'gpt-4o-mini', // Modello veloce ed economico
+            messages: [
+              {
+                role: 'system',
+                content: 'Sei un tutor esperto e paziente per concorsi pubblici italiani. Spiega concetti complessi in modo semplice e memorabile.'
+              },
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            temperature: 0.7,
+            max_tokens: 800,
+            top_p: 1,
+            frequency_penalty: 0.3,
+            presence_penalty: 0.3
+          });
+          
+          spiegazione = completion.choices[0]?.message?.content;
+        } catch (openaiErr: any) {
+          console.error("Errore OpenAI:", openaiErr.message);
+          // Rilancia l'errore per farlo catturare dal catch generale
+          throw new Error(`Errore generazione AI: ${openaiErr.message}`);
+        }
+      }
+      
+      if (!spiegazione) {
+        throw new Error('Nessuna spiegazione ricevuta da AI (risposta vuota)');
+      }
+      
+      console.log('✅ Spiegazione generata:', spiegazione.substring(0, 100) + '...');
+      
+      // Salva la spiegazione in cache (opzionale)
+      // Puoi creare una tabella spiegazioni_cache per non rigenerare le stesse
+      
+      res.json({
+        success: true,
+        spiegazione,
+        flashcard: {
+          id: flashcard.id,
+          fronte: flashcard.fronte,
+          materia: flashcard.materia
+        }
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Errore generazione spiegazione:', error);
+      res.status(500).json({
+        error: 'Errore nella generazione della spiegazione',
+        dettagli: error instanceof Error ? error.message : 'Errore sconosciuto'
+      });
+    }
+  });
+
+
+
+  app.post("/api/analyze-bando", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
+    try {
+      console.log("[BANDO] === INIZIO ANALISI ===");
+      
+      // 1. Verifica file
+      if (!req.file) {
+        console.log("[BANDO] ERRORE: Nessun file");
+        return res.status(400).json({ error: "Nessun file caricato" });
+      }
+      console.log(`[BANDO] File ricevuto: ${req.file.originalname} (${req.file.size} bytes, ${req.file.mimetype})`);
+
+      // 2. Estrai testo dal PDF
+      let fileContent: string;
+      if (req.file.mimetype === "application/pdf") {
+        console.log("[BANDO] Estrazione testo da PDF...");
+        try {
+          // Leggi il file dal disco (multer usa diskStorage)
+          const filePath = join(uploadDir, req.file.filename);
+          console.log("[BANDO] Leggendo file da:", filePath);
+          console.log("[BANDO] File esiste?", existsSync(filePath));
+          if (!existsSync(filePath)) {
+            throw new Error(`File non trovato: ${filePath}. Multer potrebbe non aver salvato il file correttamente.`);
+          }
+          const fileBuffer = readFileSync(filePath);
+          console.log("[BANDO] File letto, dimensione buffer:", fileBuffer.length, "bytes");
+          if (fileBuffer.length === 0) {
+            throw new Error(`File vuoto: ${filePath}. Il file potrebbe non essere stato salvato correttamente.`);
+          }
+          fileContent = await extractTextFromPDF(fileBuffer);
+          console.log(`[BANDO] PDF estratto: ${fileContent.length} caratteri`);
+          if (!fileContent || fileContent.trim().length < 100) {
+            console.log("[BANDO] ERRORE: PDF vuoto o troppo corto");
+            return res.status(400).json({ 
+              error: "Il PDF non contiene testo selezionabile. Assicurati di caricare un PDF con testo (non scansionato)." 
+            });
+          }
+        } catch (pdfError: any) {
+          console.error("[BANDO] ERRORE estrazione PDF:", pdfError.message);
+          console.error("[BANDO] Stack:", pdfError.stack);
+          return res.status(400).json({ 
+            error: "Errore nell'estrazione del testo dal PDF",
+            details: pdfError.message || "Il PDF potrebbe essere scansionato o corrotto"
+          });
+        }
+      } else {
+        console.log("[BANDO] File non PDF, leggendo come testo...");
+        // Leggi il file dal disco (multer usa diskStorage)
+        const filePath = join(uploadDir, req.file.filename);
+        console.log("[BANDO] Leggendo file da:", filePath);
+        const fileBuffer = readFileSync(filePath);
+        fileContent = fileBuffer.toString("utf-8");
+        console.log(`[BANDO] File testo letto: ${fileContent.length} caratteri`);
+        if (!fileContent || fileContent.trim().length < 100) {
+          console.log("[BANDO] ERRORE: File vuoto");
+          return res.status(400).json({ error: "Il file sembra vuoto" });
+        }
+      }
+
+      const systemPrompt = `Sei un esperto analista di bandi di concorsi pubblici italiani. Estrai tutte le informazioni dal bando.
+
+Restituisci SOLO un oggetto JSON valido con questa struttura:
 {
-  "titoloEnte": "Nome completo dell'ente e titolo esatto del concorso",
-  "tipoConcorso": "Tipo esatto (per esami, per titoli ed esami, etc.)",
+  "titoloEnte": "Nome completo dell'ente e titolo del concorso",
+  "tipoConcorso": "Tipo (per esami, per titoli ed esami, etc.)",
   "scadenzaDomanda": "DD/MM/YYYY",
   "dataPresuntaEsame": "DD/MM/YYYY o 'Da definire'",
   "posti": numero_posti_totale,
   "profili": [
     {
-      "nome": "Nome profilo/figura professionale",
-      "posti": numero_posti_profilo,
-      "titoliStudio": ["Elenco ESATTO delle classi di laurea con codici (es. LM-63, L-14, LMG/01)"],
-      "altriRequisiti": ["Altri requisiti specifici per questo profilo"]
+      "nome": "Nome profilo",
+      "posti": numero_posti,
+      "titoliStudio": ["Classi di laurea con codici (es. LM-63, L-14)"],
+      "altriRequisiti": []
     }
   ],
-  "requisiti": [
-    {"titolo": "Requisito ESATTO come da bando", "soddisfatto": null}
-  ],
+  "requisiti": [{"titolo": "Requisito", "soddisfatto": null}],
   "prove": {
-    "tipo": "Tipo prove (scritta, orale, pratica)",
-    "descrizione": "Descrizione dettagliata delle prove",
+    "tipo": "Tipo prove",
+    "descrizione": "Descrizione",
     "hasPreselettiva": true/false,
     "hasBancaDati": true/false,
-    "bancaDatiInfo": "Dettagli sulla banca dati se presente",
-    "penalitaErrori": "Valore ESATTO della penalità (es. '-0.25', '-0.33') o null se non specificata",
-    "punteggioRispostaCorretta": "Punteggio per risposta corretta se specificato",
-    "punteggioRispostaNonData": "Punteggio per risposta non data se specificato"
+    "bancaDatiInfo": "Info banca dati",
+    "penalitaErrori": "Valore penalità (es. '-0.25') o null",
+    "punteggioRispostaCorretta": "Punteggio risposta corretta o null",
+    "punteggioRispostaNonData": "Punteggio risposta non data o null"
   },
   "materie": [
     {
-      "nome": "Nome materia ESATTO come da bando",
-      "microArgomenti": ["TUTTI gli argomenti/sotto-argomenti citati nel bando per questa materia, inclusi riferimenti normativi, leggi, decreti, codici"],
-      "peso": percentuale_se_indicata
+      "nome": "Nome materia",
+      "microArgomenti": ["Tutti gli argomenti citati nel bando"],
+      "peso": percentuale_o_null,
+      "numeroDomande": numero_domande_o_null
     }
   ],
   "passaggiIscrizione": [
-    {"step": 1, "descrizione": "Registrazione sul portale INPA (inPA.gov.it)", "completato": false},
-    {"step": 2, "descrizione": "Compilazione domanda online", "completato": false},
-    {"step": 3, "descrizione": "Pagamento tassa di concorso (importo se specificato)", "completato": false},
-    {"step": 4, "descrizione": "Allegare documentazione richiesta", "completato": false}
-  ],
-  "calendarioInverso": [
-    {
-      "fase": "Nome fase studio",
-      "dataInizio": "DD/MM/YYYY",
-      "dataFine": "DD/MM/YYYY",
-      "giorniDisponibili": numero_giorni,
-      "oreStimate": ore_stimate
-    }
-  ],
-  "oreTotaliDisponibili": numero_ore_totali,
-  "giorniTapering": 7
-}
-
-ISTRUZIONI CRITICHE:
-- Per i TITOLI DI STUDIO: copia ESATTAMENTE le classi di laurea dal bando, inclusi i codici (LM-xx, L-xx, etc.)
-- Per le PENALITÀ: cerca parole chiave come "penalità", "punteggio negativo", "risposta errata detrarrà", "meno X punti"
-- Per il PORTALE: quasi tutti i concorsi pubblici usano INPA - verifica nel bando
-- NON inventare informazioni: se un dato non è presente, usa null
-- Per le MATERIE D'ESAME: estrai TUTTI i sotto-argomenti, riferimenti normativi (leggi, decreti, codici), e aree tematiche specifiche menzionate per OGNI materia. Non riassumere, copia letteralmente dal bando. Cerca nell'articolo relativo alla "prova scritta" o "prova preselettiva" l'elenco completo delle materie e dei loro argomenti.
-- Se una materia cita più argomenti (es. "principi generali", "procedimento amministrativo", "atti e provvedimenti"), elenca OGNUNO separatamente nei microArgomenti`;
+    {"step": 1, "descrizione": "Registrazione sul portale INPA", "completato": false, "link": "https://www.inpa.gov.it/#bandi-avvisi"},
+    {"step": 2, "descrizione": "Compilazione domanda", "completato": false},
+    {"step": 3, "descrizione": "Pagamento tassa", "completato": false},
+    {"step": 4, "descrizione": "Allegare documentazione", "completato": false}
+  ]
+}`;
 
       const contentToSend = fileContent.substring(0, 100000);
-      
-      console.log(`PDF total: ${fileContent.length} chars, sending: ${contentToSend.length} chars`);
-      console.log(`Searching for penalty keywords in extracted text...`);
-      
-      const penaltyPatterns = [
-        /risposta errata[:\s]*([+-]?\d+[,.]?\d*)\s*punt/i,
-        /errata[:\s]*([+-]?\d+[,.]?\d*)\s*punt/i,
-        /risposta errata[:\s]*([+-]?\d+[,.]?\d*)/i,
-        /penalità[:\s]*([+-]?\d+[,.]?\d*)/i,
-        /(-\d+[,.]?\d*)\s*punt[io]?\s*(?:per\s+)?(?:ogni\s+)?(?:risposta\s+)?errata/i
-      ];
-      
-      const correctPatterns = [
-        /risposta esatta[:\s]*\+?(\d+[,.]?\d*)\s*punt/i,
-        /esatta[:\s]*\+?(\d+[,.]?\d*)\s*punt/i,
-        /risposta corretta[:\s]*\+?(\d+[,.]?\d*)\s*punt/i,
-        /\+(\d+[,.]?\d*)\s*punt[io]?\s*(?:per\s+)?(?:ogni\s+)?(?:risposta\s+)?(?:esatta|corretta)/i
-      ];
-      
-      const noAnswerPatterns = [
-        /mancata risposta[:\s]*(\d+[,.]?\d*)\s*punt/i,
-        /risposta non data[:\s]*(\d+[,.]?\d*)\s*punt/i,
-        /non risposta[:\s]*(\d+[,.]?\d*)/i,
-        /omessa[:\s]*(\d+[,.]?\d*)/i
-      ];
-      
-      let extractedPenalty: string | null = null;
-      let extractedCorrect: string | null = null;
-      let extractedNoAnswer: string | null = null;
-      
-      for (const pattern of penaltyPatterns) {
-        const match = fileContent.match(pattern);
-        if (match) {
-          extractedPenalty = match[1].replace(',', '.');
-          if (!extractedPenalty.startsWith('-')) extractedPenalty = '-' + extractedPenalty;
-          console.log(`Penalty found with pattern ${pattern}: ${extractedPenalty}`);
-          break;
-        }
-      }
-      
-      for (const pattern of correctPatterns) {
-        const match = fileContent.match(pattern);
-        if (match) {
-          extractedCorrect = '+' + match[1].replace(',', '.');
-          console.log(`Correct answer score found with pattern ${pattern}: ${extractedCorrect}`);
-          break;
-        }
-      }
-      
-      for (const pattern of noAnswerPatterns) {
-        const match = fileContent.match(pattern);
-        if (match) {
-          extractedNoAnswer = match[1].replace(',', '.');
-          console.log(`No answer score found with pattern ${pattern}: ${extractedNoAnswer}`);
-          break;
-        }
-      }
-      
-      console.log(`REGEX EXTRACTION - Penalty: ${extractedPenalty || 'not found'}, Correct: ${extractedCorrect || 'not found'}, No answer: ${extractedNoAnswer || 'not found'}`);
-      
-      const titoliStudioPattern = /(?:L-\d{1,2}|LM-\d{1,2}|LMG[\/-]?\d{1,2}|LS-\d{1,2})/gi;
-      
-      const extractedTitoli: string[] = [];
-      const seenTitoli = new Set<string>();
-      
-      let titoloMatch;
-      while ((titoloMatch = titoliStudioPattern.exec(fileContent)) !== null) {
-        const titolo = titoloMatch[0].toUpperCase().replace('/', '-');
-        if (!seenTitoli.has(titolo)) {
-          seenTitoli.add(titolo);
-          extractedTitoli.push(titolo);
-        }
-      }
-      
-      console.log(`TITOLI DI STUDIO ESTRATTI: ${extractedTitoli.length > 0 ? extractedTitoli.join(', ') : 'nessuno trovato'}`);
-      
-      const materieKeywords = [
-        'diritto amministrativo', 'diritto costituzionale', 'diritto civile',
-        'diritto dell\'unione europea', 'diritto penale', 'diritto del lavoro',
-        'contabilità', 'organizzazione', 'inglese', 'informatica',
-        'logico-deduttiv', 'situazional'
-      ];
-      
-      const extractedMaterie: string[] = [];
-      for (const keyword of materieKeywords) {
-        if (fileContent.toLowerCase().includes(keyword)) {
-          extractedMaterie.push(keyword);
-        }
-      }
-      
-      console.log(`MATERIE ESTRATTE: ${extractedMaterie.length > 0 ? extractedMaterie.join(', ') : 'nessuna trovata'}`);
-      
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Analizza questo bando di concorso pubblico italiano. Leggi attentamente tutto il testo e estrai le informazioni richieste. ATTENZIONE: cerca specificamente le PENALITÀ PER ERRORI e i TITOLI DI STUDIO ESATTI con codici classe.\n\n${contentToSend}` }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.2,
-        max_tokens: 4000,
-      });
+      const userPrompt = `Analizza questo bando di concorso pubblico italiano ed estrai tutte le informazioni richieste:\n\n${contentToSend}`;
+      console.log(`[BANDO] Invio ${contentToSend.length} caratteri a OpenAI`);
 
-      const content = response.choices[0].message.content;
-      console.log(`OpenAI response received: ${content?.substring(0, 500)}...`);
-      
+      // SYSTEM HYBRID: Use Gemini if available (faster/cheaper for large context), fallback to OpenAI
+      let content: string | null = null;
+      const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+
+      if (shouldUseGemini) {
+        console.log("Using Gemini for analysis...");
+        try {
+           const geminiPrompt = `${systemPrompt}\n\n${userPrompt} Restituisci SOLO JSON valido senza markdown.`;
+           content = await analyzeWithGemini(geminiPrompt, contentToSend);
+           console.log("[BANDO] Risposta Gemini ricevuta (lunghezza: " + content.length + ")");
+           content = cleanJson(content);
+        } catch (err) {
+           console.error("Gemini analysis failed, falling back to OpenAI", err);
+           // Fallback will happen below if content is null
+           content = null;
+        }
+      }
+
       if (!content) {
-        throw new Error("Nessuna risposta dall'AI");
+        // 5. Chiama OpenAI
+        console.log("[BANDO] Chiamata API OpenAI...");
+        try {
+          const openaiClient = getOpenAIClient();
+          const response = await openaiClient.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.2,
+            max_tokens: 4000,
+          });
+          console.log("[BANDO] Risposta OpenAI ricevuta");
+          content = response.choices[0]?.message?.content;
+          if (content) {
+            content = cleanJson(content);
+          }
+        } catch (openaiError: any) {
+          console.error("[BANDO] ERRORE chiamata OpenAI:", openaiError.message);
+          console.error("[BANDO] Status:", openaiError.response?.status);
+          console.error("[BANDO] Stack:", openaiError.stack);
+          if (openaiError.response?.status === 401) {
+            return res.status(500).json({ 
+              error: "Chiave API OpenAI non valida",
+              details: "Verifica la chiave nel file .env"
+            });
+          }
+          if (openaiError.response?.status === 429) {
+            return res.status(500).json({ 
+              error: "Limite di rate raggiunto",
+              details: "Riprova più tardi"
+            });
+          }
+          throw openaiError;
+        }
       }
 
-      const bandoData = JSON.parse(content);
+      // 6. Parse risposta
+      console.log("[BANDO] Parsing risposta...");
+      if (!content) {
+        console.error("[BANDO] ERRORE: Nessuna risposta dall'AI");
+        throw new Error("Nessuna risposta dall'AI. Verifica le chiavi API.");
+      }
       
+      // Log primi 100 caratteri per debug
+      console.log(`[BANDO] Contenuto da parsare (primi 100 chars): ${content.substring(0, 100)}...`);
+
+      let bandoData;
+      try {
+        bandoData = JSON.parse(content);
+        console.log("[BANDO] JSON parsato correttamente");
+      } catch (parseError: any) {
+        console.error("[BANDO] ERRORE parsing JSON:", parseError.message);
+        console.error("[BANDO] Contenuto completo che ha causato l'errore:", content);
+        
+        // Tentativo di recupero: se il JSON è troncato, prova a chiuderlo (molto basilare)
+        try {
+            if (content.trim().startsWith("{") && !content.trim().endsWith("}")) {
+                console.log("[BANDO] Tentativo di fix JSON troncato...");
+                const fixedContent = content + "}";
+                bandoData = JSON.parse(fixedContent);
+                console.log("[BANDO] JSON fixato e parsato!");
+            } else {
+                throw parseError;
+            }
+        } catch (retryError) {
+            throw new Error(`Errore nel parsing della risposta AI. Il formato non è JSON valido. Dettaglio: ${parseError.message}`);
+        }
+      }
+
+      // 7. Aggiungi dati calcolati
       if (!bandoData.prove) {
         bandoData.prove = {};
       }
-      
-      if (extractedPenalty && !bandoData.prove.penalitaErrori) {
-        bandoData.prove.penalitaErrori = extractedPenalty;
-        console.log(`Overriding AI penalty with regex value: ${extractedPenalty}`);
-      }
-      
-      if (extractedCorrect && !bandoData.prove.punteggioRispostaCorretta) {
-        bandoData.prove.punteggioRispostaCorretta = extractedCorrect;
-        console.log(`Overriding AI correct score with regex value: ${extractedCorrect}`);
-      }
-      
-      if (extractedNoAnswer && !bandoData.prove.punteggioRispostaNonData) {
-        bandoData.prove.punteggioRispostaNonData = extractedNoAnswer;
-        console.log(`Overriding AI no-answer score with regex value: ${extractedNoAnswer}`);
-      }
-      
-      if (extractedTitoli.length > 0) {
-        if (!bandoData.profili || bandoData.profili.length === 0) {
-          bandoData.profili = [{ nome: "Profilo principale", posti: bandoData.posti || 1, titoliStudio: extractedTitoli, altriRequisiti: [] }];
-          console.log(`Created profile with extracted titoli: ${extractedTitoli.join(', ')}`);
-        } else {
-          for (const profilo of bandoData.profili) {
-            if (!profilo.titoliStudio || profilo.titoliStudio.length === 0) {
-              profilo.titoliStudio = extractedTitoli;
-              console.log(`Added extracted titoli to profile ${profilo.nome}: ${extractedTitoli.join(', ')}`);
-            } else {
-              const existingCodes = profilo.titoliStudio.map((t: string) => {
-                const match = t.match(/(?:L-\d{1,2}|LM-\d{1,2}|LMG[\/-]?\d{1,2}|LS-\d{1,2})/i);
-                return match ? match[0].toUpperCase().replace('/', '-') : null;
-              }).filter(Boolean);
-              
-              for (const titolo of extractedTitoli) {
-                if (!existingCodes.includes(titolo)) {
-                  profilo.titoliStudio.push(titolo);
-                }
-              }
-              console.log(`Merged titoli for profile ${profilo.nome}: ${profilo.titoliStudio.join(', ')}`);
-            }
-          }
-        }
-      }
-      
-      if (extractedMaterie.length > 0 && (!bandoData.materie || bandoData.materie.length === 0)) {
-        bandoData.materie = extractedMaterie.map(m => ({
-          nome: m.charAt(0).toUpperCase() + m.slice(1),
-          microArgomenti: [],
-          peso: null
-        }));
-        console.log(`Added extracted materie: ${extractedMaterie.join(', ')}`);
-      }
-      
+
       const mesiPreparazione = 6;
       const oreSettimanali = 15;
       const oggi = new Date();
       const dataEsame = new Date(oggi);
       dataEsame.setMonth(dataEsame.getMonth() + mesiPreparazione);
-      
       const giorniTotali = Math.floor((dataEsame.getTime() - oggi.getTime()) / (1000 * 60 * 60 * 24));
       const oreTotali = Math.floor(giorniTotali / 7) * oreSettimanali;
-      
+
       const fasi = [
         { nome: "Fase 1: Intelligence & Setup", percentuale: 10 },
         { nome: "Fase 2: Acquisizione Strategica", percentuale: 40 },
         { nome: "Fase 3: Consolidamento e Memorizzazione", percentuale: 30 },
         { nome: "Fase 4: Simulazione ad Alta Fedeltà", percentuale: 20 }
       ];
-      
+
       let giorniUsati = 0;
-      const calendarioGenerato = fasi.map((fase, index) => {
+      const calendarioGenerato = fasi.map((fase) => {
         const giorniFase = Math.floor(giorniTotali * (fase.percentuale / 100));
         const dataInizio = new Date(oggi);
         dataInizio.setDate(dataInizio.getDate() + giorniUsati);
         const dataFine = new Date(dataInizio);
         dataFine.setDate(dataFine.getDate() + giorniFase - 1);
         giorniUsati += giorniFase;
-        
+
         const formatDate = (d: Date) => {
           const day = d.getDate().toString().padStart(2, '0');
           const month = (d.getMonth() + 1).toString().padStart(2, '0');
           const year = d.getFullYear();
           return `${day}/${month}/${year}`;
         };
-        
+
         return {
           fase: fase.nome,
           dataInizio: formatDate(dataInizio),
@@ -667,44 +1478,110 @@ ISTRUZIONI CRITICHE:
           oreStimate: Math.floor(oreTotali * (fase.percentuale / 100))
         };
       });
-      
+
       bandoData.calendarioInverso = calendarioGenerato;
       bandoData.oreTotaliDisponibili = oreTotali;
       bandoData.giorniTapering = 7;
       bandoData.mesiPreparazione = mesiPreparazione;
       bandoData.oreSettimanali = oreSettimanali;
       bandoData.dataInizioStudio = oggi.toISOString();
-      
-      console.log(`Calendario inverso generato: ${mesiPreparazione} mesi, ${oreTotali}h totali, ${giorniTotali} giorni`);
-      console.log(`Bando analysis complete: ${bandoData.titoloEnte || 'No title'}`);
-      console.log(`Final penalties: penalty=${bandoData.prove?.penalitaErrori}, correct=${bandoData.prove?.punteggioRispostaCorretta}, noAnswer=${bandoData.prove?.punteggioRispostaNonData}`);
+
+      // Calcola automaticamente il peso % delle materie in base al numero di domande
+      if (bandoData.materie && Array.isArray(bandoData.materie)) {
+        const materieConDomande = bandoData.materie.filter((m: any) => m.numeroDomande && m.numeroDomande > 0);
+        const totaleDomande = materieConDomande.reduce((sum: number, m: any) => sum + (m.numeroDomande || 0), 0);
+        
+        bandoData.materie = bandoData.materie.map((materia: any) => {
+          if (materia.numeroDomande && materia.numeroDomande > 0 && totaleDomande > 0) {
+            // Calcola peso reale in base al numero di domande
+            const pesoReale = Math.round((materia.numeroDomande / totaleDomande) * 100 * 10) / 10;
+            return { ...materia, peso: pesoReale };
+          } else if (!materia.peso || materia.peso === null) {
+            // Se non c'è numero di domande e non c'è peso, calcola peso teorico (equidistribuito)
+            const pesoTeorico = Math.round((100 / bandoData.materie.length) * 10) / 10;
+            return { ...materia, peso: pesoTeorico };
+          }
+          return materia;
+        });
+        
+        console.log("[BANDO] Pesi materie calcolati:", bandoData.materie.map((m: any) => `${m.nome}: ${m.peso}%`));
+      }
+
+      // Aggiungi link INPA allo step 1 se non presente
+      if (bandoData.passaggiIscrizione && Array.isArray(bandoData.passaggiIscrizione)) {
+        bandoData.passaggiIscrizione = bandoData.passaggiIscrizione.map((passaggio: any) => {
+          if (passaggio.step === 1) {
+            return {
+              ...passaggio,
+              link: "https://www.inpa.gov.it/#bandi-avvisi"
+            };
+          }
+          return passaggio;
+        });
+      }
+
+      // 8. Rispondi
+      console.log(`[BANDO] === ANALISI COMPLETATA: ${bandoData.titoloEnte || 'N/A'} ===`);
       res.json(bandoData);
     } catch (error: any) {
-      console.error("Error analyzing bando:", error?.message || error);
-      if (error?.response?.data) {
-        console.error("OpenAI error details:", error.response.data);
-      }
-      res.status(500).json({ error: "Errore durante l'analisi del bando. Riprova con un altro file." });
+      console.error("[BANDO] === ERRORE GENERALE ===");
+      console.error("[BANDO] Tipo:", typeof error);
+      console.error("[BANDO] Nome:", error?.name);
+      console.error("[BANDO] Messaggio:", error?.message);
+      console.error("[BANDO] Stack:", error?.stack);
+      res.status(500).json({ 
+        error: "Errore durante l'analisi del bando",
+        details: error.message || "Errore sconosciuto",
+        suggestion: "Verifica che il file PDF contenga testo selezionabile e riprova."
+      });
     }
   });
 
   app.post("/api/phase1/complete", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
-      const bandoData = req.body;
+      const { concorsoId, ...bandoData } = req.body;
       
-      const concorso = await storage.createConcorso({
-        userId,
-        nome: bandoData.titoloEnte || "Nuovo Concorso",
-        titoloEnte: bandoData.titoloEnte,
-        tipoConcorso: bandoData.tipoConcorso,
-        posti: bandoData.posti,
-        scadenzaDomanda: bandoData.scadenzaDomanda,
-        dataPresuntaEsame: bandoData.dataPresuntaEsame,
-        mesiPreparazione: bandoData.mesiPreparazione || 6,
-        oreSettimanali: bandoData.oreSettimanali || 15,
-        bandoAnalysis: bandoData,
-      });
+      let concorso: Concorso;
+      
+      if (concorsoId) {
+        // Aggiorna concorso esistente
+        console.log("Updating existing concorso:", concorsoId);
+        const updated = await storage.updateConcorso(concorsoId, userId, {
+          nome: bandoData.titoloEnte || "Nuovo Concorso",
+          titoloEnte: bandoData.titoloEnte,
+          tipoConcorso: bandoData.tipoConcorso,
+          posti: bandoData.posti,
+          scadenzaDomanda: bandoData.scadenzaDomanda,
+          dataPresuntaEsame: bandoData.dataPresuntaEsame,
+          mesiPreparazione: bandoData.mesiPreparazione || 6,
+          oreSettimanali: bandoData.oreSettimanali || 15,
+          bandoAnalysis: bandoData,
+        });
+        
+        if (!updated) {
+          return res.status(404).json({ error: "Concorso non trovato o non autorizzato" });
+        }
+        
+        concorso = updated;
+        console.log("Phase 1 completed, concorso updated:", concorso.id);
+      } else {
+        // Crea nuovo concorso (retrocompatibilità)
+        console.log("Creating new concorso");
+        concorso = await storage.createConcorso({
+          userId,
+          nome: bandoData.titoloEnte || "Nuovo Concorso",
+          titoloEnte: bandoData.titoloEnte,
+          tipoConcorso: bandoData.tipoConcorso,
+          posti: bandoData.posti,
+          scadenzaDomanda: bandoData.scadenzaDomanda,
+          dataPresuntaEsame: bandoData.dataPresuntaEsame,
+          mesiPreparazione: bandoData.mesiPreparazione || 6,
+          oreSettimanali: bandoData.oreSettimanali || 15,
+          bandoAnalysis: bandoData,
+        });
+        console.log("Phase 1 completed, concorso created:", concorso.id);
+      }
       
       await storage.upsertUserProgress({
         userId,
@@ -713,13 +1590,528 @@ ISTRUZIONI CRITICHE:
         faseCorrente: 2,
       });
       
-      console.log("Phase 1 completed, concorso created:", concorso.id);
       res.json({ success: true, concorsoId: concorso.id, message: "Fase 1 completata" });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error completing phase 1:", error);
-      res.status(500).json({ error: "Errore nel completamento della fase 1" });
+      console.error("Error stack:", error.stack);
+      res.status(500).json({ 
+        error: "Errore nel completamento della fase 1",
+        details: error.message 
+      });
     }
   });
+
+  // ============================================
+  // API ENDPOINTS PER SIMULAZIONI D'ESAME
+  // ============================================
+
+  /**
+   * POST /api/simulazioni
+   * Crea una nuova simulazione d'esame
+   * Body: { concorsoId, numeroDomande, durataMinuti, tipoSimulazione, materieFiltrate }
+   */
+  app.post("/api/simulazioni", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      console.log("POST /api/simulazioni - Request body:", req.body);
+      const userId = getUserId(req);
+      console.log("POST /api/simulazioni - UserId:", userId);
+      
+      if (!userId) {
+        console.error("getUserId returned undefined. req.user:", req.user);
+        return res.status(401).json({ error: "Utente non autenticato" });
+      }
+      
+      const { concorsoId, numeroDomande = 40, durataMinuti = 60, tipoSimulazione = "completa", materieFiltrate = [] } = req.body;
+      
+      console.log("POST /api/simulazioni - Creating simulazione with:", {
+        concorsoId,
+        numeroDomande,
+        durataMinuti,
+        tipoSimulazione,
+        materieFiltrate,
+      });
+
+      if (!concorsoId) {
+        return res.status(400).json({ error: "concorsoId è obbligatorio" });
+      }
+
+      // Verifica che il concorso esista e appartenga all'utente
+      const concorso = await storage.getConcorso(concorsoId, userId);
+      if (!concorso) {
+        return res.status(404).json({ error: "Concorso non trovato" });
+      }
+
+      // Recupera tutte le flashcards del concorso
+      let flashcards = await storage.getFlashcards(userId, concorsoId);
+      
+      if (flashcards.length === 0) {
+        return res.status(400).json({ error: "Nessuna flashcard disponibile per questo concorso" });
+      }
+
+      // Filtra per materie se specificate
+      if (Array.isArray(materieFiltrate) && materieFiltrate.length > 0) {
+        flashcards = flashcards.filter(fc => materieFiltrate.includes(fc.materia));
+        if (flashcards.length === 0) {
+          return res.status(400).json({ error: "Nessuna flashcard disponibile per le materie selezionate" });
+        }
+      }
+
+      // Verifica che ci siano abbastanza flashcards
+      if (flashcards.length < 4) {
+        return res.status(400).json({ 
+          error: `Non ci sono abbastanza flashcards per generare una simulazione. Minimo richiesto: 4. Disponibili: ${flashcards.length}` 
+        });
+      }
+
+      // Se non ci sono abbastanza flashcards per il numero richiesto, usa tutte quelle disponibili
+      if (flashcards.length < numeroDomande) {
+        console.log(`[SIMULAZIONE] Richieste ${numeroDomande} domande, ma disponibili solo ${flashcards.length}. Adatto il numero.`);
+        // Non modifichiamo la variabile const numeroDomande, ma useremo flashcards.length per il slice
+      }
+      
+      const numeroDomandeEffettivo = Math.min(numeroDomande, flashcards.length);
+
+      // Seleziona flashcards random
+      const flashcardsSelezionate = flashcards
+        .sort(() => Math.random() - 0.5)
+        .slice(0, numeroDomandeEffettivo);
+
+      // Crea le domande della simulazione
+      // Per ogni flashcard, creiamo una domanda a scelta multipla con 4 opzioni
+      // La risposta corretta è il retro della flashcard
+      // Generiamo 3 risposte sbagliate casuali dalle altre flashcards
+      const domandeERisposte: DomandaSimulazione[] = flashcardsSelezionate.map((flashcard, index) => {
+        // Trova altre flashcards per generare risposte sbagliate
+        const altreFlashcards = flashcards.filter(fc => fc.id !== flashcard.id);
+        
+        // Se abbiamo meno di 3 altre flashcards, prendiamo tutte quelle disponibili e duplichiamo se necessario
+        let risposteSbagliateCandidates = altreFlashcards.sort(() => Math.random() - 0.5);
+        
+        // Assicurati di avere sempre 3 risposte sbagliate
+        let risposteSbagliate: string[] = [];
+        if (risposteSbagliateCandidates.length >= 3) {
+           risposteSbagliate = risposteSbagliateCandidates.slice(0, 3).map(fc => fc.retro);
+        } else {
+           // Se non abbiamo abbastanza candidate uniche, riusiamo quelle che abbiamo
+           // Questo caso limite accade solo se abbiamo < 4 flashcards totali, che abbiamo già bloccato sopra
+           // Ma per sicurezza:
+           const disponibili = risposteSbagliateCandidates.map(fc => fc.retro);
+           while (risposteSbagliate.length < 3) {
+             risposteSbagliate.push(...disponibili);
+             if (risposteSbagliate.length < 3 && disponibili.length === 0) {
+               // Fallback estremo se non ci sono altre flashcards
+               risposteSbagliate.push("Risposta errata " + (risposteSbagliate.length + 1));
+             }
+           }
+           risposteSbagliate = risposteSbagliate.slice(0, 3);
+        }
+
+        // Crea array di 4 opzioni: una corretta + 3 sbagliate
+        const opzioni = [flashcard.retro, ...risposteSbagliate]
+          .sort(() => Math.random() - 0.5);
+
+        // Trova l'indice della risposta corretta
+        const rispostaCorrettaIndex = opzioni.indexOf(flashcard.retro);
+        const rispostaCorretta = String.fromCharCode(65 + rispostaCorrettaIndex); // A, B, C, D
+
+        return {
+          flashcardId: flashcard.id,
+          domanda: flashcard.fronte,
+          opzioni: opzioni,
+          rispostaCorretta: rispostaCorretta,
+          materia: flashcard.materia,
+        };
+      });
+
+      // Crea la simulazione
+      const nuovaSimulazione: InsertSimulazione = {
+        userId,
+        concorsoId,
+        numeroDomande: numeroDomandeEffettivo,
+        durataMinuti,
+        tipoSimulazione,
+        materieFiltrate: Array.isArray(materieFiltrate) ? materieFiltrate : [],
+        completata: false,
+        domandeERisposte: domandeERisposte as any,
+        dataInizio: new Date(),
+      };
+
+      const simulazione = await simulazioniStorage.createSimulazione(nuovaSimulazione);
+      console.log("POST /api/simulazioni - Simulazione creata con successo:", simulazione.id);
+
+      res.status(201).json(simulazione);
+    } catch (error: any) {
+      console.error("Error creating simulazione:", error);
+      console.error("Error stack:", error.stack);
+      res.status(500).json({ 
+        error: "Errore nella creazione della simulazione",
+        message: error.message || "Errore sconosciuto"
+      });
+    }
+  });
+
+  /**
+   * GET /api/simulazioni?concorsoId=X
+   * Recupera tutte le simulazioni dell'utente, opzionalmente filtrate per concorso
+   */
+  app.get("/api/simulazioni", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const concorsoId = req.query.concorsoId as string | undefined;
+      console.log("GET /api/simulazioni - UserId:", userId, "ConcorsoId:", concorsoId);
+
+      const simulazioni = await simulazioniStorage.getSimulazioni(userId, concorsoId);
+      console.log("GET /api/simulazioni - Found", simulazioni.length, "simulazioni");
+      res.json(simulazioni);
+    } catch (error: any) {
+      console.error("Error fetching simulazioni:", error);
+      console.error("Error stack:", error?.stack);
+      res.status(500).json({ 
+        error: "Errore nel recupero delle simulazioni",
+        details: error?.message || "Errore sconosciuto"
+      });
+    }
+  });
+
+  /**
+   * GET /api/simulazioni/:id
+   * Recupera i dettagli di una simulazione specifica
+   */
+  app.get("/api/simulazioni/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const simulazione = await simulazioniStorage.getSimulazione(req.params.id, userId);
+
+      if (!simulazione) {
+        return res.status(404).json({ error: "Simulazione non trovata" });
+      }
+
+      res.json(simulazione);
+    } catch (error) {
+      console.error("Error fetching simulazione:", error);
+      res.status(500).json({ error: "Errore nel recupero della simulazione" });
+    }
+  });
+
+  /**
+   * PATCH /api/simulazioni/:id/complete
+   * Completa una simulazione e calcola i risultati
+   * Body: { domandeERisposte, tempoTrascorsoSecondi }
+   */
+  app.patch("/api/simulazioni/:id/complete", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { domandeERisposte, tempoTrascorsoSecondi } = req.body;
+
+      // Recupera la simulazione
+      const simulazione = await simulazioniStorage.getSimulazione(req.params.id, userId);
+      if (!simulazione) {
+        return res.status(404).json({ error: "Simulazione non trovata" });
+      }
+
+      if (simulazione.completata) {
+        return res.status(400).json({ error: "Simulazione già completata" });
+      }
+
+      // Recupera il concorso per ottenere bandoAnalysis e calcolare penalità
+      const concorso = await storage.getConcorso(simulazione.concorsoId, userId);
+      if (!concorso) {
+        return res.status(404).json({ error: "Concorso non trovato" });
+      }
+
+      const bandoAnalysis = concorso.bandoAnalysis as any;
+      const materie = bandoAnalysis?.materie || [];
+
+      // Calcola statistiche
+      let corrette = 0;
+      let errate = 0;
+      let nonDate = 0;
+      const dettagliPerMateria: Record<string, DettagliMateria> = {};
+
+      // Inizializza dettagli per materia
+      materie.forEach((materia: any) => {
+        dettagliPerMateria[materia.nome] = {
+          corrette: 0,
+          errate: 0,
+          nonDate: 0,
+          punteggio: 0,
+          percentuale: 0,
+        };
+      });
+
+      // Processa ogni domanda
+      const domandeAggiornate = (domandeERisposte || simulazione.domandeERisposte as DomandaSimulazione[]).map((domanda: any) => {
+        const materia = domanda.materia || "Generale";
+        
+        if (!dettagliPerMateria[materia]) {
+          dettagliPerMateria[materia] = {
+            corrette: 0,
+            errate: 0,
+            nonDate: 0,
+            punteggio: 0,
+            percentuale: 0,
+          };
+        }
+
+        if (!domanda.rispostaUtente || domanda.rispostaUtente.trim() === "") {
+          nonDate++;
+          dettagliPerMateria[materia].nonDate++;
+          return domanda;
+        }
+
+        const corretta = domanda.rispostaUtente.toUpperCase() === domanda.rispostaCorretta.toUpperCase();
+        
+        if (corretta) {
+          corrette++;
+          dettagliPerMateria[materia].corrette++;
+        } else {
+          errate++;
+          dettagliPerMateria[materia].errate++;
+        }
+
+        return { ...domanda, rispostaUtente: domanda.rispostaUtente };
+      });
+
+      // Calcola punteggio con penalità
+      // Formula: (corrette / totale) * 100 - (errate * penalità)
+      const totale = domandeAggiornate.length;
+      const percentualeCorrette = totale > 0 ? (corrette / totale) * 100 : 0;
+
+      // Calcola penalità per materia basata sui pesi nel bandoAnalysis
+      let punteggioFinale = percentualeCorrette;
+      
+      materie.forEach((materia: any) => {
+        const dettagli = dettagliPerMateria[materia.nome];
+        if (dettagli) {
+          const totaleMateria = dettagli.corrette + dettagli.errate + dettagli.nonDate;
+          if (totaleMateria > 0) {
+            dettagli.percentuale = (dettagli.corrette / totaleMateria) * 100;
+            // Penalità: ogni errore riduce il punteggio proporzionalmente al peso della materia
+            const peso = materia.peso || 0;
+            const penalitaPerErrore = peso * 0.5; // 0.5 punti di penalità per ogni errore, moltiplicato per il peso
+            dettagli.punteggio = dettagli.percentuale - (dettagli.errate * penalitaPerErrore);
+          }
+        }
+      });
+
+      // Penalità globale: ogni errore riduce il punteggio di 0.25 punti
+      const penalitaGlobale = errate * 0.25;
+      punteggioFinale = Math.max(0, punteggioFinale - penalitaGlobale);
+
+      // Aggiorna la simulazione
+      const simulazioneAggiornata = await simulazioniStorage.updateSimulazione(
+        req.params.id,
+        userId,
+        {
+          completata: true,
+          punteggio: punteggioFinale,
+          percentualeCorrette,
+          tempoTrascorsoSecondi: tempoTrascorsoSecondi || null,
+          dettagliPerMateria: dettagliPerMateria as any,
+          domandeERisposte: domandeAggiornate as any,
+          dataCompletamento: new Date(),
+        }
+      );
+
+      res.json(simulazioneAggiornata);
+    } catch (error) {
+      console.error("Error completing simulazione:", error);
+      res.status(500).json({ error: "Errore nel completamento della simulazione" });
+    }
+  });
+
+  /**
+   * PATCH /api/simulazioni/:id
+   * Aggiorna una simulazione (per salvare risposte durante l'esame)
+   * Body: { domandeERisposte }
+   */
+  app.patch("/api/simulazioni/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { domandeERisposte } = req.body;
+
+      const simulazione = await simulazioniStorage.updateSimulazione(
+        req.params.id,
+        userId,
+        {
+          domandeERisposte: domandeERisposte as any,
+        }
+      );
+
+      if (!simulazione) {
+        return res.status(404).json({ error: "Simulazione non trovata" });
+      }
+
+      res.json(simulazione);
+    } catch (error) {
+      console.error("Error updating simulazione:", error);
+      res.status(500).json({ error: "Errore nell'aggiornamento della simulazione" });
+    }
+  });
+
+  /**
+   * DELETE /api/simulazioni/:id
+   * Elimina una simulazione
+   */
+  app.delete("/api/simulazioni/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const deleted = await simulazioniStorage.deleteSimulazione(req.params.id, userId);
+
+      if (!deleted) {
+        return res.status(404).json({ error: "Simulazione non trovata" });
+      }
+
+      res.json({ success: true, message: "Simulazione eliminata" });
+    } catch (error) {
+      console.error("Error deleting simulazione:", error);
+      res.status(500).json({ error: "Errore nell'eliminazione della simulazione" });
+    }
+  });
+
+  /**
+   * POST /api/specialista/spiega
+   * Chiedi spiegazione di un concetto allo specialista AI
+   */
+  
+  // Rate limiting in-memory per utente
+  const rateLimitMap = new Map<string, number>();
+
+  function checkRateLimit(userId: string): boolean {
+    const now = Date.now();
+    const lastRequest = rateLimitMap.get(userId) || 0;
+    
+    if (now - lastRequest < 3000) {
+      return false; // Troppo veloce (meno di 3 secondi)
+    }
+    
+    rateLimitMap.set(userId, now);
+    return true;
+  }
+
+  app.post("/api/specialista/spiega", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { concetto, concorsoId } = req.body;
+
+      if (!concetto || typeof concetto !== 'string' || concetto.trim().length < 5) {
+        return res.status(400).json({ error: "Concetto troppo breve (minimo 5 caratteri)" });
+      }
+
+      if (!concorsoId) {
+        return res.status(400).json({ error: "concorsoId richiesto" });
+      }
+
+      // Rate limiting
+      if (!checkRateLimit(userId)) {
+        return res.status(429).json({ error: "Aspetta 3 secondi prima della prossima domanda" });
+      }
+
+      // Ottieni contesto del concorso (materie, tipo concorso)
+      const concorso = await storage.getConcorso(concorsoId, userId);
+      if (!concorso) {
+        return res.status(404).json({ error: "Concorso non trovato" });
+      }
+
+      const bandoAnalysis = concorso.bandoAnalysis as any;
+      const materieConcorso = bandoAnalysis?.materie?.map((m: any) => m.nome).join(', ') || 'materie del concorso';
+
+      console.log("[SPECIALISTA] Richiesta spiegazione per:", concetto.substring(0, 100));
+
+      // SYSTEM HYBRID: Use Gemini if available (faster/cheaper), fallback to OpenAI
+      let spiegazione: string | null = null;
+      const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+
+      const systemPrompt = `Sei uno specialista esperto in concorsi pubblici italiani, con focus su: ${materieConcorso}.
+
+Il tuo compito è spiegare concetti in modo CHIARO, SEMPLICE e DIRETTO.
+
+REGOLE:
+1. Usa un linguaggio accessibile, come se parlassi a uno studente
+2. Struttura la spiegazione in modo logico:
+   - Definizione semplice (1-2 frasi)
+   - Spiegazione più dettagliata
+   - Esempio pratico quando possibile
+   - Perché è importante per il concorso
+3. Massimo 200 parole
+4. NON usare gergo tecnico senza spiegarlo
+5. Se è una legge/articolo, spiega cosa significa nella pratica
+6. Evidenzia concetti chiave con emoji (📌 ✅ ⚠️)
+
+IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi sapere se hai altre domande".`;
+
+      if (shouldUseGemini) {
+        try {
+           const geminiPrompt = `${systemPrompt}\n\nSpiega questo concetto: ${concetto}`;
+           spiegazione = await analyzeWithGemini(geminiPrompt, "");
+           // Clean markdown
+           spiegazione = spiegazione.replace(/```/g, "").trim();
+        } catch (err) {
+           console.error("Gemini explanation failed, falling back to OpenAI", err);
+           spiegazione = null;
+        }
+      }
+
+      if (!spiegazione) {
+        const openaiClient = getOpenAIClient();
+        if (!openaiClient) {
+          return res.status(500).json({ error: "Servizio AI non disponibile" });
+        }
+
+        const response = await openaiClient.chat.completions.create({
+          model: "gpt-4o-mini", // Usa mini per velocità e costo ridotto
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Spiega questo concetto: ${concetto}` }
+          ],
+          temperature: 0.7,
+          max_tokens: 500,
+        });
+        spiegazione = response.choices[0].message.content;
+      }
+
+      if (!spiegazione) {
+        throw new Error("Nessuna spiegazione ricevuta");
+      }
+
+      console.log("[SPECIALISTA] Spiegazione generata:", spiegazione.substring(0, 100));
+
+      res.json({ spiegazione });
+
+    } catch (error: any) {
+      console.error("[SPECIALISTA] Errore:", error?.message || error);
+      
+      // Gestisci errori specifici di OpenAI
+      if (error?.response?.status === 429) {
+        return res.status(429).json({ 
+          error: "Troppe richieste. Riprova tra qualche minuto.",
+          details: error?.message 
+        });
+      }
+      
+      if (error?.response?.status === 401) {
+        return res.status(500).json({ 
+          error: "Errore di configurazione AI",
+          details: "Chiave API non valida"
+        });
+      }
+
+      res.status(500).json({ 
+        error: "Errore nel generare la spiegazione",
+        details: error?.message 
+      });
+    }
+  });
+
+
+
+  // Registra routes SQ3R
+  // registerSQ3RRoutes(app); - Spostato sopra
+
+  // Registra routes Libreria Pubblica 
+  // registerLibreriaRoutes(app); - Spostato sopra
+
+  console.log('✅ Tutte le routes registrate');
 
   return httpServer;
 }

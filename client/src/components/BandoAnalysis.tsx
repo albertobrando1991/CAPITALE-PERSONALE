@@ -18,6 +18,7 @@ import {
   ListChecks,
   GraduationCap,
   Settings2,
+  ExternalLink,
 } from "lucide-react";
 
 export interface BandoData {
@@ -301,8 +302,22 @@ export function BandoAnalysis({
                   data-testid={`checkbox-passaggio-${index}`}
                 />
                 <div className="flex-1">
-                  <span className="font-medium mr-2">Step {passaggio.step}:</span>
-                  <span>{passaggio.descrizione}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">Step {passaggio.step}:</span>
+                    <span>{passaggio.descrizione}</span>
+                    {passaggio.link && (
+                      <a
+                        href={passaggio.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center text-primary hover:underline text-sm"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ExternalLink className="h-3 w-3 ml-1" />
+                        <span className="sr-only">Apri link</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

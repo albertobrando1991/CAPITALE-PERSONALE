@@ -6,10 +6,16 @@ import session from "express-session";
 import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
+import createMemoryStore from "memorystore";
 import { storage } from "./storage";
+
+const MemoryStore = createMemoryStore(session);
 
 const getOidcConfig = memoize(
   async () => {
+    if (!process.env.REPL_ID) {
+      return null;
+    }
     return await client.discovery(
       new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
       process.env.REPL_ID!
@@ -20,21 +26,32 @@ const getOidcConfig = memoize(
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
-  const pgStore = connectPg(session);
-  const sessionStore = new pgStore({
-    conString: process.env.DATABASE_URL,
-    createTableIfMissing: false,
-    ttl: sessionTtl,
-    tableName: "sessions",
-  });
+  
+  let store;
+  // FORCE MEMORY STORE FOR STABILITY
+  // The connect-pg-simple store is causing crashes.
+  // if (process.env.DATABASE_URL) {
+  //   const pgStore = connectPg(session);
+  //   store = new pgStore({
+  //     conString: process.env.DATABASE_URL,
+  //     createTableIfMissing: true, // changed to true for local convenience
+  //     ttl: sessionTtl,
+  //     tableName: "sessions",
+  //   });
+  // } else {
+    store = new MemoryStore({
+      checkPeriod: 86400000 // prune expired entries every 24h
+    });
+  // }
+
   return session({
-    secret: process.env.SESSION_SECRET!,
-    store: sessionStore,
+    secret: process.env.SESSION_SECRET || "local_dev_secret",
+    store: store,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production", // false for local dev usually
       maxAge: sessionTtl,
     },
   });
@@ -66,8 +83,46 @@ export async function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  passport.serializeUser((user: Express.User, cb) => cb(null, user));
+  passport.deserializeUser((user: Express.User, cb) => cb(null, user));
+
   const config = await getOidcConfig();
 
+  if (!config) {
+    // Local Dev Mode
+    console.log("REPL_ID not found, using local auth mode");
+    
+    app.get("/api/login", async (req, res) => {
+      // Mock login for local dev
+      const mockUser = {
+        claims: {
+          sub: "local-user-id",
+          email: "dev@example.com",
+          first_name: "Local",
+          last_name: "Dev",
+          profile_image_url: "https://via.placeholder.com/150"
+        },
+        expires_at: Math.floor(Date.now() / 1000) + 86400 * 7 // 7 days
+      };
+      
+      await upsertUser(mockUser.claims);
+      
+      req.login(mockUser, (err) => {
+        if (err) return res.status(500).json({ error: "Login failed" });
+        res.redirect("/");
+      });
+    });
+
+    app.get("/api/logout", (req, res) => {
+      req.logout(() => {
+        res.redirect("/");
+      });
+    });
+
+    return;
+  }
+
+  // Replit Auth Mode
   const verify: VerifyFunction = async (
     tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
     verified: passport.AuthenticateCallback
@@ -86,7 +141,7 @@ export async function setupAuth(app: Express) {
       const strategy = new Strategy(
         {
           name: strategyName,
-          config,
+          config: config!,
           scope: "openid email profile offline_access",
           callbackURL: `https://${domain}/api/callback`,
         },
@@ -96,9 +151,6 @@ export async function setupAuth(app: Express) {
       registeredStrategies.add(strategyName);
     }
   };
-
-  passport.serializeUser((user: Express.User, cb) => cb(null, user));
-  passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   app.get("/api/login", (req, res, next) => {
     ensureStrategy(req.hostname);
@@ -119,7 +171,7 @@ export async function setupAuth(app: Express) {
   app.get("/api/logout", (req, res) => {
     req.logout(() => {
       res.redirect(
-        client.buildEndSessionUrl(config, {
+        client.buildEndSessionUrl(config!, {
           client_id: process.env.REPL_ID!,
           post_logout_redirect_uri: `${req.protocol}://${req.hostname}`,
         }).href
@@ -131,7 +183,16 @@ export async function setupAuth(app: Express) {
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   const user = req.user as any;
 
-  if (!req.isAuthenticated() || !user.expires_at) {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  // If local dev (no config), just check authentication
+  if (!process.env.REPL_ID) {
+    return next();
+  }
+
+  if (!user.expires_at) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
@@ -148,6 +209,8 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
 
   try {
     const config = await getOidcConfig();
+    if (!config) return next(); // Should not happen if REPL_ID is set
+    
     const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
     updateUserSession(user, tokenResponse);
     return next();

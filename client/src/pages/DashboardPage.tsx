@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Book,
   BookOpen,
   Layers,
   Flame,
@@ -32,11 +33,13 @@ import {
   FileText,
   Trash2,
   CheckCircle,
+  Library,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Concorso } from "@shared/schema";
+import { ProssimeRevisioniWidget } from "@/components/ProssimeRevisioniWidget";
+import type { Concorso, Simulazione } from "@shared/schema";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -48,11 +51,25 @@ export default function DashboardPage() {
   const { data: concorsi = [], isLoading: concorsiLoading } = useQuery<Concorso[]>({
     queryKey: ["/api/concorsi"],
     queryFn: async () => {
-      const res = await fetch("/api/concorsi");
-      if (!res.ok) throw new Error("Failed to fetch concorsi");
+      const res = await apiRequest("GET", "/api/concorsi");
       return res.json();
     },
   });
+
+  // Carica tutte le simulazioni per calcolare statistiche
+  const { data: tutteSimulazioni = [], isLoading: isLoadingSimulazioni } = useQuery<Simulazione[]>({
+    queryKey: ["/api/simulazioni"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/simulazioni");
+      return res.json();
+    },
+  });
+
+  // Calcola statistiche simulazioni
+  const simulazioniCompletate = tutteSimulazioni.filter((s) => s.completata);
+  const migliorPunteggio = simulazioniCompletate.length > 0
+    ? Math.max(...simulazioniCompletate.map((s) => s.punteggio || 0))
+    : 0;
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -80,14 +97,35 @@ export default function DashboardPage() {
   const hasConcorsi = !concorsiLoading && concorsi.length > 0;
   const livelloGlobale = 5;
 
+  const handleCreateConcorso = async () => {
+    try {
+      const res = await apiRequest("POST", "/api/concorsi", {
+        nome: "Nuovo Concorso",
+        dataCreazione: new Date().toISOString(),
+      });
+      const newConcorso = await res.json();
+      setLocation(`/concorsi/${newConcorso.id}/fase0`);
+    } catch (error) {
+      toast({
+        title: "Errore",
+        description: "Impossibile creare un nuovo concorso.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handlePhaseClick = (phaseId: number, concorsoId?: string) => {
     if (!concorsoId && concorsi.length > 0) {
       concorsoId = concorsi[0].id;
     }
-    if (phaseId === 1) {
-      setLocation(concorsoId ? `/phase1?id=${concorsoId}` : "/phase1");
-    } else if (phaseId === 2 && concorsoId) {
-      setLocation(`/phase2?id=${concorsoId}`);
+    if (!concorsoId) return;
+
+    if (phaseId === 0) {
+      setLocation(`/concorsi/${concorsoId}/fase0`);
+    } else if (phaseId === 1) {
+      setLocation(`/concorsi/${concorsoId}/fase1`);
+    } else if (phaseId === 2) {
+      setLocation(`/concorsi/${concorsoId}/fase2`);
     }
   };
 
@@ -149,12 +187,10 @@ export default function DashboardPage() {
               <FileText className="h-5 w-5 text-primary" />
               I tuoi Concorsi ({concorsi.length})
             </h2>
-            <Link href="/phase1">
-              <Button data-testid="button-new-concorso">
-                <Plus className="h-4 w-4 mr-2" />
-                Nuovo Concorso
-              </Button>
-            </Link>
+            <Button onClick={handleCreateConcorso} data-testid="button-new-concorso">
+              <Plus className="h-4 w-4 mr-2" />
+              Nuovo Concorso
+            </Button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -168,7 +204,7 @@ export default function DashboardPage() {
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle 
                       className="text-lg line-clamp-2 flex-1 cursor-pointer"
-                      onClick={() => setLocation(isFase1Complete(concorso) ? `/phase2?id=${concorso.id}` : `/phase1?id=${concorso.id}`)}
+                      onClick={() => setLocation(isFase1Complete(concorso) ? `/concorsi/${concorso.id}/fase1` : `/concorsi/${concorso.id}/fase0`)}
                     >
                       {concorso.nome || "Concorso senza nome"}
                     </CardTitle>
@@ -176,7 +212,7 @@ export default function DashboardPage() {
                       {isFase1Complete(concorso) && (
                         <Badge variant="default" className="bg-green-600">
                           <CheckCircle className="h-3 w-3 mr-1" />
-                          Fase 1
+                          Setup OK
                         </Badge>
                       )}
                       <Badge variant="secondary">
@@ -196,7 +232,7 @@ export default function DashboardPage() {
                 </CardHeader>
                 <CardContent 
                   className="space-y-3"
-                  onClick={() => setLocation(isFase1Complete(concorso) ? `/phase2?id=${concorso.id}` : `/phase1?id=${concorso.id}`)}
+                  onClick={() => setLocation(isFase1Complete(concorso) ? `/concorsi/${concorso.id}/fase1` : `/concorsi/${concorso.id}/fase0`)}
                 >
                   {concorso.titoloEnte && (
                     <p className="text-sm text-muted-foreground line-clamp-2">
@@ -227,9 +263,41 @@ export default function DashboardPage() {
                   </div>
 
                   <Button variant="secondary" className="w-full mt-2" size="sm">
-                    {isFase1Complete(concorso) ? "Vai alla Fase 2" : "Completa Fase 1"}
+                    {isFase1Complete(concorso) ? "Vai alla Fase 1 (SQ3R)" : "Completa Setup (Fase 0)"}
                     <ArrowRight className="h-4 w-4 ml-2" />
                   </Button>
+
+                  <Button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLocation(`/concorsi/${concorso.id}/setup-fonti`);
+                    }} 
+                    variant="outline" 
+                    className="w-full mt-2"
+                    size="sm"
+                  >
+                    <Library className="w-4 h-4 mr-2" />
+                    Fonti & Materiali
+                  </Button>
+
+                  <Button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLocation(`/concorsi/${concorso.id}/fase1`);
+                    }} 
+                    variant="outline" 
+                    className="w-full mt-2"
+                    size="sm"
+                  >
+                    <BookOpen className="w-4 h-4 mr-2" />
+                    Fase 1: Apprendimento Base (SQ3R)
+                  </Button>
+                  
+                  {isFase1Complete(concorso) && (
+                    <div className="mt-3">
+                      <ProssimeRevisioniWidget concorsoId={concorso.id} />
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}
@@ -243,10 +311,10 @@ export default function DashboardPage() {
                 <Sparkles className="h-6 w-6 text-yellow-600" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-lg">Inizia dalla Fase 1: Intelligence & Setup</h3>
+                <h3 className="font-semibold text-lg">Inizia dalla Fase 0: Intelligence & Setup</h3>
                 <p className="text-muted-foreground mt-1">
                   Carica il bando del tuo primo concorso per far analizzare all'AI tutte 
-                  le informazioni necessarie. Questo e il primo passo fondamentale per 
+                  le informazioni necessarie. Questo è il primo passo fondamentale per 
                   sbloccare tutte le altre fasi.
                 </p>
                 <ul className="mt-4 space-y-2 text-sm">
@@ -263,12 +331,10 @@ export default function DashboardPage() {
                     Generazione del calendario inverso personalizzato
                   </li>
                 </ul>
-                <Link href="/phase1">
-                  <Button className="mt-4" data-testid="button-start-phase1">
-                    Carica il Bando
-                    <ArrowRight className="h-4 w-4 ml-2" />
-                  </Button>
-                </Link>
+                <Button className="mt-4" onClick={handleCreateConcorso} data-testid="button-start-phase1">
+                  Carica il Bando
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
               </div>
             </div>
           </CardContent>
@@ -301,6 +367,53 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* Sezione Simulazioni Esame */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-5 w-5 text-primary" />
+              Simulazioni Esame
+            </CardTitle>
+              <Button
+                onClick={() => {
+                  setLocation("/simulazioni");
+                }}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Nuova Simulazione
+              </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div 
+              className="p-4 bg-muted rounded-lg cursor-pointer hover:bg-muted/80 transition-colors"
+              onClick={() => setLocation("/simulazioni")}
+            >
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Simulazioni completate</p>
+                  <p className="text-2xl font-bold">{simulazioniCompletate.length}</p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </div>
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground mb-1">Miglior punteggio</p>
+              <p className="text-2xl font-bold">
+                {migliorPunteggio > 0 ? `${migliorPunteggio.toFixed(1)}%` : "N/A"}
+              </p>
+            </div>
+          </div>
+          {simulazioniCompletate.length === 0 && (
+            <p className="text-sm text-muted-foreground mt-4 text-center">
+              Inizia la tua prima simulazione per testare le tue conoscenze!
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Card>
@@ -331,13 +444,16 @@ export default function DashboardPage() {
               <CardTitle>Azioni Rapide</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Link href="/phase1" className="block">
-                <Button variant="secondary" className="w-full justify-start" data-testid="button-action-bando">
-                  <Sparkles className="h-4 w-4 mr-2" />
-                  Carica Nuovo Bando
-                </Button>
-              </Link>
-              <Link href={hasConcorsi && concorsi.some(c => c.bandoAnalysis) ? `/phase2?id=${concorsi.find(c => c.bandoAnalysis)?.id}` : "#"} className="block">
+              <Button 
+                variant="secondary" 
+                className="w-full justify-start" 
+                data-testid="button-action-bando"
+                onClick={handleCreateConcorso}
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                Carica Nuovo Bando
+              </Button>
+              <Link href={hasConcorsi && concorsi.some(c => c.bandoAnalysis) ? `/concorsi/${concorsi.find(c => c.bandoAnalysis)?.id}/fase2` : "#"} className="block">
                 <Button
                   variant="secondary"
                   className="w-full justify-start"
@@ -346,6 +462,17 @@ export default function DashboardPage() {
                 >
                   <BookOpen className="h-4 w-4 mr-2" />
                   Gestisci Materiali (Fase 2)
+                </Button>
+              </Link>
+              <Link href="/libreria" className="block">
+                <Button
+                  variant="secondary"
+                  className="w-full justify-start"
+                  disabled={!hasConcorsi}
+                  data-testid="button-action-libreria"
+                >
+                  <Book className="h-4 w-4 mr-2" />
+                  Libreria Pubblica
                 </Button>
               </Link>
               <Link href="/flashcards" className="block">

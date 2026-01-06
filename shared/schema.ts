@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, jsonb, real, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, jsonb, real, index, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -89,8 +89,14 @@ export const flashcards = pgTable("flashcards", {
   fronte: text("fronte").notNull(),
   retro: text("retro").notNull(),
   tipo: text("tipo").default("concetto"),
-  livelloSRS: integer("livello_srs").default(0),
-  prossimRevisione: timestamp("prossima_revisione").defaultNow(),
+  livelloSRS: integer("livello_srs").default(0), // Mantenuto per retrocompatibilità
+  prossimRevisione: timestamp("prossima_revisione").defaultNow(), // Mantenuto per retrocompatibilità
+  // Campi SM-2 (SuperMemo 2 Algorithm)
+  intervalloGiorni: integer("intervallo_giorni").default(0),
+  numeroRipetizioni: integer("numero_ripetizioni").default(0),
+  easeFactor: real("ease_factor").default(2.5),
+  ultimoRipasso: timestamp("ultimo_ripasso"),
+  prossimoRipasso: timestamp("prossimo_ripasso").defaultNow(),
   tempoRispostaMs: integer("tempo_risposta_ms"),
   tentativiTotali: integer("tentativi_totali").default(0),
   tentativiCorretti: integer("tentativi_corretti").default(0),
@@ -136,6 +142,7 @@ export const materials = pgTable("materials", {
   tipo: text("tipo").notNull(),
   materia: text("materia"),
   contenuto: text("contenuto"),
+  fileUrl: text("file_url"), // URL o percorso del file caricato (per PDF, Word, MP4, MP3)
   estratto: boolean("estratto").default(false),
   flashcardGenerate: integer("flashcard_generate").default(0),
   createdAt: timestamp("created_at").defaultNow(),
@@ -148,3 +155,59 @@ export const insertMaterialSchema = createInsertSchema(materials).omit({
 
 export type InsertMaterial = z.infer<typeof insertMaterialSchema>;
 export type Material = typeof materials.$inferSelect;
+
+// export const subscriptionTiers = pgEnum('subscription_tier', ['free', 'premium', 'enterprise']);
+
+export const userSubscriptions = pgTable('user_subscriptions', {
+  id: varchar('id').primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar('user_id').notNull().unique(), // Riferimento a users.id che è varchar
+  
+  // Piano attivo
+  tier: text('tier').default('free'), // 'free', 'premium', 'enterprise'
+  status: text('status').default('active'), // active/cancelled/expired
+  
+  // Limiti Free Tier
+  sintesiUsate: integer('sintesi_usate').default(0), // Reset mensile
+  sintesiLimite: integer('sintesi_limite').default(5), // 5 per free, illimitate per premium
+  
+  // Date
+  startDate: timestamp('start_date').defaultNow(),
+  endDate: timestamp('end_date'), // Null = illimitato (free), data per premium
+  lastReset: timestamp('last_reset').defaultNow(), // Reset contatori mensili
+  
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const spiegazioniCache = pgTable("spiegazioni_cache", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  flashcardId: varchar("flashcard_id").notNull().references(() => flashcards.id, { onDelete: "cascade" }),
+  spiegazione: text("spiegazione").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const flashcardSpiegazioni = pgTable("flashcard_spiegazioni", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  flashcardId: varchar("flashcard_id").notNull().references(() => flashcards.id, { onDelete: "cascade" }),
+  concorsoId: varchar("concorso_id").notNull().references(() => concorsi.id, { onDelete: "cascade" }),
+  richiestaDa: text("richiesta_da").notNull(), // 'studio' | 'lista'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Export simulazioni schema
+export * from "./schema-simulazioni";
+
+// Export SQ3R tables
+export * from "./schema-sq3r";
+
+// Export Libreria Pubblica
+export * from './schema-libreria';
+export { materieEnum } from './schema-libreria';
+
+// Export Normativa
+export * from './schema-normativa';
+export { tipiNormaEnum } from './schema-normativa';
+
+// Export Legacy (to prevent data loss)
+export * from './schema-legacy';
