@@ -700,9 +700,10 @@ export function registerSQ3RRoutes(app: Express) {
     }
   });
 
-  // ========== POST GENERA REVIEW (AI) ==========
+  // ========== POST GENERA REVIEW (AI) - VERSIONE COMPLETA ==========
   app.post('/api/sq3r/capitoli/:id/genera-review', async (req: Request, res: Response) => {
     console.log('📥 POST /api/sq3r/capitoli/:id/genera-review');
+    console.log('='.repeat(60));
     
     try {
       const userId = getUserId(req);
@@ -712,7 +713,7 @@ export function registerSQ3RRoutes(app: Express) {
 
       const { id } = req.params;
 
-      // Recupera il capitolo con tutti i dati necessari (concetti chiave, domande, etc.)
+      // Recupera TUTTO il capitolo
       const [capitolo] = await db
         .select()
         .from(capitoliSQ3R)
@@ -727,76 +728,220 @@ export function registerSQ3RRoutes(app: Express) {
         return res.status(404).json({ error: 'Capitolo non trovato' });
       }
 
-      // Preparazione contenuto per AI
-      let contentToAnalyze = `Capitolo: ${capitolo.titolo}\n\n`;
+      console.log(`🎯 Capitolo: "${capitolo.titolo}"`);
+      console.log('─'.repeat(60));
+
+      // ============================================
+      // RACCOLTA CONTENUTI DA TUTTE LE FASI
+      // ============================================
       
-      // Aggiungi highlights
+      let contentToAnalyze = `📚 CAPITOLO: ${capitolo.titolo}\n`;
+      contentToAnalyze += '═'.repeat(50) + '\n\n';
+      
+      let totalContentItems = 0;
+
+      // 1️⃣ TESTO EVIDENZIATO (Read Phase) - PRIORITÀ ALTA
       const highlights = capitolo.readHighlights as any[];
-      if (highlights && highlights.length > 0) {
-        contentToAnalyze += "TESTO EVIDENZIATO:\n";
-        highlights.forEach(h => {
-          contentToAnalyze += `- ${h.testo}\n`;
-          if (h.nota) contentToAnalyze += `  Nota: ${h.nota}\n`;
+      if (highlights && Array.isArray(highlights) && highlights.length > 0) {
+        contentToAnalyze += "📌 TESTO EVIDENZIATO DALL'UTENTE:\n";
+        contentToAnalyze += "─".repeat(50) + "\n";
+        highlights.forEach((h, idx) => {
+          if (h.testo) {
+            contentToAnalyze += `\n${idx + 1}. "${h.testo}"\n`;
+            if (h.nota) {
+              contentToAnalyze += `   💭 Nota: ${h.nota}\n`;
+            }
+            totalContentItems++;
+          }
         });
         contentToAnalyze += "\n";
+        console.log(`✅ ${highlights.length} evidenziazioni trovate`);
+      } else {
+        console.log('⚠️  Nessuna evidenziazione trovata');
       }
 
-      // Aggiungi note
+      // 2️⃣ NOTE PERSONALI (Read Phase) - PRIORITÀ ALTA
       const notes = capitolo.readNote as any[];
-      if (notes && notes.length > 0) {
-        contentToAnalyze += "NOTE PERSONALI:\n";
-        notes.forEach(n => {
-          contentToAnalyze += `- ${n.contenuto}\n`;
+      if (notes && Array.isArray(notes) && notes.length > 0) {
+        contentToAnalyze += "📝 NOTE PERSONALI:\n";
+        contentToAnalyze += "─".repeat(50) + "\n";
+        notes.forEach((n, idx) => {
+          if (n.contenuto) {
+            contentToAnalyze += `\n${idx + 1}. ${n.contenuto}\n`;
+            if (n.pagina) {
+              contentToAnalyze += `   📄 Pagina: ${n.pagina}\n`;
+            }
+            totalContentItems++;
+          }
         });
         contentToAnalyze += "\n";
+        console.log(`✅ ${notes.length} note personali trovate`);
+      } else {
+        console.log('⚠️  Nessuna nota personale trovata');
       }
 
-      // Se non c'è contenuto sufficiente, usa solo il titolo
-      if (contentToAnalyze.length < 50) {
-         contentToAnalyze += " (Genera domande generali basate su questo argomento)";
+      // 3️⃣ CONCETTI CHIAVE (Survey Phase)
+      const surveyConcetti = capitolo.surveyConcettiChiave as string[];
+      if (surveyConcetti && Array.isArray(surveyConcetti) && surveyConcetti.length > 0) {
+        contentToAnalyze += "🔑 CONCETTI CHIAVE (Survey):\n";
+        contentToAnalyze += "─".repeat(50) + "\n";
+        surveyConcetti.forEach((c: string, idx: number) => {
+          if (c) {
+            contentToAnalyze += `${idx + 1}. ${c}\n`;
+            totalContentItems++;
+          }
+        });
+        contentToAnalyze += "\n";
+        console.log(`✅ ${surveyConcetti.length} concetti survey trovati`);
+      } else {
+        console.log('⚠️  Nessun concetto survey trovato');
       }
 
-      console.log(`🤖 Generazione Quiz AI per capitolo "${capitolo.titolo}"...`);
-      console.log(`📊 Input length: ${contentToAnalyze.length} caratteri`);
+      // 4️⃣ DOMANDE PROFONDE (Question Phase) - PRIORITÀ ALTA
+      const domande = capitolo.domande as any[];
+      if (domande && Array.isArray(domande) && domande.length > 0) {
+        contentToAnalyze += "🎯 DOMANDE PROFONDE (Question):\n";
+        contentToAnalyze += "─".repeat(50) + "\n";
+        domande.forEach((d: any, idx: number) => {
+          // Adattamento: d può essere stringa o oggetto { domanda: string }
+          const testoDomanda = typeof d === 'string' ? d : d.domanda;
+          if (testoDomanda) {
+            contentToAnalyze += `${idx + 1}. ${testoDomanda}\n`;
+            if (d.risposta) contentToAnalyze += `   Risposta: ${d.risposta}\n`;
+            totalContentItems++;
+          }
+        });
+        contentToAnalyze += "\n";
+        console.log(`✅ ${domande.length} domande question trovate`);
+      } else {
+        console.log('⚠️  Nessuna domanda question trovata');
+      }
 
-      const systemPrompt = `Sei un esperto professore universitario. Devi creare un quiz di verifica per uno studente.
-Analizza il seguente materiale di studio (evidenziature e note dello studente) e genera 5 domande a risposta multipla.
+      // 5️⃣ RIFLESSIONI (Recite Phase)
+      let reciteData: any = capitolo.reciteData;
+      if (typeof reciteData === 'string') {
+        try { reciteData = JSON.parse(reciteData); } catch (e) { console.error('Error parsing reciteData', e); }
+      }
 
-REGOLE:
-1. Le domande devono essere basate SUL CONTENUTO FORNITO.
-2. Crea 4 opzioni per ogni domanda.
-3. Indica chiaramente la risposta corretta (indice 0-3).
-4. Fornisci una breve spiegazione per la risposta corretta.
-5. Usa un tono professionale ma incoraggiante.
-6. Rispondi ESCLUSIVAMENTE con un array JSON valido.
+      if (reciteData?.noteRiflessione && reciteData.noteRiflessione.trim()) {
+        contentToAnalyze += "💭 RIFLESSIONI PERSONALI (Recite):\n";
+        contentToAnalyze += "─".repeat(50) + "\n";
+        contentToAnalyze += reciteData.noteRiflessione.trim() + "\n\n";
+        totalContentItems++;
+        console.log(`✅ Riflessioni personali trovate`);
+      } else {
+        console.log('⚠️  Nessuna riflessione trovata');
+      }
 
-FORMATO JSON RICHIESTO:
+      // 6️⃣ CONCETTI DA RIVEDERE (Recite Phase) - PRIORITÀ ALTA
+      if (reciteData?.concettiDaRivedere && Array.isArray(reciteData.concettiDaRivedere) && reciteData.concettiDaRivedere.length > 0) {
+        contentToAnalyze += "🔄 CONCETTI DA RIVEDERE:\n";
+        contentToAnalyze += "─".repeat(50) + "\n";
+        reciteData.concettiDaRivedere.forEach((c: string, idx: number) => {
+          if (c) {
+            contentToAnalyze += `${idx + 1}. ${c}\n`;
+            totalContentItems++;
+          }
+        });
+        contentToAnalyze += "\n";
+        console.log(`✅ ${reciteData.concettiDaRivedere.length} concetti da rivedere trovati`);
+      } else {
+        console.log('⚠️  Nessun concetto da rivedere trovato');
+      }
+
+      // Riepilogo contenuto
+      console.log('─'.repeat(60));
+      console.log(`📊 TOTALE ELEMENTI RACCOLTI: ${totalContentItems}`);
+      console.log(`📏 LUNGHEZZA CONTENUTO: ${contentToAnalyze.length} caratteri`);
+      console.log('─'.repeat(60));
+
+      // Messaggio se non c'è contenuto
+      if (totalContentItems === 0) {
+        contentToAnalyze += "\n⚠️ ATTENZIONE: L'utente non ha ancora studiato questo capitolo in dettaglio.\n";
+        contentToAnalyze += "Non ci sono evidenziazioni, note o domande disponibili.\n\n";
+        contentToAnalyze += "ISTRUZIONE: Genera 5 domande GENERALI e INTRODUTTIVE basate sull'argomento del titolo.\n";
+        contentToAnalyze += "Le domande devono testare la conoscenza di base e i concetti fondamentali dell'argomento.\n";
+        console.log('⚠️  MODALITÀ FALLBACK: generazione domande generali dal titolo');
+      }
+
+      // ============================================
+      // PROMPT AI OTTIMIZZATO
+      // ============================================
+
+      const systemPrompt = `Sei un esperto professore universitario specializzato nella preparazione ai concorsi pubblici italiani.
+
+IL TUO COMPITO:
+Creare un quiz di verifica personalizzato di 5 domande a risposta multipla basato SUL MATERIALE DI STUDIO FORNITO.
+
+ANALISI RICHIESTA:
+Il materiale include:
+- Testo evidenziato dall'utente durante la lettura
+- Note personali aggiunte dall'utente
+- Concetti chiave e domande profonde
+- Riflessioni post-studio
+- Concetti che l'utente ha trovato difficili
+
+REGOLE FONDAMENTALI:
+1. **PRIORITÀ MASSIMA**: Se l'utente ha evidenziato un concetto, crea una domanda SU QUEL CONCETTO SPECIFICO.
+2. **PRIORITÀ ALTA**: Se l'utente ha elencato "concetti da rivedere", includili PRIORITARIAMENTE nelle domande.
+3. **PRIORITÀ ALTA**: Se l'utente ha fatto domande profonde, verifica la comprensione di QUEI temi.
+4. Le domande devono testare la COMPRENSIONE REALE del contenuto studiato, non la memoria generica.
+5. Usa il linguaggio e i termini utilizzati dall'utente nelle sue note ed evidenziazioni.
+
+STRUTTURA QUIZ:
+- 2 domande FACILI: ricordo diretto dei concetti evidenziati
+- 2 domande MEDIE: applicazione e comprensione dei concetti
+- 1 domanda DIFFICILE: analisi critica o collegamento tra concetti
+
+STRUTTURA DOMANDA:
+- Ogni domanda deve avere 4 opzioni plausibili
+- Risposte sbagliate devono essere credibili ma distinguibili
+- La risposta corretta deve essere chiaramente identificabile per chi ha studiato
+- Indica l'indice della risposta corretta (0-3)
+- Fornisci una spiegazione chiara e formativa
+
+TONO:
+Professionale, adatto a un concorso pubblico italiano, ma incoraggiante.
+
+FORMATO OUTPUT:
+Rispondi SOLO con un array JSON valido, senza testo aggiuntivo prima o dopo.
+
 [
   {
-    "domanda": "Testo della domanda...",
+    "domanda": "Domanda basata sul contenuto studiato...",
     "opzioni": ["Opzione A", "Opzione B", "Opzione C", "Opzione D"],
     "rispostaCorretta": 0,
-    "spiegazione": "Perché questa è la risposta corretta..."
+    "spiegazione": "Spiegazione dettagliata..."
   }
 ]`;
 
-      let generatedJson = "[]";
+      // ============================================
+      // GENERAZIONE CON AI
+      // ============================================
 
-      // Tentativo 1: Gemini
+      let generatedJson = "[]";
+      let aiProvider = "none";
+
+      // Tentativo 1: Gemini (più veloce ed economico)
       try {
         if (getGeminiClient()) {
-           console.log("✨ Uso Gemini 2.0 Flash...");
-           generatedJson = await analyzeWithGemini(systemPrompt, contentToAnalyze);
+          console.log("🤖 Uso Gemini 2.0 Flash...");
+          aiProvider = "Gemini";
+          generatedJson = await analyzeWithGemini(systemPrompt, contentToAnalyze);
+          console.log("✅ Gemini ha risposto");
         } else {
-           throw new Error("Gemini non configurato");
+          throw new Error("Gemini non configurato");
         }
       } catch (geminiError) {
-        console.warn("⚠️ Gemini fallito, provo OpenAI...", geminiError);
+        console.warn("⚠️  Gemini fallito, fallback a OpenAI...");
         
-        // Tentativo 2: OpenAI
+        // Tentativo 2: OpenAI (fallback)
         try {
           const openai = getOpenAIClient();
           if (!openai) throw new Error("Nessun provider AI configurato");
+          
+          console.log("🤖 Uso OpenAI GPT-4o-mini...");
+          aiProvider = "OpenAI";
           
           const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
@@ -805,37 +950,60 @@ FORMATO JSON RICHIESTO:
               { role: "user", content: contentToAnalyze }
             ],
             temperature: 0.7,
+            max_tokens: 3000,
           });
           
           generatedJson = completion.choices[0].message.content || "[]";
+          console.log("✅ OpenAI ha risposto");
         } catch (openaiError) {
-           console.error("❌ Anche OpenAI fallito:", openaiError);
-           throw new Error("Impossibile generare il quiz al momento.");
+          console.error("❌ OpenAI fallito:", openaiError);
+          throw new Error("Impossibile generare il quiz. Verifica le chiavi API.");
         }
       }
 
-      // Pulisci e parsa il JSON
+      // ============================================
+      // PARSING E VALIDAZIONE
+      // ============================================
+
+      console.log("🔍 Parsing risposta AI...");
       const cleanJsonString = cleanJson(generatedJson);
       let domandeGenerate = [];
       
       try {
         domandeGenerate = JSON.parse(cleanJsonString);
       } catch (e) {
-        console.error("❌ Errore parsing JSON AI:", e);
-        console.log("Raw output:", generatedJson);
-        throw new Error("Errore nel formato della risposta AI");
+        console.error("❌ Errore parsing JSON:");
+        console.error("   Raw output (primi 500 char):", generatedJson.substring(0, 500));
+        throw new Error("Formato risposta AI non valido");
       }
 
-      // Validazione base
-      if (!Array.isArray(domandeGenerate) || domandeGenerate.length === 0) {
-        throw new Error("L'AI non ha generato domande valide");
+      // Validazione struttura
+      if (!Array.isArray(domandeGenerate)) {
+        throw new Error("La risposta non è un array");
       }
 
-      // Salva le domande generate nel DB
+      if (domandeGenerate.length === 0) {
+        throw new Error("Nessuna domanda generata");
+      }
+
+      // Validazione campi
+      domandeGenerate.forEach((d, idx) => {
+        if (!d.domanda || !Array.isArray(d.opzioni) || d.opzioni.length !== 4 || typeof d.rispostaCorretta !== 'number') {
+          console.error(`❌ Domanda ${idx + 1} non valida:`, JSON.stringify(d, null, 2));
+          throw new Error(`Domanda ${idx + 1}: formato non valido`);
+        }
+      });
+
+      console.log(`✅ ${domandeGenerate.length} domande validate`);
+
+      // ============================================
+      // SALVATAGGIO
+      // ============================================
+
       await db
         .update(capitoliSQ3R)
         .set({
-          reviewData: JSON.stringify({ domande: domandeGenerate }), // Assicurati di serializzare se il campo è testo
+          reviewData: JSON.stringify({ domande: domandeGenerate }),
           updatedAt: new Date(),
         })
         .where(
@@ -845,11 +1013,32 @@ FORMATO JSON RICHIESTO:
           )
         );
 
-      console.log(`✅ Quiz salvato con ${domandeGenerate.length} domande.`);
-      res.json({ domande: domandeGenerate });
+      console.log('✅ Quiz salvato nel database');
+      console.log('='.repeat(60));
+      
+      res.json({
+        domande: domandeGenerate,
+        metadati: {
+          aiProvider,
+          highlights: highlights?.length || 0,
+          note: notes?.length || 0,
+          surveyQuestions: surveyConcetti?.length || 0,
+          questionQuestions: domande?.length || 0,
+          hasReflections: !!reciteData?.noteRiflessione,
+          conceptsToReview: reciteData?.concettiDaRivedere?.length || 0,
+          totalContentItems,
+          contentLength: contentToAnalyze.length,
+        }
+      });
     } catch (error: any) {
-      console.error('❌ Errore generazione review:', error);
-      res.status(500).json({ error: 'Errore generazione quiz' });
+      console.error('❌ ERRORE GENERAZIONE REVIEW:');
+      console.error('   Tipo:', error.name);
+      console.error('   Messaggio:', error.message);
+      console.error('   Stack:', error.stack);
+      res.status(500).json({
+        error: error.message || 'Errore generazione quiz',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
     }
   });
 

@@ -175,6 +175,7 @@ import { registerEdisesRoutes } from "./routes-edises";
 import { registerNormativaRoutes } from './routes-normativa';
 import { registerPodcastRoutes } from './routes-podcast';
 import { registerSubscriptionRoutes } from './routes-subscription';
+import { registerAdminRoutes } from './routes-admin';
 
 export async function registerRoutes(
   httpServer: Server,
@@ -192,6 +193,7 @@ export async function registerRoutes(
   registerNormativaRoutes(app);
   registerPodcastRoutes(app);
   registerSubscriptionRoutes(app);
+  registerAdminRoutes(app);
   app.post('/api/flashcards/:id/spiega', isAuthenticated, async (req, res) => {
     try {
       const { id } = req.params;

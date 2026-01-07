@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea'; 
 import { Label } from '@/components/ui/label'; 
 import { Badge } from '@/components/ui/badge'; 
-import { Play, Pause, RotateCcw, Save } from 'lucide-react'; 
+import { Play, Pause, RotateCcw, Save, Mic, Square, Download, Trash2 } from 'lucide-react'; 
 import { useToast } from '@/hooks/use-toast'; 
 
 interface RecitePhaseProps { 
@@ -17,7 +17,7 @@ export default function RecitePhase({ capitolo, onComplete }: RecitePhaseProps) 
   const { toast } = useToast(); 
   const queryClient = useQueryClient(); 
   
-  // Inizializza stato dai dati esistenti 
+  // Stato base 
   const [timer, setTimer] = useState(capitolo.reciteData?.tempoSecondi || 0); 
   const [isRunning, setIsRunning] = useState(false); 
   const [valutazione, setValutazione] = useState(capitolo.reciteData?.valutazione || 0); 
@@ -25,10 +25,22 @@ export default function RecitePhase({ capitolo, onComplete }: RecitePhaseProps) 
   const [concettiDaRivedere, setConcettiDaRivedere] = useState(capitolo.reciteData?.concettiDaRivedere?.join('\n') || ''); 
   const [ultimoSalvataggio, setUltimoSalvataggio] = useState<Date | null>(null); 
   
+  // Stato registrazione audio 
+  const [isRecording, setIsRecording] = useState(false); 
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null); 
+  const [audioUrl, setAudioUrl] = useState<string | null>(null); 
+  const [isPlaying, setIsPlaying] = useState(false); 
+  const [recordingTime, setRecordingTime] = useState(0); 
+  
+  // Refs 
   const intervalRef = useRef<NodeJS.Timeout>(); 
   const autoSaveRef = useRef<NodeJS.Timeout>(); 
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null); 
+  const audioChunksRef = useRef<Blob[]>([]); 
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null); 
+  const recordingTimerRef = useRef<NodeJS.Timeout>(); 
 
-  // Timer 
+  // Timer principale 
   useEffect(() => { 
     if (isRunning) { 
       intervalRef.current = setInterval(() => { 
@@ -37,6 +49,18 @@ export default function RecitePhase({ capitolo, onComplete }: RecitePhaseProps) 
     } 
     return () => clearInterval(intervalRef.current); 
   }, [isRunning]); 
+
+  // Timer registrazione 
+  useEffect(() => { 
+    if (isRecording) { 
+      recordingTimerRef.current = setInterval(() => { 
+        setRecordingTime(t => t + 1); 
+      }, 1000); 
+    } else { 
+      clearInterval(recordingTimerRef.current); 
+    } 
+    return () => clearInterval(recordingTimerRef.current); 
+  }, [isRecording]); 
 
   // Auto-save mutation 
   const autoSaveMutation = useMutation({ 
@@ -62,7 +86,7 @@ export default function RecitePhase({ capitolo, onComplete }: RecitePhaseProps) 
     if (hasDati) { 
       autoSaveRef.current = setInterval(() => { 
         autoSave(); 
-      }, 10000); // 10 secondi 
+      }, 10000); 
     } 
     
     return () => clearInterval(autoSaveRef.current); 
@@ -78,6 +102,149 @@ export default function RecitePhase({ capitolo, onComplete }: RecitePhaseProps) 
     
     autoSaveMutation.mutate({ reciteData }); 
   }; 
+
+  // ============================================ 
+  // AUDIO RECORDING FUNCTIONS 
+  // ============================================ 
+
+  const startRecording = async () => { 
+    try { 
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); 
+      
+      // Crea MediaRecorder 
+      const mediaRecorder = new MediaRecorder(stream, { 
+        mimeType: 'audio/webm;codecs=opus' 
+      }); 
+      
+      mediaRecorderRef.current = mediaRecorder; 
+      audioChunksRef.current = []; 
+
+      mediaRecorder.ondataavailable = (event) => { 
+        if (event.data.size > 0) { 
+          audioChunksRef.current.push(event.data); 
+        } 
+      }; 
+
+      mediaRecorder.onstop = () => { 
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' }); 
+        setAudioBlob(audioBlob); 
+        
+        // Crea URL per playback 
+        const url = URL.createObjectURL(audioBlob); 
+        setAudioUrl(url); 
+        
+        // Stop tutti i tracks 
+        stream.getTracks().forEach(track => track.stop()); 
+        
+        toast({ 
+          title: "✅ Registrazione completata", 
+          description: `Durata: ${formatTime(recordingTime)}`, 
+        }); 
+      }; 
+
+      mediaRecorder.start(); 
+      setIsRecording(true); 
+      setRecordingTime(0); 
+      
+      toast({ 
+        title: "🎙️ Registrazione iniziata", 
+        description: "Inizia a parlare del capitolo...", 
+      }); 
+    } catch (error) { 
+      console.error('Errore accesso microfono:', error); 
+      toast({ 
+        title: "❌ Errore microfono", 
+        description: "Impossibile accedere al microfono. Verifica i permessi del browser.", 
+        variant: "destructive", 
+      }); 
+    } 
+  }; 
+
+  const stopRecording = () => { 
+    if (mediaRecorderRef.current && isRecording) { 
+      mediaRecorderRef.current.stop(); 
+      setIsRecording(false); 
+    } 
+  }; 
+
+  const playAudio = () => { 
+    if (!audioUrl) return; 
+    
+    if (audioPlayerRef.current) { 
+      audioPlayerRef.current.pause(); 
+      audioPlayerRef.current = null; 
+    } 
+    
+    const audio = new Audio(audioUrl); 
+    audioPlayerRef.current = audio; 
+    
+    audio.onended = () => { 
+      setIsPlaying(false); 
+    }; 
+    
+    audio.play(); 
+    setIsPlaying(true); 
+  }; 
+
+  const pauseAudio = () => { 
+    if (audioPlayerRef.current) { 
+      audioPlayerRef.current.pause(); 
+      setIsPlaying(false); 
+    } 
+  }; 
+
+  const downloadAudio = () => { 
+    if (!audioBlob) return; 
+    
+    // Converti webm a formato più compatibile (opzionale) 
+    const url = URL.createObjectURL(audioBlob); 
+    const a = document.createElement('a'); 
+    a.href = url; 
+    a.download = `recite-${capitolo.titolo}-${new Date().getTime()}.webm`; 
+    document.body.appendChild(a); 
+    a.click(); 
+    document.body.removeChild(a); 
+    URL.revokeObjectURL(url); 
+    
+    toast({ 
+      title: "💾 Audio scaricato", 
+      description: "Il file è stato salvato sul tuo dispositivo", 
+    }); 
+  }; 
+
+  const deleteAudio = () => { 
+    if (confirm('Eliminare la registrazione corrente?')) { 
+      if (audioPlayerRef.current) { 
+        audioPlayerRef.current.pause(); 
+        audioPlayerRef.current = null; 
+      } 
+      
+      if (audioUrl) { 
+        URL.revokeObjectURL(audioUrl); 
+      } 
+      
+      setAudioBlob(null); 
+      setAudioUrl(null); 
+      setIsPlaying(false); 
+      setRecordingTime(0); 
+      
+      toast({ 
+        title: "🗑️ Registrazione eliminata", 
+      }); 
+    } 
+  }; 
+
+  // Cleanup 
+  useEffect(() => { 
+    return () => { 
+      if (audioPlayerRef.current) { 
+        audioPlayerRef.current.pause(); 
+      } 
+      if (audioUrl) { 
+        URL.revokeObjectURL(audioUrl); 
+      } 
+    }; 
+  }, [audioUrl]); 
 
   // Salvataggio manuale 
   const handleSalvaProgressi = () => { 
@@ -104,6 +271,8 @@ export default function RecitePhase({ capitolo, onComplete }: RecitePhaseProps) 
             valutazione, 
             noteRiflessione: noteRiflessione.trim(), 
             concettiDaRivedere: concettiDaRivedere.trim().split('\n').filter(c => c), 
+            hasAudioRecording: !!audioBlob, 
+            recordingDuration: recordingTime, 
             completatoAt: new Date().toISOString(), 
           }, 
           reciteCompletato: true, 
@@ -125,8 +294,12 @@ export default function RecitePhase({ capitolo, onComplete }: RecitePhaseProps) 
       toast({ title: '⚠️ Inserisci una valutazione', variant: 'destructive' }); 
       return; 
     } 
-    if (!noteRiflessione.trim()) { 
-      toast({ title: '⚠️ Scrivi almeno una riflessione', variant: 'destructive' }); 
+    if (!noteRiflessione.trim() && !audioBlob) { 
+      toast({ 
+        title: '⚠️ Aggiungi contenuto', 
+        description: 'Scrivi una riflessione o registra un audio', 
+        variant: 'destructive' 
+      }); 
       return; 
     } 
     completaMutation.mutate(); 
@@ -159,6 +332,112 @@ export default function RecitePhase({ capitolo, onComplete }: RecitePhaseProps) 
               </Button> 
             </div> 
           </div> 
+        </CardContent> 
+      </Card> 
+
+      {/* NUOVO: Registrazione Audio */} 
+      <Card className="border-2 border-purple-200 bg-purple-50/50"> 
+        <CardHeader> 
+          <CardTitle className="flex items-center gap-2"> 
+            🎙️ Registrazione Audio 
+            <Badge variant="secondary">Opzionale</Badge> 
+          </CardTitle> 
+        </CardHeader> 
+        <CardContent className="space-y-4"> 
+          <p className="text-sm text-gray-600"> 
+            Registra te stesso mentre reciti il capitolo ad alta voce. Potrai riascoltarti e scaricare l'audio. 
+          </p> 
+          
+          {/* Stato: Nessuna Registrazione */} 
+          {!isRecording && !audioBlob && ( 
+            <Button 
+              onClick={startRecording} 
+              size="lg" 
+              className="w-full bg-red-500 hover:bg-red-600" 
+            > 
+              <Mic className="mr-2 w-5 h-5" /> 
+              Inizia Registrazione 
+            </Button> 
+          )} 
+          
+          {/* Stato: Registrazione in Corso */} 
+          {isRecording && ( 
+            <div className="space-y-3"> 
+              <div className="flex items-center justify-center gap-3"> 
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div> 
+                <span className="text-2xl font-mono font-bold text-red-600"> 
+                  {formatTime(recordingTime)} 
+                </span> 
+              </div> 
+              <Button 
+                onClick={stopRecording} 
+                size="lg" 
+                variant="outline" 
+                className="w-full border-red-500 text-red-600 hover:bg-red-50" 
+              > 
+                <Square className="mr-2 w-5 h-5" /> 
+                Ferma Registrazione 
+              </Button> 
+            </div> 
+          )} 
+          
+          {/* Stato: Registrazione Completata */} 
+          {!isRecording && audioBlob && ( 
+            <div className="space-y-3"> 
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4"> 
+                <div className="flex items-center justify-between mb-3"> 
+                  <div className="flex items-center gap-2"> 
+                    <Badge className="bg-green-500">✓ Registrato</Badge> 
+                    <span className="text-sm text-gray-600"> 
+                      Durata: {formatTime(recordingTime)} 
+                    </span> 
+                  </div> 
+                </div> 
+                
+                <div className="flex gap-2"> 
+                  <Button 
+                    onClick={isPlaying ? pauseAudio : playAudio} 
+                    className="flex-1" 
+                  > 
+                    {isPlaying ? ( 
+                      <><Pause className="mr-2" /> Pausa</> 
+                    ) : ( 
+                      <><Play className="mr-2" /> Ascolta</> 
+                    )} 
+                  </Button> 
+                  
+                  <Button 
+                    onClick={downloadAudio} 
+                    variant="outline" 
+                    title="Scarica audio" 
+                  > 
+                    <Download className="w-4 h-4" /> 
+                  </Button> 
+                  
+                  <Button 
+                    onClick={deleteAudio} 
+                    variant="outline" 
+                    className="text-red-600 hover:bg-red-50" 
+                    title="Elimina e registra di nuovo" 
+                  > 
+                    <Trash2 className="w-4 h-4" /> 
+                  </Button> 
+                </div> 
+              </div> 
+              
+              <Button 
+                onClick={() => { 
+                  deleteAudio(); 
+                  setTimeout(startRecording, 300); 
+                }} 
+                variant="outline" 
+                className="w-full" 
+              > 
+                <Mic className="mr-2" /> 
+                Registra di Nuovo 
+              </Button> 
+            </div> 
+          )} 
         </CardContent> 
       </Card> 
 

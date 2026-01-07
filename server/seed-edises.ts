@@ -143,6 +143,48 @@ const manualiEdises = [
     anno: 2026, // Aggiornato al 2026 come da info web
     popolare: true,
   },
+  {
+    isbn: '9788858217313',
+    titolo: 'Compendio di diritto amministrativo 2025',
+    autore: 'Francesco Caringella',
+    materia: 'Diritto Amministrativo',
+    descrizione: 'Esposizione sistematica, chiara e sintetica. Indispensabile per esame avvocato, studenti e concorsi pubblici. Aggiornato 2025.',
+    copertina: 'https://images.unsplash.com/photo-1555116505-a1d6ca9e9214?w=400&h=600&fit=crop',
+    prezzo: 2470,
+    linkAcquisto: 'https://www.lafeltrinelli.it/compendio-di-diritto-amministrativo-2025-libro-francesco-caringella/e/9788858217313',
+    linkAffiliato: 'https://www.lafeltrinelli.it/compendio-di-diritto-amministrativo-2025-libro-francesco-caringella/e/9788858217313?utm_source=chatgpt.com',
+    numPagine: 0,
+    anno: 2025,
+    popolare: true,
+  },
+  {
+    isbn: '9788891442313',
+    titolo: 'Compendio di diritto amministrativo',
+    autore: 'Federico Del Giudice, Beatrice Locoratolo',
+    materia: 'Diritto Amministrativo',
+    descrizione: 'Compendio completo di diritto amministrativo. Ideale per la preparazione a concorsi ed esami.',
+    copertina: 'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400&h=600&fit=crop',
+    prezzo: 2660,
+    linkAcquisto: 'https://www.amazon.it/Compendio-Amministrativo-Federico-Beatrice-Locoratolo/dp/8891442313',
+    linkAffiliato: 'https://www.amazon.it/Compendio-Amministrativo-Federico-Beatrice-Locoratolo/dp/8891442313?source=ps-sl-shoppingads-lpcontext&ref_=fplfs&psc=1&smid=A11IL2PNWYJU7H&language=it_IT&utm_source=chatgpt.com',
+    numPagine: 0,
+    anno: 2025,
+    popolare: true,
+  },
+  {
+    isbn: '9788891651273',
+    titolo: 'Compendio di Diritto amministrativo',
+    autore: 'Lilla Laperuta, Biancamaria Consales',
+    materia: 'Diritto Amministrativo',
+    descrizione: 'Tratta il diritto amministrativo nella sua completezza, con linguaggio semplice. Aggiornato alle ultime normative.',
+    copertina: 'https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=400&h=600&fit=crop',
+    prezzo: 0,
+    linkAcquisto: 'https://www.maggiolieditore.it/compendio-di-diritto-amministrativo.html',
+    linkAffiliato: 'https://www.maggiolieditore.it/compendio-di-diritto-amministrativo.html?utm_source=chatgpt.com',
+    numPagine: 616,
+    anno: 2021,
+    popolare: true,
+  },
 ];
 
 async function seedCatalogoEdises() {
@@ -156,8 +198,24 @@ async function seedCatalogoEdises() {
       // Since we can't easily update enum type in postgres without a migration, we might face issue if 'Testi Specifici...' is not in the enum.
       // Let's check schema-libreria.ts again. It defines a const array, but in DB it might be just text check constraint or enum.
       
-      await db.insert(catalogoEdises).values(manuale as any).onConflictDoNothing();
-      console.log(`  ✅ Inserito: ${manuale.titolo}`);
+      // Use onConflictDoUpdate to ensure fields (like price) are updated if record exists
+      await db.insert(catalogoEdises).values(manuale as any).onConflictDoUpdate({
+        target: catalogoEdises.isbn,
+        set: {
+          titolo: manuale.titolo,
+          autore: manuale.autore,
+          materia: manuale.materia as any,
+          descrizione: manuale.descrizione,
+          copertina: manuale.copertina,
+          prezzo: manuale.prezzo,
+          linkAcquisto: manuale.linkAcquisto,
+          linkAffiliato: manuale.linkAffiliato,
+          numPagine: manuale.numPagine,
+          anno: manuale.anno,
+          popolare: manuale.popolare
+        }
+      });
+      console.log(`  ✅ Inserito/Aggiornato: ${manuale.titolo}`);
     }
     
     console.log('✅ Catalogo Edises popolato con successo!');

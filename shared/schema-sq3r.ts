@@ -407,3 +407,33 @@ export type InsertQuestion = typeof questions.$inferInsert;
 
 export type Answer = typeof answers.$inferSelect;
 export type InsertAnswer = typeof answers.$inferInsert;
+
+// ============================================ 
+// STAFF MEMBERS (Admin Panel) 
+// ============================================ 
+
+export const staffMembers = pgTable('staff_members', { 
+  id: uuid('id').defaultRandom().primaryKey(), 
+  userId: text('user_id').notNull(), 
+  email: text('email').notNull().unique(), 
+  nome: text('nome').notNull(), 
+  ruolo: text('ruolo').notNull().default('staff'), 
+  permessi: jsonb('permessi').$type<{ 
+    canUploadPodcast: boolean; 
+    canManageRequests: boolean; 
+    canManageUsers: boolean; 
+    canManageStaff: boolean; 
+  }>().notNull().default({ 
+    canUploadPodcast: false, 
+    canManageRequests: false, 
+    canManageUsers: false, 
+    canManageStaff: false, 
+  }), 
+  isActive: boolean('is_active').notNull().default(true), 
+  lastLogin: timestamp('last_login'), 
+  createdAt: timestamp('created_at').defaultNow().notNull(), 
+  updatedAt: timestamp('updated_at').defaultNow().notNull(), 
+}); 
+
+export type StaffMember = typeof staffMembers.$inferSelect; 
+export type InsertStaffMember = typeof staffMembers.$inferInsert;
