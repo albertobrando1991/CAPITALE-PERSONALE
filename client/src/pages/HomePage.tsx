@@ -1,5 +1,6 @@
 import { HeroSection } from "@/components/home/HeroSection";
 import { HowItWorksSection } from "@/components/home/HowItWorksSection";
+import { VisualGallerySection } from "@/components/home/VisualGallerySection";
 import { BenefitsSection } from "@/components/home/BenefitsSection";
 import { PricingSection } from "@/components/home/PricingSection";
 import { FinalCTASection } from "@/components/home/FinalCTASection";
@@ -15,6 +16,7 @@ export default function HomePage() {
       {/* Main Content */}
       <main className="flex-1 pt-20"> {/* pt-20 to account for fixed header height */}
         <HeroSection />
+        <VisualGallerySection />
         <HowItWorksSection />
         <BenefitsSection />
         <PricingSection />

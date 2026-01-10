@@ -115,7 +115,7 @@ export function PricingSection() {
                       ) : (
                         <X className="w-5 h-5 text-muted-foreground/30 shrink-0" />
                       )}
-                      <span className={`font-sans ${feature.included ? 'text-slate-700' : 'text-muted-foreground/50'}`}>
+                      <span className={`font-sans ${feature.included ? 'text-foreground' : 'text-muted-foreground/50'}`}>
                         {feature.text}
                       </span>
                     </li>

@@ -27,44 +27,44 @@ app.use(express.urlencoded({ extended: false, limit: "50mb" }));
 import { isAdmin } from './utils/auth-helpers';
 
 // 🔧 MOCK AUTH per development (RIMUOVERE IN PRODUCTION)
-if (process.env.NODE_ENV !== 'production') {
-  app.use(async (req, res, next) => {
-    // Mock user per development
-    if (!(req as any).user) {
-      // Simula admin per test
-      const mockEmail = 'albertobrando1991@gmail.com'; // Admin
-      // const mockEmail = 'test-free@trae-ai.com'; // Free User Test
-      
-      (req as any).user = {
-        id: 'admin-user-123',
-        email: mockEmail,
-        nome: 'Alberto Brando (Admin)',
-        ruolo: isAdmin(mockEmail) ? 'admin' : 'utente',
-        claims: { sub: 'admin-user-123' }
-      };
-      
-      // Assicuriamoci che l'utente esista nel DB per evitare errori FK
-      try {
-        const { storage } = await import("./storage");
-        const existingUser = await storage.getUser('admin-user-123');
-        if (!existingUser) {
-           console.log('👤 Creating default admin user for development...');
-           await storage.upsertUser({
-             id: 'admin-user-123',
-             email: mockEmail,
-             firstName: 'Alberto',
-             lastName: 'Brando'
-           });
-        }
-      } catch (err) {
-        console.error('Error ensuring default user exists:', err);
-      }
-    }
-    next();
-  });
-  console.log('🔓 Mock authentication enabled (development mode)');
-  console.log('👤 Mock user:', 'albertobrando1991@gmail.com (ADMIN)');
-}
+// if (process.env.NODE_ENV !== 'production') {
+//   app.use(async (req, res, next) => {
+//     // Mock user per development
+//     if (!(req as any).user) {
+//       // Simula admin per test
+//       const mockEmail = 'albertobrando1991@gmail.com'; // Admin
+//       // const mockEmail = 'test-free@trae-ai.com'; // Free User Test
+//       
+//       (req as any).user = {
+//         id: 'admin-user-123',
+//         email: mockEmail,
+//         nome: 'Alberto Brando (Admin)',
+//         ruolo: isAdmin(mockEmail) ? 'admin' : 'utente',
+//         claims: { sub: 'admin-user-123' }
+//       };
+//       
+//       // Assicuriamoci che l'utente esista nel DB per evitare errori FK
+//       try {
+//         const { storage } = await import("./storage");
+//         const existingUser = await storage.getUser('admin-user-123');
+//         if (!existingUser) {
+//            console.log('👤 Creating default admin user for development...');
+//            await storage.upsertUser({
+//              id: 'admin-user-123',
+//              email: mockEmail,
+//              firstName: 'Alberto',
+//              lastName: 'Brando'
+//            });
+//         }
+//       } catch (err) {
+//         console.error('Error ensuring default user exists:', err);
+//       }
+//     }
+//     next();
+//   });
+//   console.log('🔓 Mock authentication enabled (development mode)');
+//   console.log('👤 Mock user:', 'albertobrando1991@gmail.com (ADMIN)');
+// }
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

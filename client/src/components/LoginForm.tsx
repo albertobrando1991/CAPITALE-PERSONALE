@@ -1,16 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { GraduationCap, Loader2 } from "lucide-react";
+import { Link } from "wouter";
 
 interface LoginFormProps {
   onLogin?: (email: string, password: string) => Promise<void>;
+  isRegister?: boolean;
 }
 
-export function LoginForm({ onLogin }: LoginFormProps) {
+export function LoginForm({ onLogin, isRegister = false }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -42,15 +44,19 @@ export function LoginForm({ onLogin }: LoginFormProps) {
         <div className="mx-auto w-12 h-12 bg-primary rounded-xl flex items-center justify-center mb-4">
           <GraduationCap className="h-6 w-6 text-primary-foreground" />
         </div>
-        <CardTitle className="text-2xl">Protocollo C.P.A. 2.0</CardTitle>
+        <CardTitle className="text-2xl">
+          {isRegister ? "Crea il tuo Account" : "Protocollo C.P.A. 2.0"}
+        </CardTitle>
         <CardDescription>
-          Accedi per continuare la tua preparazione
+          {isRegister 
+            ? "Inizia il tuo percorso di preparazione scientifica" 
+            : "Accedi per continuare la tua preparazione"}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="p-3 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 rounded-lg">
+            <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg">
               {error}
             </div>
           )}
@@ -72,24 +78,26 @@ export function LoginForm({ onLogin }: LoginFormProps) {
             <Input
               id="password"
               type="password"
-              placeholder="La tua password"
+              placeholder={isRegister ? "Scegli una password" : "La tua password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               data-testid="input-password"
             />
           </div>
 
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="remember"
-              checked={rememberMe}
-              onCheckedChange={(checked) => setRememberMe(checked === true)}
-              data-testid="checkbox-remember"
-            />
-            <Label htmlFor="remember" className="text-sm font-normal">
-              Ricordami
-            </Label>
-          </div>
+          {!isRegister && (
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="remember"
+                checked={rememberMe}
+                onCheckedChange={(checked) => setRememberMe(checked === true)}
+                data-testid="checkbox-remember"
+              />
+              <Label htmlFor="remember" className="text-sm font-normal">
+                Ricordami
+              </Label>
+            </div>
+          )}
 
           <Button
             type="submit"
@@ -100,23 +108,20 @@ export function LoginForm({ onLogin }: LoginFormProps) {
             {isLoading ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Accesso in corso...
+                {isRegister ? "Registrazione..." : "Accesso in corso..."}
               </>
             ) : (
-              "Accedi"
+              isRegister ? "Registrati" : "Accedi"
             )}
           </Button>
 
           <p className="text-center text-sm text-muted-foreground">
-            Non hai un account?{" "}
-            <button
-              type="button"
-              className="text-primary font-medium"
-              onClick={() => console.log("Register clicked")}
-              data-testid="link-register"
-            >
-              Registrati
-            </button>
+            {isRegister ? "Hai già un account? " : "Non hai un account? "}
+            <Link href={isRegister ? "/login" : "/register"}>
+              <span className="text-primary font-medium cursor-pointer hover:underline">
+                {isRegister ? "Accedi" : "Registrati"}
+              </span>
+            </Link>
           </p>
         </form>
       </CardContent>

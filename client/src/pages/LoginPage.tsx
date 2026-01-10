@@ -4,16 +4,18 @@ import { useLocation } from "wouter";
 
 export default function LoginPage() {
   const { login } = useAuth();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
 
   const handleLogin = async (email: string, password: string) => {
     await login(email, password);
-    setLocation("/");
+    setLocation("/dashboard");
   };
+
+  const isRegister = location === "/register";
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <LoginForm onLogin={handleLogin} />
+      <LoginForm onLogin={handleLogin} isRegister={isRegister} />
     </div>
   );
 }

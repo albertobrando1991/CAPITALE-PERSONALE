@@ -92,24 +92,66 @@ export async function setupAuth(app: Express) {
     // Local Dev Mode
     console.log("REPL_ID not found, using local auth mode");
     
-    app.get("/api/login", async (req, res) => {
-      // Mock login for local dev
-      const mockUser = {
+    app.post("/api/login", async (req, res) => {
+      const { email, password } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ error: "Email required" });
+      }
+
+      // Check if user exists by email to reuse ID
+      // This prevents unique constraint violation on email
+      const existingUser = await storage.getUserByEmail(email);
+
+      let userId = existingUser?.id;
+      
+      if (!userId) {
+         // Generate new ID only if user doesn't exist
+         userId = email.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+         
+         const mockUser = {
+            id: userId,
+            email: email,
+            firstName: email.split('@')[0],
+            lastName: "Dev",
+            profileImageUrl: `https://ui-avatars.com/api/?name=${email}&background=random`
+         };
+         
+         await storage.upsertUser(mockUser);
+      }
+      
+      // Re-fetch user to get all fields
+      const user = await storage.getUser(userId);
+      
+      const sessionUser = {
         claims: {
-          sub: "local-user-id",
-          email: "dev@example.com",
-          first_name: "Local",
-          last_name: "Dev",
-          profile_image_url: "https://via.placeholder.com/150"
+          sub: user?.id,
+          email: user?.email,
+          first_name: user?.firstName,
+          last_name: user?.lastName,
+          profile_image_url: user?.profileImageUrl
         },
+        id: user?.id,
+        email: user?.email,
         expires_at: Math.floor(Date.now() / 1000) + 86400 * 7 // 7 days
       };
       
-      await upsertUser(mockUser.claims);
-      
-      req.login(mockUser, (err) => {
+      req.login(sessionUser, (err) => {
         if (err) return res.status(500).json({ error: "Login failed" });
-        res.redirect("/");
+        return res.json({ success: true, user: sessionUser });
+      });
+    });
+
+    app.get("/api/login", (req, res) => {
+      // If accessed via GET (e.g. browser bar), redirect to login page or just 404
+      // But since we want to support 'AuthContext' which might still redirect, let's keep it?
+      // No, we want to force form usage.
+      res.redirect("/login");
+    });
+
+    app.post("/api/logout", (req, res) => {
+      req.logout(() => {
+        res.json({ success: true });
       });
     });
 

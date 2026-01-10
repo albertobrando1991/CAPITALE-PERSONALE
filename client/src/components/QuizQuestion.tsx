@@ -53,10 +53,10 @@ export function QuizQuestion({
     }
 
     if (index === correctAnswer) {
-      return `${base} bg-green-100 border-green-500 text-green-800 dark:bg-green-900/30 dark:border-green-600 dark:text-green-400`;
+      return `${base} bg-status-online/10 border-status-online text-status-online dark:bg-status-online/30 dark:border-status-online dark:text-status-online`;
     }
     if (selectedAnswer === index && index !== correctAnswer) {
-      return `${base} bg-red-100 border-red-500 text-red-800 dark:bg-red-900/30 dark:border-red-600 dark:text-red-400`;
+      return `${base} bg-destructive/10 border-destructive text-destructive dark:bg-destructive/30 dark:border-destructive dark:text-destructive`;
     }
     return base;
   };
@@ -100,10 +100,10 @@ export function QuizQuestion({
                   </span>
                   <span className="flex-1">{option}</span>
                   {hasSubmitted && index === correctAnswer && (
-                    <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                    <CheckCircle className="h-5 w-5 text-status-online dark:text-status-online flex-shrink-0" />
                   )}
                   {hasSubmitted && selectedAnswer === index && index !== correctAnswer && (
-                    <XCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+                    <XCircle className="h-5 w-5 text-destructive dark:text-destructive flex-shrink-0" />
                   )}
                 </span>
               </Button>

@@ -119,7 +119,7 @@ export function QuizResults({
                   </Badge>
                   <Badge
                     variant="outline"
-                    className="gap-1 bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800"
+                    className="gap-1 bg-status-online/10 text-status-online border-status-online/20 dark:bg-status-online/20 dark:text-status-online dark:border-status-online/30"
                   >
                     <CheckCircle className="h-3 w-3" />
                     Corretta: {wrong.correctAnswer}

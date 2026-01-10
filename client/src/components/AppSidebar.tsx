@@ -30,7 +30,8 @@ import {
   Sparkles,
   Target,
   FileText,
-  Crown
+  Crown,
+  Calendar as CalendarIcon
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -40,7 +41,8 @@ interface AppSidebarProps {
 }
 
 const navItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+  { title: "Calendario", url: "/calendar", icon: CalendarIcon },
   { title: "Fase 0: Setup", url: "/fase0-link-placeholder", icon: Sparkles },
   { title: "Fonti & Materiali", url: "/fonti-placeholder", icon: Book },
   { title: "Fase 1: SQ3R", url: "/fase1-link-placeholder", icon: BookOpen },
@@ -69,29 +71,53 @@ export function AppSidebar({ userName, userLevel, onLogout }: AppSidebarProps) {
   const isAdmin = subscription?.isAdmin;
   const isPremium = subscription?.tier === 'premium' || subscription?.tier === 'enterprise' || isAdmin;
 
-  // Ottieni il concorsoId dall'URL se presente, altrimenti usa un placeholder
-  // In un'app reale, questo dovrebbe venire da un Context o uno Store globale
+  const { data: concorsi } = useQuery({
+    queryKey: ['concorsi'],
+    queryFn: async () => {
+      const res = await fetch('/api/concorsi');
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const pathParts = location.split('/');
   const concorsoIndex = pathParts.indexOf('concorsi');
-  const concorsoId = concorsoIndex !== -1 && pathParts.length > concorsoIndex + 1 
+  let activeConcorsoId = concorsoIndex !== -1 && pathParts.length > concorsoIndex + 1 
     ? pathParts[concorsoIndex + 1] 
-    : 'default'; // Fallback o gestione diversa se nessun concorso è selezionato
+    : 'default';
+
+  // Smart selection: if no active concorso in URL, try to use the first available one
+  if (activeConcorsoId === 'default' && concorsi && concorsi.length > 0) {
+    activeConcorsoId = concorsi[0].id;
+  }
 
   // Aggiorna l'URL della Fase 0 e Fase 1 dinamicamente
   const dynamicNavItems = navItems.map(item => {
+    // Helper to determine target URL
+    const getTargetUrl = (suffix: string) => {
+      if (activeConcorsoId !== 'default') {
+        return `/concorsi/${activeConcorsoId}${suffix}`;
+      }
+      return '/dashboard'; // Fallback to dashboard instead of home
+    };
+
     if (item.title === "Fase 0: Setup") {
-      // Se non c'è concorsoId valido (default), rimanda alla dashboard o gestisci
-      return { ...item, url: concorsoId !== 'default' ? `/concorsi/${concorsoId}/fase0` : '/' };
+      return { ...item, url: getTargetUrl('/fase0') };
     }
     if (item.title === "Fonti & Materiali") {
-      return { ...item, url: concorsoId !== 'default' ? `/concorsi/${concorsoId}/setup-fonti` : '/' };
+      return { ...item, url: getTargetUrl('/setup-fonti') };
     }
     if (item.title === "Fase 1: SQ3R") {
-      return { ...item, url: concorsoId !== 'default' ? `/concorsi/${concorsoId}/fase1` : '/' };
+      return { ...item, url: getTargetUrl('/fase1') };
     }
     if (item.title === "Fase 2: Acquisizione") {
-      return { ...item, url: concorsoId !== 'default' ? `/concorsi/${concorsoId}/fase2` : '/phase2' };
+      return { ...item, url: getTargetUrl('/fase2') };
     }
+    if (item.title === "Flashcard") {
+      return { ...item, url: activeConcorsoId !== 'default' ? `/flashcards?concorsoId=${activeConcorsoId}` : '/flashcards' };
+    }
+    // Update other items that might need concorso context if applicable
+    // For now keeping global items global
     return item;
   });
 
@@ -119,12 +145,12 @@ export function AppSidebar({ userName, userLevel, onLogout }: AppSidebarProps) {
             <h2 className="font-semibold">C.P.A. 2.0</h2>
             <div className="flex items-center gap-1 mt-1">
               {isAdmin && (
-                <Badge variant="outline" className="text-[10px] h-4 px-1 py-0 border-yellow-500 text-yellow-500">
+                <Badge variant="outline" className="text-[10px] h-4 px-1 py-0 border-secondary text-secondary">
                   ADMIN
                 </Badge>
               )}
               {isPremium && !isAdmin && (
-                <Badge variant="outline" className="text-[10px] h-4 px-1 py-0 border-purple-500 text-purple-500">
+                <Badge variant="outline" className="text-[10px] h-4 px-1 py-0 border-primary text-primary">
                   PREMIUM
                 </Badge>
               )}

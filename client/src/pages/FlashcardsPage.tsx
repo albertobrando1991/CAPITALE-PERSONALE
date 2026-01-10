@@ -292,7 +292,9 @@ export default function FlashcardsPage() {
     
     // Torna a Fase 2 se c'è concorsoId, altrimenti alla dashboard
     if (concorsoId) {
-      setLocation(`/phase2?id=${concorsoId}`);
+      setLocation(`/concorsi/${concorsoId}/fase2`);
+    } else {
+      setLocation("/dashboard");
     }
   };
 
@@ -379,7 +381,9 @@ export default function FlashcardsPage() {
                 setIsStudying(false); 
                 setSessionComplete(false);
                 if (concorsoId) {
-                  setLocation(`/phase2?id=${concorsoId}`);
+                  setLocation(`/concorsi/${concorsoId}/fase2`);
+                } else {
+                  setLocation("/dashboard");
                 }
               }} data-testid="button-back-to-list">
                 Torna alla Lista
@@ -419,15 +423,15 @@ export default function FlashcardsPage() {
             </div>
             
             {/* Barra progresso colorata */}
-            <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden flex">
+            <div className="w-full bg-muted h-2 rounded-full overflow-hidden flex">
               {flashcardsDaStudiareMapped.map((card, index) => {
                  const studiata = flashcardStudiate.find(f => f.id === card.id);
                  const width = (1 / flashcardsDaStudiareMapped.length) * 100;
                  
-                 let bgColor = "bg-gray-300";
-                 if (studiata?.risultato === 'facile') bgColor = "bg-green-500";
-                 if (studiata?.risultato === 'nonRicordo') bgColor = "bg-red-500";
-                 if (index === currentIndex) bgColor = "bg-blue-400"; // Evidenzia corrente
+                 let bgColor = "bg-muted";
+                 if (studiata?.risultato === 'facile') bgColor = "bg-status-online";
+                 if (studiata?.risultato === 'nonRicordo') bgColor = "bg-destructive";
+                 if (index === currentIndex) bgColor = "bg-primary/60"; // Evidenzia corrente
                  
                  return (
                    <div 
@@ -460,9 +464,9 @@ export default function FlashcardsPage() {
               
               if (studiata) {
                 if (studiata.risultato === 'facile') {
-                  statusClass = "bg-green-500 border-green-600 text-white";
+                  statusClass = "bg-status-online border-status-online text-white";
                 } else if (studiata.risultato === 'nonRicordo') {
-                  statusClass = "bg-red-500 border-red-600 text-white";
+                  statusClass = "bg-destructive border-destructive text-white";
                 }
               }
               
@@ -487,13 +491,13 @@ export default function FlashcardsPage() {
           
           <div className="mt-4 pt-4 border-t space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500"></div>Facili:</span>
+              <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-status-online"></div>Facili:</span>
               <span className="font-semibold">
                 {flashcardStudiate.filter(f => f.risultato === 'facile').length}
               </span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-red-500"></div>Da rivedere:</span>
+              <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-destructive"></div>Da rivedere:</span>
               <span className="font-semibold">
                 {flashcardStudiate.filter(f => f.risultato === 'nonRicordo').length}
               </span>
@@ -515,8 +519,8 @@ export default function FlashcardsPage() {
                const isCurrent = index === currentIndex;
                
                let statusClass = "bg-muted border-muted-foreground/30 text-muted-foreground";
-               if (studiata?.risultato === 'facile') statusClass = "bg-green-500 border-green-600 text-white";
-               if (studiata?.risultato === 'nonRicordo') statusClass = "bg-red-500 border-red-600 text-white";
+               if (studiata?.risultato === 'facile') statusClass = "bg-status-online border-status-online text-white";
+               if (studiata?.risultato === 'nonRicordo') statusClass = "bg-destructive border-destructive text-white";
                if (isCurrent && !studiata) statusClass = "bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2";
                
                return (
@@ -580,9 +584,9 @@ export default function FlashcardsPage() {
           size="icon"
           onClick={() => {
             if (concorsoId) {
-              setLocation(`/phase2?id=${concorsoId}`);
+              setLocation(`/concorsi/${concorsoId}/fase2`);
             } else {
-              setLocation("/");
+              setLocation("/dashboard");
             }
           }}
         >
@@ -668,14 +672,14 @@ export default function FlashcardsPage() {
           let bgColor = "bg-card";
           
           if (isMastered) {
-            borderColor = "border-green-500 border-2"; // Bordo verde spesso per 'Facile'
-            bgColor = "bg-green-100 dark:bg-green-950/40"; // Verde più intenso
+            borderColor = "border-status-online border-2"; // Bordo verde spesso per 'Facile'
+            bgColor = "bg-status-online/10 dark:bg-status-online/20"; // Verde più intenso
           } else if (isNotRemembered) {
-            borderColor = "border-red-500 border-2"; // Bordo rosso spesso per 'Non Ricordo'
-            bgColor = "bg-red-50/50 dark:bg-red-950/20";
+            borderColor = "border-destructive border-2"; // Bordo rosso spesso per 'Non Ricordo'
+            bgColor = "bg-destructive/10 dark:bg-destructive/20";
           } else if (isNotStudied) {
-            borderColor = "border-gray-300 dark:border-gray-700";
-            bgColor = "bg-gray-50/50 dark:bg-gray-900/20";
+            borderColor = "border-border";
+            bgColor = "bg-card/50";
           }
           
           return (
@@ -696,15 +700,15 @@ export default function FlashcardsPage() {
                 <p className="font-medium line-clamp-2 flex-1">{card.front}</p>
                 {/* Badge stato */}
                 {isNotStudied ? (
-                  <Badge variant="secondary" className="bg-gray-300 text-gray-700 flex-shrink-0">
+                  <Badge variant="secondary" className="bg-muted text-muted-foreground flex-shrink-0">
                     Non studiata
                   </Badge>
                 ) : isMastered ? (
-                  <Badge className="bg-green-500 text-white flex-shrink-0">
+                  <Badge className="bg-status-online text-white flex-shrink-0">
                     ✅ Facile
                   </Badge>
                 ) : (
-                  <Badge className="bg-red-500 text-white flex-shrink-0">
+                  <Badge className="bg-destructive text-white flex-shrink-0">
                     ❌ Da ripassare
                   </Badge>
                 )}

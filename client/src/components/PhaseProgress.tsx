@@ -70,7 +70,7 @@ export function PhaseProgress({ phases, onPhaseClick }: PhaseProgressProps) {
                           <Badge className="text-xs bg-primary">In corso</Badge>
                         )}
                         {phase.status === "completed" && (
-                          <Badge className="text-xs bg-green-600">Completata</Badge>
+                          <Badge className="text-xs bg-status-online">Completata</Badge>
                         )}
                       </div>
                       <p className="font-medium mt-1">{phase.title}</p>

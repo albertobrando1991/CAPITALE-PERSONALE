@@ -15,6 +15,7 @@ import FlashcardsPage from "@/pages/FlashcardsPage";
 import QuizPage from "@/pages/QuizPage";
 import PomodoroPage from "@/pages/PomodoroPage";
 import StatsPage from "@/pages/StatsPage";
+import CalendarPage from "@/pages/CalendarPage";
 
 import Phase2Page from "@/pages/Phase2Page";
 import SimulazioneSetupPage from "@/pages/SimulazioneSetupPage";
@@ -84,6 +85,7 @@ function ProtectedRoutes() {
               <Route path="/simulazioni" component={SimulazioniPage} />
               <Route path="/pomodoro" component={PomodoroPage} />
               <Route path="/stats" component={StatsPage} />
+              <Route path="/calendar" component={CalendarPage} />
               <Route path="/concorsi/:id/simulazione/setup" component={SimulazioneSetupPage} />
               <Route path="/concorsi/:id/simulazione/:simId" component={SimulazioneEsamePage} />
               <Route path="/concorsi/:id/simulazione/:simId/report" component={SimulazioneReportPage} />
@@ -113,6 +115,9 @@ import HomePage from "@/pages/HomePage";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
+import { PomodoroProvider } from '@/contexts/PomodoroContext';
+import { PomodoroWidget } from '@/components/PomodoroWidget';
+
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
   const [location] = useLocation();
@@ -128,26 +133,28 @@ function Router() {
 
   return (
     <ErrorBoundary>
-      <Switch>
-        <Route path="/">
-          <HomePage />
-        </Route>
-        <Route path="/login">
-          {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
-        </Route>
-        <Route path="/register">
-          {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
-        </Route>
-        <Route path="/register">
-          {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
-        </Route>
-        <Route path="/dashboard">
-          <ProtectedRoutes />
-        </Route>
-        <Route>
-          <ProtectedRoutes />
-        </Route>
-      </Switch>
+      <PomodoroProvider>
+        <Switch>
+          <Route path="/">
+            <HomePage />
+          </Route>
+          <Route path="/login">
+            {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
+          </Route>
+          <Route path="/register">
+            {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
+          </Route>
+          <Route path="/dashboard">
+            <ProtectedRoutes />
+          </Route>
+          <Route>
+            <ProtectedRoutes />
+          </Route>
+        </Switch>
+        
+        {/* Widget Pomodoro Globale (solo se autenticato) */}
+        {isAuthenticated && location !== '/pomodoro' && <PomodoroWidget />}
+      </PomodoroProvider>
     </ErrorBoundary>
   );
 }

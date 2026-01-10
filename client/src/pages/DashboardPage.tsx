@@ -34,6 +34,7 @@ import {
   Trash2,
   CheckCircle,
   Library,
+  Lightbulb,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -155,7 +156,7 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold" data-testid="text-welcome">
-            Bentornato, {user?.name?.split(" ")[0] || "Studente"}!
+            Benvenuto, {user?.name?.split(" ")[0] || "Studente"}!
           </h1>
           <p className="text-muted-foreground mt-1">
             Protocollo C.P.A. 2.0 - Preparazione Concorsi
@@ -304,11 +305,11 @@ export default function DashboardPage() {
           </div>
         </>
       ) : (
-        <Card className="border-yellow-500/50 bg-yellow-50/50 dark:bg-yellow-900/10">
+        <Card className="border-secondary/50 bg-secondary/5 dark:bg-secondary/10">
           <CardContent className="p-6">
             <div className="flex items-start gap-4">
-              <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                <Sparkles className="h-6 w-6 text-yellow-600" />
+              <div className="p-3 bg-secondary/20 rounded-lg">
+                <Sparkles className="h-6 w-6 text-secondary" />
               </div>
               <div className="flex-1">
                 <h3 className="font-semibold text-lg">Inizia dalla Fase 0: Intelligence & Setup</h3>
@@ -366,6 +367,30 @@ export default function DashboardPage() {
           icon={Trophy}
         />
       </div>
+
+      {/* Widget Mindset */}
+      <Card className="border-l-4 border-l-purple-500 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Brain className="h-5 w-5 text-purple-600" />
+            Ingegneria del Valore Umano
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            Il successo concorsuale dipende dalla <strong>variabile psicologica</strong> quanto da quella tecnica. 
+            Scopri come trasformare il tuo mindset.
+          </p>
+          <Button 
+            variant="outline" 
+            className="w-full" 
+            onClick={() => setLocation('/libreria?tab=mindset')} 
+          >
+            <Lightbulb className="h-4 w-4 mr-2" />
+            Esplora la Sezione Mindset
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Sezione Simulazioni Esame */}
       <Card>

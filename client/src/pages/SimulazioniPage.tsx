@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Target, Play, History, CheckCircle } from "lucide-react";
+import { Target, Play, History, CheckCircle, Brain, Clock, FileText, AlertTriangle, Lightbulb } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Concorso } from "@shared/schema";
 import { SimulazioniList } from "@/components/simulazioni/SimulazioniList";
@@ -151,6 +151,87 @@ export default function SimulazioniPage() {
               </Button>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Specchietto Informativo: Strategia Anti-Ansia */}
+      <Card className="bg-primary/5 border-primary/20 dark:bg-primary/10 dark:border-primary/30">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Brain className="h-6 w-6 text-primary" />
+            <CardTitle className="text-primary">
+              Strategia Anti-Ansia & Simulazione Realistica
+            </CardTitle>
+          </div>
+          <CardDescription>
+            L'ansia in sede d'esame distrugge la Memoria di Lavoro (il cortisolo inibisce l'ippocampo). L'unico modo per immunizzarsi è la simulazione realistica.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid md:grid-cols-3 gap-4">
+            <div className="space-y-2 p-3 bg-card rounded-lg border shadow-sm">
+              <div className="flex items-center gap-2 font-semibold text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <h3>No Comfort Zone</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Fai i quiz seduto a un tavolo, con rumore di fondo (usa app che simulano il brusio d'aula), senza cibo/musica.
+              </p>
+            </div>
+            
+            <div className="space-y-2 p-3 bg-card rounded-lg border shadow-sm">
+              <div className="flex items-center gap-2 font-semibold text-secondary">
+                <Clock className="h-4 w-4" />
+                <h3>Time Pressure</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Imposta il timer al 80% del tempo ufficiale. Se hai 60 minuti, allenati per finire in 45. Crea un "cuscinetto" per l'ansia.
+              </p>
+            </div>
+
+            <div className="space-y-2 p-3 bg-card rounded-lg border shadow-sm">
+              <div className="flex items-center gap-2 font-semibold text-foreground">
+                <FileText className="h-4 w-4" />
+                <h3>Foglio Risposte</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Se la prova è cartacea, usa fogli a lettura ottica fac-simile per allenare l'azione di annerimento.
+              </p>
+            </div>
+          </div>
+
+          <div className="border-t pt-4 border-primary/10">
+            <h3 className="font-semibold text-lg mb-3 flex items-center gap-2">
+              <Lightbulb className="h-5 w-5 text-secondary" />
+              6.2 Debriefing e Analisi dell'Errore
+            </h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Dopo la simulazione, il lavoro vero inizia. Analizza ogni errore:
+            </p>
+            <div className="grid gap-3">
+              <div className="flex items-start gap-3">
+                <Badge variant="outline" className="mt-1 border-destructive text-destructive">Tecnico</Badge>
+                <div>
+                  <span className="font-medium">Non sapevo la regola</span>
+                  <p className="text-sm text-muted-foreground">→ Torna alla Fase di Studio (Review).</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Badge variant="outline" className="mt-1 border-secondary text-secondary">Lettura</Badge>
+                <div>
+                  <span className="font-medium">Ho letto "non" dove non c'era, o "sempre" invece di "spesso"</span>
+                  <p className="text-sm text-muted-foreground">→ Problema di attenzione. Rallenta nella fase di lettura della traccia (Fase Survey).</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Badge variant="outline" className="mt-1 border-primary text-primary">Ragionamento</Badge>
+                <div>
+                  <span className="font-medium">Sapevo la regola ma l'ho applicata male</span>
+                  <p className="text-sm text-muted-foreground">→ Problema di transfer. Cerca altri quiz simili per rinforzare il meccanismo logico.</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

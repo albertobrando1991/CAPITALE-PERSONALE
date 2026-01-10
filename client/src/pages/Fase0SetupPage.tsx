@@ -254,7 +254,7 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
         <div className="flex items-center gap-4">
-          <Link href="/">
+          <Link href="/dashboard">
             <Button variant="ghost" size="icon" data-testid="button-back">
               <ArrowLeft className="h-4 w-4" />
             </Button>

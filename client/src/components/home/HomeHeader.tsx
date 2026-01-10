@@ -11,7 +11,7 @@ export function HomeHeader() {
       <div className="container mx-auto px-4 h-20 flex items-center justify-between">
         <div className="flex items-center gap-3 font-bold text-xl text-primary cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLocation("/")}>
           <Logo className="w-14 h-14" />
-          <span className="hidden md:inline-block font-serif tracking-tight text-slate-900">Capitale Personale</span>
+          <span className="hidden md:inline-block font-serif tracking-tight text-primary">Capitale Personale</span>
         </div>
         
         <div className="flex items-center gap-4">

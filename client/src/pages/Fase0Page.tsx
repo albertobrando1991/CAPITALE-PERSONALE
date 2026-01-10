@@ -322,67 +322,67 @@ export default function Fase0Page({ params }: { params: { concorsoId: string } }
         </div>
 
         {/* Spiegazione Metodo SQ3R */}
-        <Card className="p-0 overflow-hidden border-blue-100 bg-blue-50/50">
+        <Card className="p-0 overflow-hidden border-primary/20 bg-primary/5">
           <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="info-sq3r" className="border-none">
               <AccordionTrigger className="px-6 py-4 hover:no-underline">
                 <div className="flex items-center gap-3 text-left">
-                  <div className="bg-blue-100 p-2 rounded-full">
-                    <TrendingUp className="w-5 h-5 text-blue-600" />
+                  <div className="bg-primary/10 p-2 rounded-full">
+                    <TrendingUp className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-blue-900">Come funziona la Fase 0?</h3>
-                    <p className="text-sm text-blue-700 font-normal">Scopri gli obiettivi e il metodo SQ3R per uno studio efficace.</p>
+                    <h3 className="font-semibold text-primary">Come funziona la Fase 0?</h3>
+                    <p className="text-sm text-primary/80 font-normal">Scopri gli obiettivi e il metodo SQ3R per uno studio efficace.</p>
                   </div>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="px-6 pb-6 pt-0">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
                   <div className="space-y-4">
-                    <h4 className="font-semibold flex items-center gap-2 text-gray-900">
-                      <Target className="w-4 h-4 text-blue-600" />
+                    <h4 className="font-semibold flex items-center gap-2 text-foreground">
+                      <Target className="w-4 h-4 text-primary" />
                       Obiettivi di questa fase
                     </h4>
-                    <ul className="space-y-2 text-sm text-gray-700">
+                    <ul className="space-y-2 text-sm text-muted-foreground">
                       <li className="flex items-start gap-2">
-                        <span className="text-blue-500 mt-1">•</span>
+                        <span className="text-secondary mt-1">•</span>
                         <span>Costruire una <strong>comprensione profonda</strong> del materiale prima di memorizzare.</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="text-blue-500 mt-1">•</span>
+                        <span className="text-secondary mt-1">•</span>
                         <span>Trasformare la lettura passiva in <strong>apprendimento attivo</strong>.</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="text-blue-500 mt-1">•</span>
+                        <span className="text-secondary mt-1">•</span>
                         <span>Creare una base solida per la successiva creazione di <strong>Flashcard</strong>.</span>
                       </li>
                     </ul>
                   </div>
 
                   <div className="space-y-4">
-                    <h4 className="font-semibold flex items-center gap-2 text-gray-900">
-                      <BookOpen className="w-4 h-4 text-blue-600" />
+                    <h4 className="font-semibold flex items-center gap-2 text-foreground">
+                      <BookOpen className="w-4 h-4 text-primary" />
                       Il Metodo SQ3R in 5 Step
                     </h4>
                     <div className="grid grid-cols-1 gap-3 text-sm">
                       <div className="flex gap-3 items-start">
-                        <span className="font-bold text-blue-700 bg-blue-100 px-2 rounded">S</span>
+                        <span className="font-bold text-primary bg-primary/10 px-2 rounded">S</span>
                         <div><strong>Survey (Scansione):</strong> Guarda titoli, immagini e grassetti per avere una panoramica.</div>
                       </div>
                       <div className="flex gap-3 items-start">
-                        <span className="font-bold text-blue-700 bg-blue-100 px-2 rounded">Q</span>
+                        <span className="font-bold text-primary bg-primary/10 px-2 rounded">Q</span>
                         <div><strong>Question (Domande):</strong> Trasforma i titoli in domande guida.</div>
                       </div>
                       <div className="flex gap-3 items-start">
-                        <span className="font-bold text-blue-700 bg-blue-100 px-2 rounded">R</span>
+                        <span className="font-bold text-primary bg-primary/10 px-2 rounded">R</span>
                         <div><strong>Read (Lettura):</strong> Leggi attivamente per rispondere alle domande.</div>
                       </div>
                       <div className="flex gap-3 items-start">
-                        <span className="font-bold text-blue-700 bg-blue-100 px-2 rounded">R</span>
+                        <span className="font-bold text-primary bg-primary/10 px-2 rounded">R</span>
                         <div><strong>Recite (Ripetizione):</strong> Ripeti i concetti a voce alta senza guardare.</div>
                       </div>
                       <div className="flex gap-3 items-start">
-                        <span className="font-bold text-blue-700 bg-blue-100 px-2 rounded">R</span>
+                        <span className="font-bold text-primary bg-primary/10 px-2 rounded">R</span>
                         <div><strong>Review (Revisione):</strong> Rivedi tutto per consolidare il ricordo.</div>
                       </div>
                     </div>

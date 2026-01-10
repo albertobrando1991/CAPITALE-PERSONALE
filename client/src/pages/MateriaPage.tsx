@@ -3,10 +3,20 @@ import { useLocation, useRoute } from 'wouter';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, BookOpen, Plus, Loader2, FileText, CheckCircle2, Circle } from 'lucide-react';
+import { ArrowLeft, BookOpen, Plus, Loader2, FileText, CheckCircle2, Circle, Trash2 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiRequest } from '@/lib/queryClient';
@@ -18,6 +28,7 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [capitoloToDelete, setCapitoloToDelete] = useState<string | null>(null);
   
   // Form state
   const [titolo, setTitolo] = useState('');
@@ -79,6 +90,28 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
       pagineInizio: parseInt(pagineInizio) || 0,
       pagineFine: parseInt(pagineFine) || 0,
     });
+  };
+
+  // Mutation elimina capitolo
+  const deleteCapitoloMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest('DELETE', `/api/sq3r/capitoli/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/sq3r/capitoli', materiaId] });
+      toast({ title: "Capitolo eliminato", description: "Il capitolo è stato rimosso." });
+      setCapitoloToDelete(null);
+    },
+    onError: (err: any) => {
+      toast({ title: "Errore", description: err.message, variant: "destructive" });
+      setCapitoloToDelete(null);
+    }
+  });
+
+  const handleDeleteCapitolo = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCapitoloToDelete(id);
   };
 
   if (!materia && !isLoadingCapitoli) {
@@ -192,7 +225,7 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
                 style={{ borderLeftColor: isCompleted ? '#22c55e' : '#3b82f6' }}
                 onClick={() => setLocation(`/concorsi/${concorsoId}/fase1/capitolo/${cap.id}`)}
               >
-                <CardContent className="p-6 flex items-center gap-6">
+                <CardContent className="p-6 flex items-center gap-6 relative group">
                   <div className="flex flex-col items-center justify-center h-12 w-12 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-lg text-slate-600">
                     {cap.numeroCapitolo}
                   </div>
@@ -215,6 +248,17 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
                         <Circle className="h-4 w-4 mr-1" /> In corso
                       </Badge>
                     )}
+                    
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => handleDeleteCapitolo(e, cap.id)}
+                      title="Elimina capitolo"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+
                     <Button variant="ghost" size="icon">
                       <ArrowLeft className="h-4 w-4 rotate-180" />
                     </Button>
@@ -225,6 +269,27 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
           })
         )}
       </div>
+
+      {/* Alert Dialog per eliminazione */}
+      <AlertDialog open={!!capitoloToDelete} onOpenChange={(open) => !open && setCapitoloToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminare questo capitolo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Questa azione non può essere annullata. Tutti i dati associati a questo capitolo (note, evidenziazioni, quiz) verranno persi.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => capitoloToDelete && deleteCapitoloMutation.mutate(capitoloToDelete)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Elimina
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

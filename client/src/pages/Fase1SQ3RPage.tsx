@@ -3,10 +3,20 @@ import { useLocation, useRoute } from 'wouter';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, BookOpen, Target, Plus, Loader2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Target, Plus, Loader2, Trash2 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiRequest } from '@/lib/queryClient';
@@ -18,6 +28,7 @@ function Fase1SQ3RContent({ concorsoId }: { concorsoId: string }) {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newMateriaName, setNewMateriaName] = useState('');
+  const [materiaToDelete, setMateriaToDelete] = useState<string | null>(null);
 
   console.log('🔍 Fase1SQ3RContent render - ID:', concorsoId);
 
@@ -73,6 +84,35 @@ function Fase1SQ3RContent({ concorsoId }: { concorsoId: string }) {
     createMateriaMutation.mutate(newMateriaName);
   };
 
+  // Mutation per eliminare materia
+  const deleteMateriaMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest('DELETE', `/api/sq3r/materie/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/sq3r/materie', concorsoId] });
+      toast({
+        title: "Materia eliminata",
+        description: "La materia è stata rimossa con successo.",
+      });
+      setMateriaToDelete(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Errore",
+        description: error.message || "Impossibile eliminare la materia.",
+        variant: "destructive"
+      });
+      setMateriaToDelete(null);
+    }
+  });
+
+  const handleDeleteMateria = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMateriaToDelete(id);
+  };
+
   const isLoading = concorsoLoading || materieLoading;
 
   if (isLoading) {
@@ -121,10 +161,10 @@ function Fase1SQ3RContent({ concorsoId }: { concorsoId: string }) {
       </div>
 
       {/* Progress Overview */}
-      <Card className="mb-8 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950 dark:to-purple-950 border-2 border-blue-200 dark:border-blue-800">
+      <Card className="mb-8 bg-gradient-to-r from-primary/5 to-secondary/10 dark:from-primary/20 dark:to-secondary/20 border-2 border-primary/20 dark:border-primary/30">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Target className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <Target className="h-5 w-5 text-primary" />
             Progressi Studio
           </CardTitle>
         </CardHeader>
@@ -132,19 +172,19 @@ function Fase1SQ3RContent({ concorsoId }: { concorsoId: string }) {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <div className="text-sm text-muted-foreground mb-2">Materie Totali</div>
-              <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+              <div className="text-3xl font-bold text-primary">
                 {materie.length}
               </div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-2">Capitoli Completati</div>
-              <div className="text-3xl font-bold text-green-600 dark:text-green-400">
+              <div className="text-3xl font-bold text-status-online">
                 {materie.reduce((acc: number, m: any) => acc + (m.capitoliCompletati || 0), 0)}
               </div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-2">Ore di Studio</div>
-              <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">
+              <div className="text-3xl font-bold text-secondary">
                 {materie.reduce((acc: number, m: any) => acc + (m.oreStudioTotali || 0), 0).toFixed(1)}h
               </div>
             </div>
@@ -214,9 +254,20 @@ function Fase1SQ3RContent({ concorsoId }: { concorsoId: string }) {
               return (
                 <Card
                   key={materia.id}
-                  className="hover:shadow-lg transition-shadow cursor-pointer"
+                  className="hover:shadow-lg transition-shadow cursor-pointer relative group"
                   onClick={() => setLocation(`/concorsi/${concorsoId}/materie/${materia.id}`)}
                 >
+                  <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      onClick={(e) => handleDeleteMateria(e, materia.id)}
+                      title="Elimina materia"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                   <CardHeader>
                     <div className="flex items-start gap-3">
                       <div
@@ -261,7 +312,7 @@ function Fase1SQ3RContent({ concorsoId }: { concorsoId: string }) {
 
       {/* CTA */}
       {materie.length > 0 && (
-        <Card className="p-6 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-center">
+        <Card className="p-6 bg-gradient-to-r from-primary to-secondary text-white text-center">
           <h3 className="text-2xl font-bold mb-2">
             Pronto per Studiare?
           </h3>
@@ -270,6 +321,28 @@ function Fase1SQ3RContent({ concorsoId }: { concorsoId: string }) {
           </p>
         </Card>
       )}
+
+      {/* Alert Dialog per eliminazione */}
+      <AlertDialog open={!!materiaToDelete} onOpenChange={(open) => !open && setMateriaToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sei assolutamente sicuro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Questa azione non può essere annullata. Eliminerà permanentemente la materia
+              e tutti i capitoli, note e progressi associati.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => materiaToDelete && deleteMateriaMutation.mutate(materiaToDelete)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Elimina
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

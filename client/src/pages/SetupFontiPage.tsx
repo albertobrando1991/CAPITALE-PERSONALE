@@ -185,7 +185,7 @@ export default function SetupFontiPage() {
 
       {/* Consiglio */}
       <Alert className="mb-6">
-        <AlertTitle className="text-lg">💡 Consiglio da Trae AI</AlertTitle>
+        <AlertTitle className="text-lg">💡 Consiglio da Capitale Personale</AlertTitle>
         <AlertDescription className="text-base">
           Puoi combinare più opzioni! Ad esempio:<br />
           <strong>Carica le tue dispense</strong> (appunti personali) +

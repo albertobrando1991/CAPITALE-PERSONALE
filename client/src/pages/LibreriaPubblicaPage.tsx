@@ -1,528 +1,656 @@
-import { useState, useEffect } from 'react'; 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'; 
-import { Book, Download, Plus, Search, Filter, Upload, ExternalLink, Gavel, Folder, ArrowLeft, Calendar } from 'lucide-react'; 
-import { Button } from '@/components/ui/button'; 
-import { Input } from '@/components/ui/input'; 
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'; 
-import { Badge } from '@/components/ui/badge'; 
-import { useToast } from "@/hooks/use-toast";
-import { materieEnum } from '@shared/schema-libreria'; 
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { useLocation } from "wouter";
+import { useState } from 'react';
+import { useLocation } from 'wouter';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+  ArrowLeft, Book, Brain, TrendingUp, Target, Lightbulb,
+  CheckCircle, Award, BookOpen, Download, ExternalLink, Clock
+} from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
-interface Documento { 
-  id: string; 
-  titolo: string; 
-  descrizione?: string; 
-  materia: string; 
-  tags?: string[]; 
-  fileName: string; 
-  fileSize: number; 
-  numPages?: number; 
-  downloadsCount: number; 
-  hasPdf: boolean; 
-  createdAt: string; 
-} 
+export default function LibreriaPubblicaPage() {
+  const [, setLocation] = useLocation();
+  const [selectedArticle, setSelectedArticle] = useState<string | null>(null);
 
-interface Norma { 
-  id: string; 
-  urn: string; 
-  tipo: string; 
-  numero?: string; 
-  anno: number; 
-  data?: string; 
-  titolo: string; 
-  titoloBreve?: string; 
-  keywords?: string[]; 
-  urlNormattiva: string; 
-  gazzettaUfficiale?: string; 
-} 
-
-export default function LibreriaPubblicaPage() { 
-  const [location] = useLocation();
-  // Parse query params manually since wouter doesn't provide a hook for it
-  const getSearchParams = () => {
-    if (typeof window !== 'undefined') {
-      return new URLSearchParams(window.location.search);
-    }
-    return new URLSearchParams();
-  };
-  const searchParams = getSearchParams();
-  const initialTab = searchParams.get('tab') || 'normativa';
-
-  const [activeTab, setActiveTab] = useState(initialTab);
-  const [materiaFilter, setMateriaFilter] = useState<string>(''); 
-  const [searchQuery, setSearchQuery] = useState(''); 
-  const [normativaSearch, setNormativaSearch] = useState('');
-  const [debouncedNormativaQuery, setDebouncedNormativaQuery] = useState('');
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
-  
-  // Upload State
-  const [uploadTitle, setUploadTitle] = useState('');
-  const [uploadDesc, setUploadDesc] = useState('');
-  const [uploadMateria, setUploadMateria] = useState('');
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-
-  const queryClient = useQueryClient(); 
-  const { toast } = useToast(); 
-
-  // Sync activeTab with URL if needed, or just handle initial load
-  useEffect(() => {
-    const params = getSearchParams();
-    const tab = params.get('tab');
-    if (tab && tab !== activeTab) {
-      setActiveTab(tab);
-    }
-  }, [location]);
-
-  const handleTabChange = (value: string) => {
-    setActiveTab(value);
-    // Optional: update URL
-    const url = new URL(window.location.href);
-    url.searchParams.set('tab', value);
-    window.history.pushState({}, '', url.toString());
-  };
-
-  // Debounce search for Normativa
-  const handleNormativaSearch = (value: string) => { 
-    setNormativaSearch(value); 
-    const timer = setTimeout(() => setDebouncedNormativaQuery(value), 500); 
-    return () => clearTimeout(timer); 
-  }; 
-
-  // Fetch documenti 
-  const { data: documenti = [], isLoading } = useQuery<Documento[]>({ 
-    queryKey: ['libreria-documenti', materiaFilter, searchQuery, selectedFolder], 
-    queryFn: async () => { 
-      const params = new URLSearchParams(); 
-      // Se abbiamo selezionato una cartella, usiamola come filtro materia
-      if (selectedFolder) params.append('materia', selectedFolder);
-      // Altrimenti se c'è un filtro manuale
-      else if (materiaFilter) params.append('materia', materiaFilter);
-      
-      if (searchQuery) params.append('search', searchQuery); 
-      
-      const res = await fetch(`/api/libreria/documenti?${params}`, { 
-        credentials: 'include', 
-      }); 
-      
-      if (!res.ok) throw new Error('Errore caricamento documenti'); 
-      return res.json(); 
-    }, 
-  }); 
-
-  // Upload Mutation
-  const uploadMutation = useMutation({
-    mutationFn: async () => {
-      if (!uploadFile) throw new Error("Seleziona un file PDF");
-      if (!uploadTitle) throw new Error("Inserisci un titolo");
-      if (!uploadMateria) throw new Error("Seleziona una materia");
-
-      const formData = new FormData();
-      formData.append('pdf', uploadFile);
-      formData.append('titolo', uploadTitle);
-      formData.append('descrizione', uploadDesc);
-      formData.append('materia', uploadMateria);
-      // tags defaults to empty array if not sent, handle in backend if needed or send JSON
-      
-      const res = await fetch('/api/libreria/documenti', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Errore durante l\'upload');
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: 'Documento caricato con successo!' });
-      setIsUploadOpen(false);
-      setUploadTitle('');
-      setUploadDesc('');
-      setUploadFile(null);
-      // Se eravamo in una cartella, rimaniamo lì, la query si aggiorna
-      queryClient.invalidateQueries({ queryKey: ['libreria-documenti'] });
-    },
-    onError: (error: Error) => {
-      toast({ 
-        title: 'Errore Upload', 
-        description: error.message, 
-        variant: 'destructive' 
-      });
-    }
-  }); 
-
-  // Fetch Normativa (Real API)
-  const { data: normative = [], isLoading: isLoadingNormative } = useQuery<Norma[]>({
-    queryKey: ['norme-search', debouncedNormativaQuery],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (debouncedNormativaQuery) params.append('q', debouncedNormativaQuery);
-      params.append('limit', '50');
-      
-      const res = await fetch(`/api/norme/search?${params}`, {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Errore caricamento normativa');
-      return res.json();
-    },
-    enabled: true // Always load initial list
-  });
-
-  // Download documento 
-  const downloadMutation = useMutation({ 
-    mutationFn: async (docId: string) => { 
-      await fetch(`/api/libreria/documenti/${docId}/download`, { 
-        method: 'POST', 
-        credentials: 'include', 
-      }); 
-      
-      const res = await fetch(`/api/libreria/documenti/${docId}`, { 
-        credentials: 'include', 
-      }); 
-      
-      if (!res.ok) throw new Error('Errore download'); 
-      
-      const doc = await res.json(); 
-      
-      if (doc.pdfBase64) { 
-        const link = document.createElement('a'); 
-        link.href = `data:application/pdf;base64,${doc.pdfBase64}`; 
-        link.download = doc.fileName; 
-        link.click(); 
-      } else if (doc.pdfUrl) {
-        window.open(doc.pdfUrl, '_blank');
-      }
-      
-      return docId; 
-    }, 
-    onSuccess: () => { 
-      toast({
-        title: 'Download completato!',
-        description: 'Il file è stato scaricato correttamente.',
-      }); 
-      queryClient.invalidateQueries({ queryKey: ['libreria-documenti'] }); 
-    }, 
-    onError: () => { 
-      toast({
-        title: 'Errore',
-        description: 'Errore durante il download del documento.',
-        variant: 'destructive',
-      }); 
-    }, 
-  }); 
-
-  const formatFileSize = (bytes: number) => { 
-    if (bytes < 1024) return `${bytes} B`; 
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`; 
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`; 
-  }; 
-
-  return ( 
-    <div className="container mx-auto p-6 max-w-7xl"> 
-      {/* Header */} 
-      <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4"> 
-        <div>
-          <h1 className="text-3xl font-bold mb-2 flex items-center gap-2"> 
-            <Book className="h-8 w-8 text-primary" /> 
-            Libreria Pubblica 
-          </h1> 
-          <p className="text-muted-foreground"> 
-            Materiali di studio condivisi e Normativa ufficiale
-          </p> 
+  return (
+    <div className="container mx-auto p-6 max-w-7xl">
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-8">
+        <Button variant="outline" size="icon" onClick={() => setLocation('/dashboard')}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div className="flex-1">
+          <h1 className="text-3xl font-bold">Libreria Pubblica</h1>
+          <p className="text-muted-foreground">Risorse, guide e materiali per la tua preparazione</p>
         </div>
+      </div>
 
-        {/* Upload Button Global */}
-        <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-green-600 hover:bg-green-700">
-              <Upload className="h-4 w-4 mr-2" />
-              Carica Documento
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>Carica Nuovo Documento</DialogTitle>
-              <DialogDescription>
-                Condividi un documento PDF con la community. Sarà visibile a tutti nella sezione corretta.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="titolo">Titolo</Label>
-                <Input 
-                  id="titolo" 
-                  value={uploadTitle}
-                  onChange={(e) => setUploadTitle(e.target.value)}
-                  placeholder="Es. Riassunto Diritto Amministrativo" 
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="descrizione">Descrizione (opzionale)</Label>
-                <Textarea 
-                  id="descrizione" 
-                  value={uploadDesc}
-                  onChange={(e) => setUploadDesc(e.target.value)}
-                  placeholder="Breve descrizione del contenuto..." 
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="materia">Materia / Cartella</Label>
-                <Select 
-                  value={uploadMateria} 
-                  onValueChange={setUploadMateria}
-                  defaultValue={selectedFolder || undefined} // Pre-select if inside folder
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleziona materia" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {materieEnum.map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="file">File PDF</Label>
-                <Input 
-                  id="file" 
-                  type="file" 
-                  accept=".pdf"
-                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsUploadOpen(false)}>Annulla</Button>
-              <Button onClick={() => uploadMutation.mutate()} disabled={uploadMutation.isPending}>
-                {uploadMutation.isPending ? "Caricamento..." : "Carica"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div> 
-
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="mb-6 grid w-full grid-cols-2 lg:w-[400px]">
-          <TabsTrigger value="normativa">Cerca Normativa</TabsTrigger>
-          <TabsTrigger value="documenti">Documenti Condivisi</TabsTrigger>
+      {/* Tabs */}
+      <Tabs defaultValue="mindset" className="w-full">
+        <TabsList className="grid w-full grid-cols-3 mb-8">
+          <TabsTrigger value="mindset" className="gap-2">
+            <Brain className="h-4 w-4" />
+            Ingegneria del Valore Umano
+          </TabsTrigger>
+          <TabsTrigger value="guide" className="gap-2">
+            <Book className="h-4 w-4" />
+            Guide di Studio
+          </TabsTrigger>
+          <TabsTrigger value="materiali" className="gap-2">
+            <BookOpen className="h-4 w-4" />
+            Materiali Pubblici
+          </TabsTrigger>
         </TabsList>
 
-        {/* TAB NORMATIVA */}
-        <TabsContent value="normativa">
-           <div className="space-y-6">
-             <div className="relative">
-               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-               <Input 
-                 placeholder="Cerca normativa (es. 'privacy', '196/2003', 'costituzione')..." 
-                 value={normativaSearch}
-                 onChange={(e) => handleNormativaSearch(e.target.value)}
-                 className="pl-10 py-6 text-lg"
-               />
-             </div>
-
-             {/* Disclaimer User-Centric */}
-             <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-800 flex items-start gap-3">
-                <Gavel className="h-5 w-5 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-semibold">Accesso Diretto alla Fonte Ufficiale</p>
-                  <p>
-                    Cerca la norma che ti interessa e scarica il testo vigente direttamente da <strong>Normattiva.it</strong>.
-                    Nessuna registrazione, nessun costo, sempre aggiornato.
+        {/* TAB MINDSET */}
+        <TabsContent value="mindset" className="space-y-6">
+          
+          {/* Intro Card */}
+          <Card className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 border-2 border-purple-200">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full">
+                  <Brain className="h-8 w-8 text-purple-600" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-2xl font-bold mb-2">Ingegneria del Valore Umano</h2>
+                  <p className="text-muted-foreground leading-relaxed">
+                    Il successo concorsuale è un'equazione dove <strong>la variabile psicologica
+                    pesa quanto quella tecnica</strong>. La preparazione non è un evento,
+                    ma un <strong>processo di trasformazione personale</strong>.
                   </p>
                 </div>
-             </div>
+              </div>
+            </CardContent>
+          </Card>
 
-             {isLoadingNormative ? (
-                <div className="text-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto" />
-                  <p className="mt-4 text-muted-foreground">Ricerca normativa in corso...</p>
+          {/* I 3 Pilastri */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            {/* Pilastro 1: Growth Mindset */}
+            <Card
+              className="border-l-4 border-l-green-500 cursor-pointer hover:shadow-lg transition-shadow"
+              onClick={() => setSelectedArticle('growth-mindset')}
+            >
+              <CardHeader>
+                <div className="flex items-center justify-between mb-2">
+                  <Badge className="bg-green-100 text-green-700">Pilastro 1</Badge>
+                  <TrendingUp className="h-5 w-5 text-green-600" />
                 </div>
-             ) : normative.length === 0 ? (
-                <div className="text-center py-12">
-                   <p className="text-muted-foreground">Nessuna normativa trovata. Prova a cercare qualcosa di specifico.</p>
+                <CardTitle className="text-lg">Growth Mindset</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Trasforma ogni errore in un dato diagnostico prezioso per il tuo apprendimento.
+                </p>
+                <Button variant="outline" size="sm" className="w-full">
+                  Leggi l'articolo completo →
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Pilastro 2: Resilienza */}
+            <Card
+              className="border-l-4 border-l-blue-500 cursor-pointer hover:shadow-lg transition-shadow"
+              onClick={() => setSelectedArticle('resilienza')}
+            >
+              <CardHeader>
+                <div className="flex items-center justify-between mb-2">
+                  <Badge className="bg-blue-100 text-blue-700">Pilastro 2</Badge>
+                  <Target className="h-5 w-5 text-blue-600" />
                 </div>
-             ) : (
-                <div className="grid grid-cols-1 gap-4">
-                  {normative.map((norma, idx) => (
-                    <Card key={norma.id || norma.urn || idx} className="hover:shadow-md transition-shadow border-l-4 border-l-blue-600">
-                      <CardHeader className="pb-3">
-                        <div className="flex flex-col md:flex-row justify-between items-start gap-4">
-                          <div>
-                            <div className="flex items-center gap-2 mb-2">
-                                <Badge variant="secondary">{norma.tipo}</Badge>
-                                {norma.numero && <Badge variant="outline">n. {norma.numero}</Badge>}
-                                <Badge variant="outline">
-                                    <Calendar className="h-3 w-3 mr-1" />
-                                    {norma.anno}
-                                </Badge>
-                            </div>
-                            <CardTitle className="text-xl flex items-center gap-2 text-blue-700">
-                              {norma.titoloBreve || norma.titolo}
-                            </CardTitle>
-                            <CardDescription className="mt-2 text-base text-foreground/90 font-medium">
-                              {norma.titolo}
-                            </CardDescription>
-                            
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                          <div className="flex flex-wrap gap-2">
-                             {norma.keywords?.map((k, idx) => <Badge key={`${k}-${idx}`} variant="secondary" className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100">#{k}</Badge>)}
-                          </div>
-                          
-                          <Button 
-                            variant="default" 
-                            className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm"
-                            onClick={() => window.open(norma.urlNormattiva, '_blank')}
-                          >
-                            <Download className="h-4 w-4 mr-2" />
-                            Scarica Testo Vigente
-                          </Button>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-4 flex items-center gap-1">
-                          <ExternalLink className="h-3 w-3" />
-                          Link diretto a: <span className="underline">Normattiva.it</span> (Sito Ufficiale)
-                        </p>
-                      </CardContent>
-                    </Card>
-                  ))}
+                <CardTitle className="text-lg">Resilienza alla Monotonia</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Allena la tolleranza alla noia come un muscolo per studiare con costanza.
+                </p>
+                <Button variant="outline" size="sm" className="w-full">
+                  Leggi l'articolo completo →
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Pilastro 3: Visione Strategica */}
+            <Card
+              className="border-l-4 border-l-purple-500 cursor-pointer hover:shadow-lg transition-shadow"
+              onClick={() => setSelectedArticle('visione')}
+            >
+              <CardHeader>
+                <div className="flex items-center justify-between mb-2">
+                  <Badge className="bg-purple-100 text-purple-700">Pilastro 3</Badge>
+                  <Lightbulb className="h-5 w-5 text-purple-600" />
                 </div>
-             )}
-           </div>
+                <CardTitle className="text-lg">Visione Strategica</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Supera i plateau con una visione chiara dell'obiettivo finale.
+                </p>
+                <Button variant="outline" size="sm" className="w-full">
+                  Leggi l'articolo completo →
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Articoli Approfondimento */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Articolo: Come affrontare gli errori */}
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <Badge variant="secondary">Growth Mindset</Badge>
+                </div>
+                <CardTitle className="text-base">
+                  Come Trasformare gli Errori in Opportunità
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Guida pratica per analizzare ogni errore nei quiz e trasformarlo
+                  in un apprendimento concreto.
+                </p>
+                <ul className="text-sm space-y-1 mb-4">
+                  <li className="flex gap-2">
+                    <span className="text-green-600">✓</span>
+                    <span>Il framework dell'errore diagnostico</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-green-600">✓</span>
+                    <span>Template di riflessione post-errore</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-green-600">✓</span>
+                    <span>Pattern di errore ricorrenti</span>
+                  </li>
+                </ul>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setSelectedArticle('errori-opportunita')}
+                >
+                  Leggi →
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Articolo: Costruire abitudini */}
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <div className="flex items-center gap-2 mb-2">
+                  <Target className="h-4 w-4 text-blue-600" />
+                  <Badge variant="secondary">Resilienza</Badge>
+                </div>
+                <CardTitle className="text-base">
+                  Costruire Abitudini di Studio Indistruttibili
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Come creare una routine di studio che resiste alla noia e
+                  ai momenti di scarsa motivazione.
+                </p>
+                <ul className="text-sm space-y-1 mb-4">
+                  <li className="flex gap-2">
+                    <span className="text-blue-600">✓</span>
+                    <span>Il potere del rituale quotidiano</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-blue-600">✓</span>
+                    <span>Tecnica Pomodoro avanzata</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-blue-600">✓</span>
+                    <span>Gestire le serie (streak) di studio</span>
+                  </li>
+                </ul>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setSelectedArticle('abitudini-studio')}
+                >
+                  Leggi →
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Articolo: Superare il Plateau */}
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <div className="flex items-center gap-2 mb-2">
+                  <Lightbulb className="h-4 w-4 text-purple-600" />
+                  <Badge variant="secondary">Visione</Badge>
+                </div>
+                <CardTitle className="text-base">
+                  Superare il Plateau: La Curva dell'Apprendimento
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Perché i progressi sembrano fermarsi e come uscire dalla fase
+                  di stallo con strategie comprovate.
+                </p>
+                <ul className="text-sm space-y-1 mb-4">
+                  <li className="flex gap-2">
+                    <span className="text-purple-600">✓</span>
+                    <span>Riconoscere il plateau</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-purple-600">✓</span>
+                    <span>Strategie anti-plateau</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-purple-600">✓</span>
+                    <span>Mantenere la visione a lungo termine</span>
+                  </li>
+                </ul>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setSelectedArticle('superare-plateau')}
+                >
+                  Leggi →
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Articolo: Dichiarazione di Visione */}
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <div className="flex items-center gap-2 mb-2">
+                  <Award className="h-4 w-4 text-orange-600" />
+                  <Badge variant="secondary">Esercizio Pratico</Badge>
+                </div>
+                <CardTitle className="text-base">
+                  Scrivi la Tua Dichiarazione di Visione
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Esercizio guidato per definire il tuo "perché profondo" e
+                  creare una visione motivante per i momenti difficili.
+                </p>
+                <ul className="text-sm space-y-1 mb-4">
+                  <li className="flex gap-2">
+                    <span className="text-orange-600">✓</span>
+                    <span>Template dichiarazione di visione</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-orange-600">✓</span>
+                    <span>Domande di auto-riflessione</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-orange-600">✓</span>
+                    <span>Come usarla nei momenti di crisi</span>
+                  </li>
+                </ul>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setSelectedArticle('dichiarazione-visione')}
+                >
+                  Inizia l'esercizio →
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Risorse Aggiuntive */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Download className="h-5 w-5 text-primary" />
+                Risorse Scaricabili
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Button variant="outline" className="justify-between">
+                  <span className="flex items-center gap-2">
+                    <Download className="h-4 w-4" />
+                    Template Analisi Errori (PDF)
+                  </span>
+                  <ExternalLink className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" className="justify-between">
+                  <span className="flex items-center gap-2">
+                    <Download className="h-4 w-4" />
+                    Checklist Routine Quotidiana (PDF)
+                  </span>
+                  <ExternalLink className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" className="justify-between">
+                  <span className="flex items-center gap-2">
+                    <Download className="h-4 w-4" />
+                    Diario di Studio (Excel)
+                  </span>
+                  <ExternalLink className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" className="justify-between">
+                  <span className="flex items-center gap-2">
+                    <Download className="h-4 w-4" />
+                    Template Dichiarazione Visione (DOC)
+                  </span>
+                  <ExternalLink className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
         </TabsContent>
 
-        {/* TAB DOCUMENTI CONDIVISI (Cartelle) */}
-        <TabsContent value="documenti">
-          <div className="space-y-6">
-            
-            {/* Navigazione Cartelle */}
-            {!selectedFolder ? (
-              // VISTA CARTELLE
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                 {materieEnum.map(materia => (
-                   <Card 
-                    key={materia} 
-                    className="hover:shadow-md cursor-pointer transition-all hover:bg-blue-50/50 border-blue-100"
-                    onClick={() => {
-                      setSelectedFolder(materia);
-                      setUploadMateria(materia); // Pre-fill upload
-                    }}
-                   >
-                     <CardContent className="flex flex-col items-center justify-center py-8 text-center space-y-3">
-                       <Folder className="h-16 w-16 text-blue-300 fill-blue-100" />
-                       <h3 className="font-semibold text-foreground">{materia}</h3>
-                       {/* Qui potremmo mostrare il count dei file se lo avessimo dal backend */}
-                     </CardContent>
-                   </Card>
-                 ))}
-              </div>
-            ) : (
-              // VISTA FILES NELLA CARTELLA
-              <div className="space-y-6">
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" onClick={() => setSelectedFolder(null)}>
-                    <ArrowLeft className="h-4 w-4 mr-2" />
-                    Torna alle Cartelle
-                  </Button>
-                  <h2 className="text-2xl font-bold flex items-center gap-2">
-                    <Folder className="h-6 w-6 text-blue-500" />
-                    {selectedFolder}
-                  </h2>
-                </div>
+        {/* TAB GUIDE DI STUDIO */}
+        <TabsContent value="guide">
+          <Card>
+            <CardContent className="p-12 text-center">
+              <Book className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold mb-2">Guide di Studio</h3>
+              <p className="text-muted-foreground mb-6">
+                Questa sezione conterrà guide pratiche per lo studio delle materie principali.
+              </p>
+              <Badge variant="secondary">Coming Soon</Badge>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-                <div className="flex flex-col md:flex-row gap-4"> 
-                  <div className="flex-1 relative"> 
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /> 
-                    <Input 
-                      placeholder={`Cerca in ${selectedFolder}...`} 
-                      value={searchQuery} 
-                      onChange={(e) => setSearchQuery(e.target.value)} 
-                      className="pl-10" 
-                    /> 
-                  </div> 
-                </div> 
-
-                {/* Lista Documenti */} 
-                {isLoading ? ( 
-                  <div className="text-center py-12"> 
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto" /> 
-                    <p className="mt-4 text-muted-foreground">Caricamento...</p> 
-                  </div> 
-                ) : documenti.length === 0 ? ( 
-                  <div className="text-center py-12 bg-muted/20 rounded-lg border-2 border-dashed"> 
-                    <Folder className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" /> 
-                    <p className="text-muted-foreground">Questa cartella è vuota.</p> 
-                    <Button 
-                      variant="link" 
-                      onClick={() => setIsUploadOpen(true)}
-                      className="mt-2 text-primary"
-                      >
-                      Carica il primo documento
-                    </Button>
-                  </div> 
-                ) : ( 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"> 
-                    {documenti.map((doc, idx) => ( 
-                      <Card key={doc.id || idx} className="hover:shadow-lg transition-shadow"> 
-                        <CardHeader> 
-                          <CardTitle className="text-lg flex items-start gap-2">
-                            <span className="line-clamp-1">{doc.titolo}</span>
-                          </CardTitle> 
-                          <CardDescription className="line-clamp-2"> 
-                            {doc.descrizione || 'Nessuna descrizione'} 
-                          </CardDescription> 
-                        </CardHeader> 
-                        <CardContent> 
-                          <div className="space-y-3"> 
-                            <div className="text-sm text-muted-foreground space-y-1"> 
-                              <div>📄 {formatFileSize(doc.fileSize)}</div> 
-                              {doc.numPages && <div>📖 {doc.numPages} pagine</div>} 
-                              <div>⬇️ {doc.downloadsCount} download</div> 
-                            </div> 
-
-                            <div className="flex gap-2"> 
-                              <Button 
-                                variant="default" 
-                                size="sm" 
-                                className="flex-1" 
-                                onClick={() => downloadMutation.mutate(doc.id)} 
-                                disabled={downloadMutation.isPending} 
-                              > 
-                                <Download className="h-4 w-4 mr-2" /> 
-                                Scarica 
-                              </Button> 
-                            </div> 
-                          </div> 
-                        </CardContent> 
-                      </Card> 
-                    ))} 
-                  </div> 
-                )} 
-              </div>
-            )}
-          </div>
+        {/* TAB MATERIALI PUBBLICI */}
+        <TabsContent value="materiali">
+          <Card>
+            <CardContent className="p-12 text-center">
+              <BookOpen className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold mb-2">Materiali Pubblici</h3>
+              <p className="text-muted-foreground mb-6">
+                Questa sezione conterrà dispense, schemi e materiali condivisi dalla community.
+              </p>
+              <Badge variant="secondary">Coming Soon</Badge>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
-    </div> 
-  ); 
+
+      {/* Modal Articolo (opzionale - puoi espandere dopo) */}
+      {selectedArticle && (
+        <ArticleModal
+          articleId={selectedArticle}
+          onClose={() => setSelectedArticle(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Componente Modal Articolo
+function ArticleModal({ articleId, onClose }: { articleId: string; onClose: () => void }) {
+  // Contenuto dell'articolo "Come Trasformare gli Errori in Opportunità"
+  const getArticleContent = (id: string) => {
+    if (id === 'errori-opportunita') {
+      return (
+        <div className="space-y-6">
+          <div className="prose dark:prose-invert max-w-none">
+            <h3 className="text-xl font-semibold text-primary mb-4">Guida pratica per analizzare ogni errore nei quiz e trasformarlo in un apprendimento concreto.</h3>
+            
+            <p className="text-muted-foreground mb-6">
+              L'errore non è un fallimento, è un dato. Nel contesto della preparazione ai concorsi, ogni risposta sbagliata vale oro: ti indica esattamente dove risiede una lacuna che, se colmata ora, non ti tradirà il giorno dell'esame.
+            </p>
+
+            <div className="space-y-6">
+              <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border-l-4 border-green-500">
+                <h4 className="font-bold text-green-800 dark:text-green-300 flex items-center gap-2 mb-2">
+                  <CheckCircle className="h-5 w-5" />
+                  1. Il Framework dell'Errore Diagnostico
+                </h4>
+                <p className="text-sm text-foreground/80">
+                  Smetti di dire "ho sbagliato". Inizia a chiederti "perché ho sbagliato?". Classifica ogni errore in una di queste categorie:
+                </p>
+                <ul className="list-disc pl-5 mt-2 space-y-1 text-sm text-foreground/80">
+                  <li><strong>Errore Tecnico:</strong> Non sapevi la regola o il concetto. (Soluzione: Studio/Ripasso)</li>
+                  <li><strong>Errore di Lettura:</strong> Hai letto male la domanda o le opzioni. (Soluzione: Rallenta, usa il dito per leggere)</li>
+                  <li><strong>Errore di Ragionamento:</strong> Sapevi la regola ma l'hai applicata male. (Soluzione: Esercizi guidati)</li>
+                  <li><strong>Errore Emotivo:</strong> Ansia o fretta ti hanno bloccato. (Soluzione: Respirazione, Simulazione)</li>
+                </ul>
+              </div>
+
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border-l-4 border-blue-500">
+                <h4 className="font-bold text-blue-800 dark:text-blue-300 flex items-center gap-2 mb-2">
+                  <Target className="h-5 w-5" />
+                  2. Template di Riflessione Post-Errore
+                </h4>
+                <p className="text-sm text-foreground/80">
+                  Per ogni errore significativo, prenditi 30 secondi per compilare questo schema mentale o cartaceo:
+                </p>
+                <div className="mt-3 bg-white dark:bg-slate-950 p-3 rounded border border-blue-200 dark:border-blue-800 font-mono text-sm">
+                  <p><strong>Domanda:</strong> [Riassunto breve]</p>
+                  <p><strong>La mia risposta:</strong> [Cosa ho messo]</p>
+                  <p><strong>Risposta corretta:</strong> [Qual era]</p>
+                  <p><strong>Perché ho sbagliato?</strong> [Analisi profonda]</p>
+                  <p><strong>Azione Correttiva:</strong> [Cosa farò per non ripeterlo?]</p>
+                </div>
+              </div>
+
+              <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border-l-4 border-purple-500">
+                <h4 className="font-bold text-purple-800 dark:text-purple-300 flex items-center gap-2 mb-2">
+                  <Lightbulb className="h-5 w-5" />
+                  3. Pattern di Errore Ricorrenti
+                </h4>
+                <p className="text-sm text-foreground/80">
+                  Analizzando i tuoi errori nel tempo, noterai dei pattern. Cadi sempre sulle date? Sulle definizioni legislative? O sulle domande a risposta negativa ("Quale NON è...")?
+                </p>
+                <p className="text-sm text-foreground/80 mt-2">
+                  Identificare il pattern significa risolvere il problema alla radice. Se sbagli sempre le date, crea una linea temporale dedicata. Se sbagli le negazioni, cerchia sempre la parola "NON" quando leggi le domande.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    if (id === 'abitudini-studio') {
+      return (
+        <div className="space-y-6">
+          <div className="prose dark:prose-invert max-w-none">
+            <h3 className="text-xl font-semibold text-primary mb-4">Come creare una routine di studio che resiste alla noia e ai momenti di scarsa motivazione.</h3>
+            
+            <p className="text-muted-foreground mb-6">
+              La motivazione è un'emozione, ed è volubile. L'abitudine è un automatismo, ed è affidabile. Per vincere un concorso, non ti serve più forza di volontà, ti servono abitudini indistruttibili che ti portino alla scrivania anche quando non ne hai voglia.
+            </p>
+
+            <div className="space-y-6">
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border-l-4 border-blue-500">
+                <h4 className="font-bold text-blue-800 dark:text-blue-300 flex items-center gap-2 mb-2">
+                  <Target className="h-5 w-5" />
+                  1. Il Potere del Rituale Quotidiano
+                </h4>
+                <p className="text-sm text-foreground/80">
+                  Il cervello ama i segnali di innesco (trigger). Crea un rituale di 5 minuti che preceda SEMPRE lo studio. Esempio:
+                </p>
+                <ul className="list-disc pl-5 mt-2 space-y-1 text-sm text-foreground/80">
+                  <li>Pulisci la scrivania (Tabula Rasa).</li>
+                  <li>Riempi la borraccia d'acqua.</li>
+                  <li>Metti il telefono in un'altra stanza.</li>
+                  <li>Accendi una luce specifica o metti le cuffie.</li>
+                </ul>
+                <p className="text-sm text-foreground/80 mt-2">
+                  Dopo 2 settimane, questi gesti diranno al tuo cervello "è ora di concentrarsi" in automatico, bypassando la resistenza iniziale.
+                </p>
+              </div>
+
+              <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg border-l-4 border-orange-500">
+                <h4 className="font-bold text-orange-800 dark:text-orange-300 flex items-center gap-2 mb-2">
+                  <Clock className="h-5 w-5" />
+                  2. Tecnica Pomodoro Avanzata
+                </h4>
+                <p className="text-sm text-foreground/80">
+                  Non pensare "devo studiare 4 ore". È spaventoso. Pensa "devo fare solo 25 minuti".
+                </p>
+                <div className="mt-3 bg-white dark:bg-slate-950 p-3 rounded border border-orange-200 dark:border-orange-800 text-sm">
+                  <p><strong>Ciclo Standard:</strong> 25 min Focus + 5 min Pausa.</p>
+                  <p><strong>Ciclo "Flow":</strong> 50 min Focus + 10 min Pausa (solo per materie complesse).</p>
+                  <p><strong>Regola d'Oro:</strong> Nella pausa NON usare lo smartphone/social. Il cervello deve riposare, non ricevere nuovi stimoli dopaminergici. Alzati, bevi, guarda fuori dalla finestra.</p>
+                </div>
+              </div>
+
+              <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border-l-4 border-green-500">
+                <h4 className="font-bold text-green-800 dark:text-green-300 flex items-center gap-2 mb-2">
+                  <TrendingUp className="h-5 w-5" />
+                  3. Gestire le Serie (Streak) di Studio
+                </h4>
+                <p className="text-sm text-foreground/80">
+                  "Non spezzare la catena". Usa un calendario o questa app per segnare ogni giorno in cui studi, anche solo 15 minuti.
+                </p>
+                <p className="text-sm text-foreground/80 mt-2">
+                  <strong>La regola dei due giorni:</strong> Puoi saltare un giorno (imprevisti accadono), ma MAI due di fila. Saltare due giorni crea una nuova abitudine: quella di non studiare. Se ieri non hai studiato, oggi è la priorità assoluta, anche solo per mezz'ora.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (id === 'superare-plateau') {
+      return (
+        <div className="space-y-6">
+          <div className="prose dark:prose-invert max-w-none">
+            <h3 className="text-xl font-semibold text-primary mb-4">Perché i progressi sembrano fermarsi e come uscire dalla fase di stallo con strategie comprovate.</h3>
+            
+            <p className="text-muted-foreground mb-6">
+              Il plateau è una fase naturale dell'apprendimento dove i risultati visibili si fermano, ma la consolidazione neurale continua. È il momento in cui la maggior parte dei candidati molla, ed è proprio qui che si vince il concorso.
+            </p>
+
+            <div className="space-y-6">
+              <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border-l-4 border-purple-500">
+                <h4 className="font-bold text-purple-800 dark:text-purple-300 flex items-center gap-2 mb-2">
+                  <Lightbulb className="h-5 w-5" />
+                  1. Riconoscere il Plateau
+                </h4>
+                <p className="text-sm text-foreground/80">
+                  Stai studiando ma i punteggi non salgono? Ti senti bloccato? Non è un segnale di incapacità, è un segnale che il metodo attuale ha esaurito la sua spinta iniziale.
+                </p>
+              </div>
+
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border-l-4 border-blue-500">
+                <h4 className="font-bold text-blue-800 dark:text-blue-300 flex items-center gap-2 mb-2">
+                  <TrendingUp className="h-5 w-5" />
+                  2. Strategie Anti-Plateau
+                </h4>
+                <ul className="list-disc pl-5 mt-2 space-y-1 text-sm text-foreground/80">
+                  <li><strong>Variazione:</strong> Cambia fonte di studio o modalità (es. dai libri ai quiz).</li>
+                  <li><strong>Sovraccarico progressivo:</strong> Aumenta la difficoltà, non la quantità.</li>
+                  <li><strong>Recupero attivo:</strong> Stacca per 24 ore complete per permettere al cervello di resettarsi.</li>
+                </ul>
+              </div>
+
+              <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border-l-4 border-green-500">
+                <h4 className="font-bold text-green-800 dark:text-green-300 flex items-center gap-2 mb-2">
+                  <Target className="h-5 w-5" />
+                  3. Mantenere la Visione a Lungo Termine
+                </h4>
+                <p className="text-sm text-foreground/80">
+                  Il plateau è temporaneo. La curva dell'apprendimento riprenderà a salire improvvisamente (il cosiddetto "breakthrough"). La tua unica strategia deve essere la persistenza intelligente.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (id === 'dichiarazione-visione') {
+      return (
+        <div className="space-y-6">
+          <div className="prose dark:prose-invert max-w-none">
+            <h3 className="text-xl font-semibold text-primary mb-4">Esercizio guidato per definire il tuo "perché profondo".</h3>
+            
+            <p className="text-muted-foreground mb-6">
+              Nei momenti bui, quando la stanchezza prevale e i risultati non arrivano, la forza di volontà non basta. Serve una Visione. Questo esercizio ti aiuterà a scriverla.
+            </p>
+
+            <div className="space-y-6">
+              <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg border-l-4 border-orange-500">
+                <h4 className="font-bold text-orange-800 dark:text-orange-300 flex items-center gap-2 mb-2">
+                  <Award className="h-5 w-5" />
+                  1. Domande di Auto-Riflessione
+                </h4>
+                <p className="text-sm text-foreground/80 mb-3">
+                  Prendi carta e penna. Rispondi onestamente a queste domande (non scrivere ciò che "dovresti", ma ciò che senti):
+                </p>
+                <ul className="list-decimal pl-5 space-y-2 text-sm text-foreground/80 italic">
+                  <li>Come cambierà la mia vita quotidiana una volta vinto il concorso? (Immagina la mattina tipo)</li>
+                  <li>Chi renderò orgoglioso con questo successo? (Genitori, figli, partner, me stesso bambino)</li>
+                  <li>Qual è il "dolore" che voglio lasciarmi alle spalle per sempre? (Precariato, insoddisfazione, dipendenza economica)</li>
+                </ul>
+              </div>
+
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border-l-4 border-blue-500">
+                <h4 className="font-bold text-blue-800 dark:text-blue-300 flex items-center gap-2 mb-2">
+                  <Book className="h-5 w-5" />
+                  2. Template Dichiarazione di Visione
+                </h4>
+                <p className="text-sm text-foreground/80 mb-3">
+                  Usa le risposte sopra per riempire questo modello. Rendilo solenne.
+                </p>
+                <div className="bg-white dark:bg-slate-950 p-4 rounded border border-blue-200 dark:border-blue-800 font-serif text-lg leading-relaxed italic text-center">
+                  "Mi impegno a studiare con costanza perché voglio diventare [RUOLO] per garantire a me stesso e a [PERSONE CARE] una vita fatta di [VALORI: es. stabilità, dignità].<br/><br/>
+                  Accetto la fatica di oggi perché è il prezzo per non dover più subire [DOLORE DA EVITARE].<br/><br/>
+                  Il mio obiettivo non è solo passare un esame, ma diventare la persona capace di passarlo."
+                </div>
+              </div>
+
+              <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border-l-4 border-purple-500">
+                <h4 className="font-bold text-purple-800 dark:text-purple-300 flex items-center gap-2 mb-2">
+                  <Lightbulb className="h-5 w-5" />
+                  3. Come usarla nei momenti di crisi
+                </h4>
+                <p className="text-sm text-foreground/80">
+                  Scrivi la dichiarazione a mano. Firmala.
+                </p>
+                <ul className="list-disc pl-5 mt-2 space-y-1 text-sm text-foreground/80">
+                  <li>Appendila davanti alla scrivania.</li>
+                  <li>Fanne una foto e mettila come sfondo del telefono.</li>
+                  <li><strong>Regola d'oro:</strong> Quando stai per saltare una sessione di studio, rileggila ad alta voce prima di decidere.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Placeholder per altri articoli
+    return (
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">Contenuto in fase di scrittura...</p>
+      </div>
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+      <Card className="max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <CardHeader className="sticky top-0 bg-background z-10 border-b">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-primary" />
+              {articleId === 'errori-opportunita' ? 'Come Trasformare gli Errori in Opportunità' : 'Articolo'}
+            </CardTitle>
+            <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 rounded-full hover:bg-muted">
+              ✕
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-6">
+          {getArticleContent(articleId)}
+        </CardContent>
+      </Card>
+    </div>
+  );
 }

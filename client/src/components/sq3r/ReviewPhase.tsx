@@ -299,6 +299,41 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
                           💡 {domanda.spiegazione}
                         </p>
                       </div>
+                      
+                      {/* Growth Mindset per Errori */}
+                      {!isCorretta && (
+                        <div className="mt-4 p-4 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                          <div className="flex items-start gap-3">
+                            <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-full shrink-0">
+                              <Brain className="h-5 w-5 text-orange-600" />
+                            </div>
+                            <div className="flex-1 space-y-3">
+                              <div>
+                                <h4 className="font-semibold text-sm mb-1">
+                                  🎯 Growth Mindset: Trasforma l'errore in apprendimento
+                                </h4>
+                                <p className="text-xs text-muted-foreground">
+                                  Questo errore è un <strong>dato diagnostico prezioso</strong>. 
+                                  Non dice che sei incompetente, ma rivela una lacuna specifica da colmare.
+                                </p>
+                              </div>
+                              
+                              <div className="bg-white dark:bg-slate-900 rounded-lg p-3 border">
+                                <label className="text-xs text-muted-foreground mb-2 block font-medium">
+                                  💭 Cosa hai imparato da questo errore?
+                                </label>
+                                <textarea 
+                                  className="w-full text-sm border rounded p-2 min-h-[60px] resize-none" 
+                                  placeholder="Es. Ho confuso il concetto X con Y. Devo rivedere il capitolo 3 sulla distinzione tra..." 
+                                />
+                                <Button size="sm" className="mt-2 w-full" variant="outline">
+                                  Salva Riflessione
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </CardContent>

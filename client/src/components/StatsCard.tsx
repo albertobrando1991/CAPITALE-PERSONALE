@@ -26,7 +26,7 @@ export function StatsCard({ title, value, subtitle, icon: Icon, trend }: StatsCa
             {trend && (
               <p
                 className={`text-sm mt-1 ${
-                  trend.isPositive ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                  trend.isPositive ? "text-status-online dark:text-status-online" : "text-destructive dark:text-destructive"
                 }`}
               >
                 {trend.isPositive ? "+" : ""}

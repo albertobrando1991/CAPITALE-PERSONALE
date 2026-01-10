@@ -4,7 +4,7 @@ import { storage, simulazioniStorage } from "./storage";
 import { registerSQ3RRoutes } from './routes-sq3r';
 import { registerLibreriaRoutes } from './routes-libreria';
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertConcorsoSchema, insertMaterialSchema, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "@shared/schema";
+import { insertConcorsoSchema, insertMaterialSchema, insertCalendarEventSchema, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "@shared/schema";
 import { calculateSM2, initializeSM2 } from "./sm2-algorithm";
 import { z } from "zod";
 import OpenAI from "openai";
@@ -2107,11 +2107,162 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
 
 
 
+  // Endpoint per statistiche aggregate dell'utente
+  app.get("/api/stats", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      
+      // 1. Ottieni progressi generali
+      const progress = await storage.getUserProgress(userId);
+      
+      // 2. Ottieni ultime simulazioni completate
+      const recentSimulations = await simulazioniStorage.getSimulazioni(userId);
+      const completedSimulations = recentSimulations
+        .filter(s => s.completata)
+        .sort((a, b) => new Date(b.dataCompletamento || 0).getTime() - new Date(a.dataCompletamento || 0).getTime())
+        .slice(0, 10);
+        
+      // 3. Calcola precisione media
+      let averageAccuracy = 0;
+      if (completedSimulations.length > 0) {
+        const totalAccuracy = completedSimulations.reduce((sum, sim) => sum + (sim.percentualeCorrette || 0), 0);
+        averageAccuracy = Math.round(totalAccuracy / completedSimulations.length);
+      }
+      
+      // 4. Formatta cronologia quiz
+      const quizHistory = completedSimulations.map(sim => {
+        // Cerca di ottenere il titolo del concorso se possibile, altrimenti usa ID o tipo
+        // Nota: Idealmente dovremmo fare una join o una query separata per i nomi dei concorsi
+        // Per ora usiamo il tipo simulazione o "Simulazione"
+        return {
+          id: sim.id,
+          title: sim.tipoSimulazione === "completa" ? "Simulazione Completa" : 
+                 sim.tipoSimulazione === "materia" ? "Test Materia" : "Allenamento",
+          score: Math.round(sim.percentualeCorrette || 0),
+          questions: sim.numeroDomande,
+          date: sim.dataCompletamento ? new Date(sim.dataCompletamento).toLocaleDateString('it-IT') : "N/A"
+        };
+      });
+
+      // 5. Mock dati andamento settimanale (non abbiamo ancora tracking giornaliero)
+      // In futuro implementare tabella daily_stats
+      const weeklyTrend = [
+        { day: "Lun", hours: 0 },
+        { day: "Mar", hours: 0 },
+        { day: "Mer", hours: 0 },
+        { day: "Gio", hours: 0 },
+        { day: "Ven", hours: 0 },
+        { day: "Sab", hours: 0 },
+        { day: "Dom", hours: 0 },
+      ];
+      
+      res.json({
+        studyTime: progress?.oreStudioTotali || 0,
+        flashcardsMastered: progress?.flashcardMasterate || 0,
+        quizCompleted: progress?.quizCompletati || completedSimulations.length,
+        averageAccuracy,
+        quizHistory,
+        weeklyTrend
+      });
+      
+    } catch (error: any) {
+      console.error("Error fetching stats:", error);
+      res.status(500).json({ error: "Errore nel recupero statistiche", details: error.message });
+    }
+  });
+
   // Registra routes SQ3R
   // registerSQ3RRoutes(app); - Spostato sopra
 
   // Registra routes Libreria Pubblica 
   // registerLibreriaRoutes(app); - Spostato sopra
+
+  // ============================================
+  // API ENDPOINTS PER CALENDAR EVENTS
+  // ============================================
+
+  app.get("/api/calendar/events", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const events = await storage.getCalendarEvents(userId);
+      res.json(events);
+    } catch (error: any) {
+      console.error("Error fetching calendar events:", error);
+      res.status(500).json({ error: "Errore nel recupero eventi calendario" });
+    }
+  });
+
+  app.post("/api/calendar/events", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Utente non autenticato" });
+      }
+      
+      console.log("[CALENDAR] POST /events - Body:", req.body);
+      
+      // Ensure date is parsed correctly if sent as string
+      const data = { 
+        ...req.body, 
+        userId,
+        date: new Date(req.body.date),
+        // Se concorsoId è stringa vuota o undefined, impostalo a null o undefined
+        concorsoId: req.body.concorsoId || undefined,
+        // Assicurati che description sia stringa o undefined (no null se schema non lo vuole, anche se DB lo accetta)
+        description: req.body.description || undefined
+      };
+      
+      console.log("[CALENDAR] Validating data:", data);
+      
+      const validated = insertCalendarEventSchema.parse(data);
+      console.log("[CALENDAR] Validation successful");
+      
+      const event = await storage.createCalendarEvent(validated);
+      console.log("[CALENDAR] Event created:", event.id);
+      
+      res.status(201).json(event);
+    } catch (error: any) {
+      console.error("Error creating calendar event:", error);
+      if (error.name === "ZodError") {
+         console.error("Zod Validation Errors:", JSON.stringify(error.errors, null, 2));
+         return res.status(400).json({ error: "Dati non validi", details: error.errors });
+      }
+      res.status(400).json({ error: error.message || "Errore creazione evento" });
+    }
+  });
+
+  app.patch("/api/calendar/events/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const data = { ...req.body };
+      if (data.date) {
+        data.date = new Date(data.date);
+      }
+      
+      const updated = await storage.updateCalendarEvent(req.params.id, userId, data);
+      if (!updated) {
+        return res.status(404).json({ error: "Evento non trovato" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating calendar event:", error);
+      res.status(500).json({ error: "Errore aggiornamento evento" });
+    }
+  });
+
+  app.delete("/api/calendar/events/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const deleted = await storage.deleteCalendarEvent(req.params.id, userId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Evento non trovato" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting calendar event:", error);
+      res.status(500).json({ error: "Errore eliminazione evento" });
+    }
+  });
 
   console.log('✅ Tutte le routes registrate');
 

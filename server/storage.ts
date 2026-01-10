@@ -10,14 +10,17 @@ import {
   type Flashcard,
   type InsertFlashcard,
   type Simulazione,
-  type InsertSimulazione
+  type InsertSimulazione,
+  type CalendarEventItem,
+  type InsertCalendarEvent
 } from "@shared/schema";
-import { users, concorsi, userProgress, materials, flashcards, simulazioni } from "@shared/schema";
+import { users, concorsi, userProgress, materials, flashcards, simulazioni, calendarEvents } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
   
   getConcorsi(userId: string): Promise<Concorso[]>;
@@ -40,11 +43,22 @@ export interface IStorage {
   getFlashcard(id: string, userId: string): Promise<Flashcard | undefined>;
   updateFlashcard(id: string, userId: string, data: Partial<InsertFlashcard>): Promise<Flashcard | undefined>;
   deleteFlashcard(id: string, userId: string): Promise<boolean>;
+
+  // Calendar Events
+  getCalendarEvents(userId: string): Promise<CalendarEventItem[]>;
+  createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEventItem>;
+  updateCalendarEvent(id: string, userId: string, data: Partial<InsertCalendarEvent>): Promise<CalendarEventItem | undefined>;
+  deleteCalendarEvent(id: string, userId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
     return user;
   }
 
@@ -238,6 +252,37 @@ export class DatabaseStorage implements IStorage {
     const [deleted] = await db
       .delete(flashcards)
       .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)))
+      .returning();
+    return !!deleted;
+  }
+
+  // Calendar Events Implementation
+  async getCalendarEvents(userId: string): Promise<CalendarEventItem[]> {
+    return await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.userId, userId))
+      .orderBy(desc(calendarEvents.date));
+  }
+
+  async createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEventItem> {
+    const [newEvent] = await db.insert(calendarEvents).values(event).returning();
+    return newEvent;
+  }
+
+  async updateCalendarEvent(id: string, userId: string, data: Partial<InsertCalendarEvent>): Promise<CalendarEventItem | undefined> {
+    const [updated] = await db
+      .update(calendarEvents)
+      .set(data)
+      .where(and(eq(calendarEvents.id, id), eq(calendarEvents.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteCalendarEvent(id: string, userId: string): Promise<boolean> {
+    const [deleted] = await db
+      .delete(calendarEvents)
+      .where(and(eq(calendarEvents.id, id), eq(calendarEvents.userId, userId)))
       .returning();
     return !!deleted;
   }

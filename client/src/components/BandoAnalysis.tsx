@@ -126,9 +126,9 @@ export function BandoAnalysis({
             {hasBlockingRequisiti ? (
               <XCircle className="h-5 w-5 text-destructive" />
             ) : allRequisitiSoddisfatti ? (
-              <CheckCircle className="h-5 w-5 text-green-600" />
+              <CheckCircle className="h-5 w-5 text-status-online" />
             ) : (
-              <AlertTriangle className="h-5 w-5 text-yellow-600" />
+              <AlertTriangle className="h-5 w-5 text-secondary" />
             )}
             Requisiti Bloccanti
           </CardTitle>
@@ -155,7 +155,7 @@ export function BandoAnalysis({
                 />
                 <span className="flex-1">{req.titolo}</span>
                 {req.soddisfatto === true && (
-                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <CheckCircle className="h-4 w-4 text-status-online" />
                 )}
                 {req.soddisfatto === false && (
                   <XCircle className="h-4 w-4 text-destructive" />
@@ -266,7 +266,7 @@ export function BandoAnalysis({
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {materia.microArgomenti.map((arg, i) => (
-                    <Badge key={i} variant="secondary" className="text-xs">
+                    <Badge key={i} variant="secondary" className="text-xs break-words max-w-full text-left whitespace-normal leading-tight p-2">
                       {arg}
                     </Badge>
                   ))}
@@ -290,7 +290,7 @@ export function BandoAnalysis({
               <div
                 key={index}
                 className={`flex items-start gap-3 p-3 rounded-lg ${
-                  passaggio.completato ? "bg-green-50 dark:bg-green-900/10" : "bg-muted"
+                  passaggio.completato ? "bg-status-online/10 dark:bg-status-online/20" : "bg-muted"
                 }`}
                 data-testid={`passaggio-${index}`}
               >
@@ -390,8 +390,8 @@ export function BandoAnalysis({
               <p className="text-2xl font-bold">{data.oreTotaliDisponibili}h</p>
               <p className="text-sm text-muted-foreground">Ore totali disponibili</p>
             </div>
-            <div className="p-4 bg-yellow-100 dark:bg-yellow-900/20 rounded-lg text-center">
-              <Calendar className="h-6 w-6 text-yellow-600 mx-auto mb-2" />
+            <div className="p-4 bg-secondary/10 dark:bg-secondary/20 rounded-lg text-center">
+              <Calendar className="h-6 w-6 text-secondary mx-auto mb-2" />
               <p className="text-2xl font-bold">{data.giorniTapering} giorni</p>
               <p className="text-sm text-muted-foreground">Tapering (scarico cognitivo)</p>
             </div>

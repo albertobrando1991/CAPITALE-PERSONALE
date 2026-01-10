@@ -272,6 +272,7 @@ export class StorageSQ3R {
           userId,
           concorsoId: fonte.concorsoId,
           nomeMateria: fonte.materia || "Nuova Materia",
+          fonteId: fonteId, // Collega la materia alla fonte
           capitoliTotali: 0,
           capitoliCompletati: 0,
         }).returning();

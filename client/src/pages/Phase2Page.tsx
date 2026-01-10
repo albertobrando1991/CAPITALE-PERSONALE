@@ -241,10 +241,10 @@ export default function Phase2Page() {
   if (!concorso?.bandoAnalysis) {
     return (
       <div className="p-6 max-w-7xl mx-auto">
-        <Card className="border-yellow-500/50">
+        <Card className="border-secondary/50">
           <CardContent className="p-6">
             <div className="flex items-start gap-4">
-              <Target className="h-8 w-8 text-yellow-600" />
+              <Target className="h-8 w-8 text-secondary" />
               <div>
                 <h3 className="font-semibold text-lg">Completa prima la Fase 0</h3>
                 <p className="text-muted-foreground mt-1">
@@ -264,7 +264,7 @@ export default function Phase2Page() {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center gap-4 flex-wrap">
-        <Link href="/">
+        <Link href="/dashboard">
           <Button variant="ghost" size="icon" data-testid="button-back">
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -291,8 +291,8 @@ export default function Phase2Page() {
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
-            <div className="p-3 bg-green-500/10 rounded-lg">
-              <Layers className="h-6 w-6 text-green-600" />
+            <div className="p-3 bg-status-online/10 rounded-lg">
+              <Layers className="h-6 w-6 text-status-online" />
             </div>
             <div>
               <p className="text-2xl font-bold">{totalFlashcards}</p>
@@ -302,8 +302,8 @@ export default function Phase2Page() {
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
-            <div className="p-3 bg-blue-500/10 rounded-lg">
-              <BookOpen className="h-6 w-6 text-blue-600" />
+            <div className="p-3 bg-primary/10 rounded-lg">
+              <BookOpen className="h-6 w-6 text-primary" />
             </div>
             <div>
               <p className="text-2xl font-bold">{materie.length}</p>
@@ -497,7 +497,7 @@ export default function Phase2Page() {
                         Flashcard generate: {material.flashcardGenerate || 0}
                       </span>
                       {(material.flashcardGenerate || 0) > 0 && (
-                        <CheckCircle className="h-4 w-4 text-green-600" />
+                        <CheckCircle className="h-4 w-4 text-status-online" />
                       )}
                     </div>
                     <Button
@@ -572,7 +572,7 @@ export default function Phase2Page() {
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-xl font-semibold">Flashcard Generate</h2>
             {flashcards.length > 0 && (
-              <Link href="/flashcards">
+              <Link href={`/flashcards?concorsoId=${concorsoId}`}>
                 <Button data-testid="button-study-flashcards">
                   <Layers className="h-4 w-4 mr-2" />
                   Inizia Studio

@@ -148,7 +148,7 @@ export default function QuizPage() {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center gap-4">
-        <Link href="/">
+        <Link href="/dashboard">
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -184,10 +184,10 @@ export default function QuizPage() {
                   <span
                     className={`font-medium ${
                       quiz.lastScore >= 80
-                        ? "text-green-600 dark:text-green-400"
+                        ? "text-status-online dark:text-status-online"
                         : quiz.lastScore >= 60
-                        ? "text-yellow-600 dark:text-yellow-400"
-                        : "text-red-600 dark:text-red-400"
+                        ? "text-secondary dark:text-secondary"
+                        : "text-destructive dark:text-destructive"
                     }`}
                   >
                     {quiz.lastScore}%
