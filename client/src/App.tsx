@@ -1,4 +1,4 @@
-import { Switch, Route, Redirect } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -25,6 +25,7 @@ import SimulazioniListPage from "@/pages/SimulazioniListPage";
 import SimulazioniPage from "@/pages/SimulazioniPage";
 import Fase0SetupPage from "@/pages/Fase0SetupPage";
 import Fase1SQ3RPage from "@/pages/Fase1SQ3RPage";
+import MateriaPage from "@/pages/MateriaPage";
 import CapitoloPage from "@/pages/CapitoloPage";
 import LibreriaPubblicaPage from "@/pages/LibreriaPubblicaPage";
 import SetupFontiPage from "@/pages/SetupFontiPage";
@@ -71,7 +72,9 @@ function ProtectedRoutes() {
           </header>
           <main className="flex-1 overflow-auto">
             <Switch>
-              <Route path="/" component={DashboardPage} />
+              <Route path="/concorsi/:concorsoId/materie/:materiaId" component={MateriaPage} />
+              <Route path="/concorsi/:concorsoId/fase1" component={Fase1SQ3RPage} />
+              <Route path="/dashboard" component={DashboardPage} />
 
               <Route path="/phase2" component={Phase2Page} />
               <Route path="/materials" component={MaterialsPage} />
@@ -95,7 +98,6 @@ function ProtectedRoutes() {
               <Route path="/concorsi/:concorsoId/podcast" component={PodcastDatabasePage} />
               <Route path="/podcast/my-requests" component={MyPodcastRequestsPage} />
               <Route path="/concorsi/:concorsoId/fase1/capitolo/:id" component={CapitoloPage} />
-              <Route path="/concorsi/:concorsoId/fase1" component={Fase1SQ3RPage} />
               <Route path="/concorsi/:concorsoId/fase2" component={Phase2Page} />
               <Route path="/admin" component={AdminDashboard} />
               <Route component={NotFound} />
@@ -107,8 +109,14 @@ function ProtectedRoutes() {
   );
 }
 
+import HomePage from "@/pages/HomePage";
+
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
+  const [location] = useLocation();
+  console.log("Main Router rendering. Location:", location);
 
   if (isLoading) {
     return (
@@ -119,14 +127,28 @@ function Router() {
   }
 
   return (
-    <Switch>
-      <Route path="/login">
-        {isAuthenticated ? <Redirect to="/" /> : <LoginPage />}
-      </Route>
-      <Route>
-        <ProtectedRoutes />
-      </Route>
-    </Switch>
+    <ErrorBoundary>
+      <Switch>
+        <Route path="/">
+          <HomePage />
+        </Route>
+        <Route path="/login">
+          {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
+        </Route>
+        <Route path="/register">
+          {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
+        </Route>
+        <Route path="/register">
+          {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
+        </Route>
+        <Route path="/dashboard">
+          <ProtectedRoutes />
+        </Route>
+        <Route>
+          <ProtectedRoutes />
+        </Route>
+      </Switch>
+    </ErrorBoundary>
   );
 }
 
