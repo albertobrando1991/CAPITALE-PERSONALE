@@ -11,6 +11,7 @@ import {
   Clock,
   Target,
   BarChart3,
+  ExternalLink,
 } from "lucide-react";
 
 interface Normativa {
@@ -126,11 +127,24 @@ export function BibliotecaNormativa({
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     {getStatoIcon(norm.stato)}
-                    <span className="text-sm truncate">{norm.nome}</span>
+                    <span className="text-sm truncate" title={norm.nome}>{norm.nome}</span>
                   </div>
-                  <Badge variant="outline" className="text-xs ml-2">
-                    {norm.articoliAnalizzati} art.
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">
+                      {norm.articoliAnalizzati} art.
+                    </Badge>
+                    {norm.url && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => window.open(norm.url, '_blank')}
+                        title="Apri su Normattiva"
+                      >
+                        <ExternalLink className="h-4 w-4 text-blue-600" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

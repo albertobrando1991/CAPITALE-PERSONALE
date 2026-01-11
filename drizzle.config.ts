@@ -5,7 +5,6 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL, ensure the database is provisioned");
 }
 
-// Force SSL false for migrations if needed or handle it carefully
 const connectionString = process.env.DATABASE_URL;
 
 export default defineConfig({
@@ -14,6 +13,6 @@ export default defineConfig({
   dialect: "postgresql",
   dbCredentials: {
     url: connectionString,
-    ssl: false,
+    ssl: { rejectUnauthorized: false },
   },
 });

@@ -36,6 +36,7 @@ import PricingPage from "@/pages/PricingPage";
 import PodcastDatabasePage from "@/pages/PodcastDatabasePage";
 import MyPodcastRequestsPage from "@/pages/MyPodcastRequestsPage";
 import AdminDashboard from "@/pages/AdminDashboard";
+import MnemotecnichePage from "@/pages/MnemotecnichePage";
 import { SpecialistaProvider } from "@/contexts/SpecialistaContext";
 
 function ProtectedRoutes() {
@@ -80,6 +81,7 @@ function ProtectedRoutes() {
               <Route path="/phase2" component={Phase2Page} />
               <Route path="/materials" component={MaterialsPage} />
               <Route path="/libreria" component={LibreriaPubblicaPage} />
+              <Route path="/mnemotecniche" component={MnemotecnichePage} />
               <Route path="/flashcards" component={FlashcardsPage} />
               <Route path="/quiz" component={QuizPage} />
               <Route path="/simulazioni" component={SimulazioniPage} />

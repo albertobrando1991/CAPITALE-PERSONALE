@@ -5,13 +5,52 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ArrowLeft, Book, Brain, TrendingUp, Target, Lightbulb,
-  CheckCircle, Award, BookOpen, Download, ExternalLink, Clock
+  CheckCircle, Award, BookOpen, Download, ExternalLink, Clock,
+  Home, Hash, Film, Trash2, Plus, Scale, Folder, FolderOpen
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
+import { BibliotecaNormativa } from '@/components/BibliotecaNormativa';
+import { UploadMaterial } from '@/components/UploadMaterial';
+import { MaterialCard } from '@/components/MaterialCard';
 
 export default function LibreriaPubblicaPage() {
   const [, setLocation] = useLocation();
   const [selectedArticle, setSelectedArticle] = useState<string | null>(null);
+  
+  // State per Materiali
+  const [selectedMateria, setSelectedMateria] = useState<string | null>(null);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [mockMaterials, setMockMaterials] = useState<any[]>([
+    { id: '1', title: 'Costituzione Italiana', type: 'normativa', status: 'completed', flashcardsCount: 120, quizzesCount: 15, materia: 'Diritto Costituzionale' },
+    { id: '2', title: 'Legge 241/90', type: 'normativa', status: 'completed', flashcardsCount: 85, quizzesCount: 10, materia: 'Diritto Amministrativo' },
+    { id: '3', title: 'Riassunto Privato', type: 'manuale', status: 'completed', flashcardsCount: 40, quizzesCount: 5, materia: 'Diritto Privato' },
+  ]);
+
+  const materie = [
+    "Diritto Costituzionale",
+    "Diritto Amministrativo",
+    "Diritto Privato",
+    "Contabilità di Stato",
+    "Informatica",
+    "Inglese",
+    "Logica"
+  ];
+
+  const handleUpload = async (file: File, title: string, type: string) => {
+    // Simulazione upload
+    console.log("Uploading:", title, type, selectedMateria);
+    setMockMaterials(prev => [...prev, {
+        id: String(Date.now()),
+        title,
+        type: type as any,
+        status: 'processing',
+        flashcardsCount: 0,
+        quizzesCount: 0,
+        materia: selectedMateria
+    }]);
+    setIsUploadOpen(false);
+  };
 
   return (
     <div className="container mx-auto p-6 max-w-7xl">
@@ -28,18 +67,22 @@ export default function LibreriaPubblicaPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="mindset" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-8">
+        <TabsList className="grid w-full grid-cols-4 mb-8">
           <TabsTrigger value="mindset" className="gap-2">
             <Brain className="h-4 w-4" />
-            Ingegneria del Valore Umano
+            Mindset
+          </TabsTrigger>
+          <TabsTrigger value="mnemotecniche" className="gap-2">
+            <Lightbulb className="h-4 w-4" />
+            Mnemotecniche
           </TabsTrigger>
           <TabsTrigger value="guide" className="gap-2">
             <Book className="h-4 w-4" />
-            Guide di Studio
+            Guide
           </TabsTrigger>
           <TabsTrigger value="materiali" className="gap-2">
             <BookOpen className="h-4 w-4" />
-            Materiali Pubblici
+            Materiali
           </TabsTrigger>
         </TabsList>
 
@@ -347,6 +390,421 @@ export default function LibreriaPubblicaPage() {
 
         </TabsContent>
 
+        {/* TAB MNEMOTECNICHE - TEORIA */}
+        <TabsContent value="mnemotecniche" className="space-y-6">
+          
+          {/* Intro Card */}
+          <Card className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-950/30 dark:to-orange-950/30 border-2 border-yellow-200">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
+                  <Lightbulb className="h-8 w-8 text-yellow-600" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-2xl font-bold mb-2">Mnemotecniche per il Diritto</h2>
+                  <p className="text-muted-foreground leading-relaxed">
+                    Il diritto non va imparato a memoria parola per parola, ma per
+                    <strong> concetti e parole chiave</strong>. Tuttavia, alcuni dati
+                    (articoli, termini, numeri di codici) vanno memorizzati con tecniche scientifiche.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Le 3 Tecniche Principali */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            {/* 1. Palazzo della Memoria */}
+            <Card className="border-l-4 border-l-purple-500">
+              <CardHeader>
+                <div className="flex items-center justify-between mb-2">
+                  <Badge className="bg-purple-100 text-purple-700">Tecnica 1</Badge>
+                  <Home className="h-5 w-5 text-purple-600" />
+                </div>
+                <CardTitle className="text-lg">Tecnica dei Loci (Palazzo della Memoria)</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Associa ogni articolo di legge a una stanza della tua casa.
+                  Tecnica usata dai campioni mondiali di memoria.
+                </p>
+                <div className="bg-purple-50 dark:bg-purple-950/20 p-3 rounded-lg text-xs space-y-2">
+                  <p><strong>Come funziona:</strong></p>
+                  <ul className="space-y-1 ml-4">
+                    <li>• Immagina la tua casa (o un palazzo virtuale)</li>
+                    <li>• Associa ogni stanza a un capo della legge</li>
+                    <li>• Crea immagini vivide e bizzarre in ogni stanza</li>
+                    <li>• Percorri mentalmente il palazzo per ricordare</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 2. Conversione Fonetica */}
+            <Card className="border-l-4 border-l-blue-500">
+              <CardHeader>
+                <div className="flex items-center justify-between mb-2">
+                  <Badge className="bg-blue-100 text-blue-700">Tecnica 2</Badge>
+                  <Hash className="h-5 w-5 text-blue-600" />
+                </div>
+                <CardTitle className="text-lg">Conversione Fonetica (Leibniz)</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Trasforma numeri (Art. 328) in parole memorabili
+                  con il sistema fonetico di Leibniz.
+                </p>
+                <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg text-xs space-y-2">
+                  <p><strong>Sistema di conversione:</strong></p>
+                  <div className="grid grid-cols-2 gap-1 font-mono">
+                    <div>1 = T/D</div>
+                    <div>6 = C/G</div>
+                    <div>2 = N</div>
+                    <div>7 = K/Q</div>
+                    <div>3 = M</div>
+                    <div>8 = F/V</div>
+                    <div>4 = R</div>
+                    <div>9 = P/B</div>
+                    <div>5 = L</div>
+                    <div>0 = S/Z</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 3. Film Mentali */}
+            <Card className="border-l-4 border-l-green-500">
+              <CardHeader>
+                <div className="flex items-center justify-between mb-2">
+                  <Badge className="bg-green-100 text-green-700">Tecnica 3</Badge>
+                  <Film className="h-5 w-5 text-green-600" />
+                </div>
+                <CardTitle className="text-lg">Visualizzazione (Film Mentali)</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Crea "film mentali" dei reati per memorizzare
+                  elementi costitutivi e soggetti coinvolti.
+                </p>
+                <div className="bg-green-50 dark:bg-green-950/20 p-3 rounded-lg text-xs space-y-2">
+                  <p><strong>Elementi da visualizzare:</strong></p>
+                  <ul className="space-y-1 ml-4">
+                    <li>• 👤 Soggetto attivo (chi commette)</li>
+                    <li>• ⚡ Condotta (azione compiuta)</li>
+                    <li>• 🎯 Evento (conseguenza)</li>
+                    <li>• 🔗 Nesso causale (collegamento)</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Esempi Pratici Dettagliati */}
+          <div className="space-y-6">
+            <h3 className="text-xl font-bold">📚 Esempi Pratici Completi</h3>
+
+            {/* Esempio 1: Palazzo */}
+            <Card className="border-l-4 border-l-purple-500">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Home className="h-5 w-5 text-purple-600" />
+                  Legge 241/90 con Palazzo della Memoria
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Immagina la tua casa. Ogni stanza rappresenta un articolo della legge sul procedimento amministrativo.
+                </p>
+                
+                <div className="space-y-3">
+                  <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200">
+                    <div className="flex items-start gap-3">
+                      <Badge className="bg-purple-600 text-white shrink-0">Ingresso</Badge>
+                      <div className="flex-1">
+                        <h4 className="font-semibold mb-1">Art. 1 - Principi Generali</h4>
+                        <p className="text-sm text-muted-foreground">
+                          💭 <strong>Immagine:</strong> Un vigile urbano ti dà il benvenuto all'ingresso.
+                          È trasparente (ha una divisa di vetro) ma è molto sbrigativo e veloce
+                          (economicità e efficacia). Ti consegna una cartina (pubblicità).
+                        </p>
+                        <div className="mt-2 text-xs">
+                          <strong>Concetti memorizzati:</strong> Trasparenza, Economicità, Efficacia, Pubblicità
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200">
+                    <div className="flex items-start gap-3">
+                      <Badge className="bg-purple-600 text-white shrink-0">Cucina</Badge>
+                      <div className="flex-1">
+                        <h4 className="font-semibold mb-1">Art. 2 - Termini del Procedimento</h4>
+                        <p className="text-sm text-muted-foreground">
+                          💭 <strong>Immagine:</strong> Un timer da cucina gigante che suona forte.
+                          Sul frigo c'è un calendario con date cerchiate in rosso (scadenze).
+                          Il timer fa "TIC-TAC" ossessivamente (30 giorni se non specificato).
+                        </p>
+                        <div className="mt-2 text-xs">
+                          <strong>Concetti memorizzati:</strong> Termini procedimentali, 30 giorni default, Scadenze
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200">
+                    <div className="flex items-start gap-3">
+                      <Badge className="bg-purple-600 text-white shrink-0">Salotto</Badge>
+                      <div className="flex-1">
+                        <h4 className="font-semibold mb-1">Art. 3 - Motivazione degli Atti</h4>
+                        <p className="text-sm text-muted-foreground">
+                          💭 <strong>Immagine:</strong> Una persona in piedi sul divano che fa un discorso
+                          solenne e drammatico, gesticolando. Deve spiegare e motivare PERCHÉ è salita
+                          sul divano. Ha in mano documenti (presupposti di fatto e ragioni giuridiche).
+                        </p>
+                        <div className="mt-2 text-xs">
+                          <strong>Concetti memorizzati:</strong> Obbligo di motivazione, Presupposti di fatto, Ragioni giuridiche
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-yellow-50 dark:bg-yellow-950/20 p-4 rounded-lg border border-yellow-200 text-sm">
+                  <p className="font-semibold mb-2">💡 Principi per immagini efficaci:</p>
+                  <ul className="space-y-1 text-xs ml-4">
+                    <li>• <strong>Esagerazione:</strong> Rendi tutto enorme o minuscolo</li>
+                    <li>• <strong>Assurdità:</strong> Più bizzarro = più memorabile</li>
+                    <li>• <strong>Movimento:</strong> Azioni dinamiche restano impresse</li>
+                    <li>• <strong>Emozioni:</strong> Associa sentimenti vividi (paura, gioia, disgusto)</li>
+                    <li>• <strong>Coinvolgimento personale:</strong> Mettiti nella scena</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Esempio 2: Conversione Fonetica */}
+            <Card className="border-l-4 border-l-blue-500">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Hash className="h-5 w-5 text-blue-600" />
+                  Art. 328 CP - Rifiuto d'Atti d'Ufficio
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Come memorizzare il numero 328 usando la conversione fonetica.
+                </p>
+
+                <div className="space-y-3">
+                  <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200">
+                    <h4 className="font-semibold mb-3 text-sm">📊 Processo di Conversione</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-3">
+                        <Badge variant="outline" className="font-mono">3</Badge>
+                        <span>→</span>
+                        <span className="font-semibold">M</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Badge variant="outline" className="font-mono">2</Badge>
+                        <span>→</span>
+                        <span className="font-semibold">N</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Badge variant="outline" className="font-mono">8</Badge>
+                        <span>→</span>
+                        <span className="font-semibold">F/V</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20 rounded-lg border-2 border-blue-300">
+                    <p className="text-sm mb-2"><strong>Codice fonetico:</strong> M - N - F/V</p>
+                    <p className="text-2xl font-bold text-blue-600 mb-2">MaNiaCo</p>
+                    <p className="text-sm text-muted-foreground">
+                      💭 <strong>Immagine mentale:</strong> Un funzionario pubblico con espressione
+                      "maniaca" che sbatte la porta in faccia a un cittadino e RIFIUTA ostinatamente
+                      di fare il suo dovere. Ha un'espressione ossessiva e compulsiva.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded border text-sm">
+                      <p className="font-semibold mb-1">Alternative:</p>
+                      <ul className="text-xs space-y-1">
+                        <li>• MaNiFà (manifà qualcosa)</li>
+                        <li>• MoNaFa</li>
+                        <li>• MiNiFa</li>
+                      </ul>
+                    </div>
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded border text-sm">
+                      <p className="font-semibold mb-1">Regole:</p>
+                      <ul className="text-xs space-y-1">
+                        <li>• Usa solo consonanti del codice</li>
+                        <li>• Vocali libere (a,e,i,o,u)</li>
+                        <li>• Scegli parola più vivida</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-yellow-50 dark:bg-yellow-950/20 p-4 rounded-lg border border-yellow-200 text-sm">
+                  <p className="font-semibold mb-2">🎯 Altri Esempi:</p>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline" className="font-mono w-16">624</Badge>
+                      <span>→ C-N-R →</span>
+                      <span className="font-semibold">CaNaRo / GeNeRo / CiNeMa</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline" className="font-mono w-16">241</Badge>
+                      <span>→ N-R-T →</span>
+                      <span className="font-semibold">NaRDo / NeReTo</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline" className="font-mono w-16">90</Badge>
+                      <span>→ P/B-S →</span>
+                      <span className="font-semibold">BuS / PaSo / BaSe</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Esempio 3: Film Mentale */}
+            <Card className="border-l-4 border-l-green-500">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Film className="h-5 w-5 text-green-600" />
+                  Art. 624 CP - Furto (Film Mentale)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Visualizza il reato come una scena cinematografica per memorizzare
+                  tutti gli elementi costitutivi.
+                </p>
+
+                <div className="space-y-3">
+                  <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200">
+                    <h4 className="font-semibold mb-3">🎬 Sceneggiatura Mentale</h4>
+                    
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-start gap-3">
+                        <Badge className="bg-green-600 shrink-0">Setting</Badge>
+                        <div>
+                          <p><strong>Luogo:</strong> Gioielleria di notte, luci spente, via deserta</p>
+                          <p className="text-muted-foreground text-xs">Visualizza: vetrine lucide, manichini, silenzio</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3">
+                        <Badge className="bg-green-600 shrink-0">👤 Soggetto Attivo</Badge>
+                        <div>
+                          <p><strong>Ladro con passamontagna nero</strong> - Guanti neri, torcia tascabile</p>
+                          <p className="text-muted-foreground text-xs">
+                            💡 Chiunque (non serve qualifica speciale per il furto)
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3">
+                        <Badge className="bg-green-600 shrink-0">⚡ Condotta</Badge>
+                        <div>
+                          <p><strong>Impossessamento della cosa mobile altrui</strong></p>
+                          <p className="text-xs mt-1">
+                            AZIONE 1: Rompe la vetrina con un martello (CRASH!)<br/>
+                            AZIONE 2: Infila la mano e PRENDE una collana d'oro<br/>
+                            AZIONE 3: La mette in tasca e SCAPPA via
+                          </p>
+                          <p className="text-muted-foreground text-xs mt-2">
+                            💡 "Impossessamento" = sottrazione + disponibilità esclusiva
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3">
+                        <Badge className="bg-green-600 shrink-0">🎯 Evento</Badge>
+                        <div>
+                          <p><strong>Privazione del possesso al proprietario</strong></p>
+                          <p className="text-muted-foreground text-xs">
+                            Il gioielliere la mattina dopo trova la vetrina vuota.
+                            La collana non c'è più. Lui l'ha PERSA, il ladro l'ha OTTENUTA.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3">
+                        <Badge className="bg-green-600 shrink-0">🔗 Nesso</Badge>
+                        <div>
+                          <p><strong>Nesso causale</strong></p>
+                          <p className="text-muted-foreground text-xs">
+                            L'azione del ladro (prendere) ha CAUSATO la perdita del possesso.
+                            Linea diretta: azione → conseguenza.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3">
+                        <Badge className="bg-green-600 shrink-0">🧠 Dolo</Badge>
+                        <div>
+                          <p><strong>Elemento psicologico</strong></p>
+                          <p className="text-muted-foreground text-xs">
+                            Il ladro SAPEVA che la collana non era sua e VOLEVA comunque prenderla.
+                            Visualizza il suo sorriso malefico mentre scappa.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20 rounded-lg border-2 border-green-300">
+                    <p className="font-semibold mb-2 text-sm">🎥 Riproduci il Film Mentale</p>
+                    <p className="text-xs text-muted-foreground italic">
+                      "È notte. Vedo il ladro avvicinarsi alla gioielleria. Guanti neri, passamontagna.
+                      CRASH! Rompe la vetrina. La mano entra veloce. Afferra la collana. Lucida, pesante, d'oro.
+                      La ficca in tasca. Si gira. Corre via nella notte. La mattina dopo: vetrina vuota,
+                      gioielliere disperato. Collana sparita. Possesso perso."
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-yellow-50 dark:bg-yellow-950/20 p-4 rounded-lg border border-yellow-200 text-sm">
+                  <p className="font-semibold mb-2">💡 Principi del Film Mentale:</p>
+                  <ul className="space-y-1 text-xs ml-4">
+                    <li>• <strong>Prima persona:</strong> Mettiti nella scena come se la stessi guardando</li>
+                    <li>• <strong>Dettagli sensoriali:</strong> Suoni (CRASH), colori (nero, oro), sensazioni</li>
+                    <li>• <strong>Slow motion:</strong> Rallenta i momenti chiave (mano che afferra)</li>
+                    <li>• <strong>Emozioni:</strong> Paura, eccitazione, urgenza</li>
+                    <li>• <strong>Ripetizione:</strong> Rivedi il film 3-4 volte per fissarlo</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* CTA Tool Interattivi */}
+          <Card className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
+            <CardContent className="pt-6 text-center">
+              <Lightbulb className="h-12 w-12 mx-auto mb-4 opacity-90" />
+              <h3 className="text-2xl font-bold mb-2">
+                Pronto a Mettere in Pratica?
+              </h3>
+              <p className="mb-6 opacity-90">
+                Usa i tool interattivi per creare i tuoi palazzi, convertire numeri e costruire film mentali
+              </p>
+              <Button
+                size="lg"
+                variant="secondary"
+                onClick={() => setLocation('/mnemotecniche')}
+              >
+                Vai ai Tool Interattivi
+              </Button>
+            </CardContent>
+          </Card>
+
+        </TabsContent>
+
         {/* TAB GUIDE DI STUDIO */}
         <TabsContent value="guide">
           <Card>
@@ -362,17 +820,163 @@ export default function LibreriaPubblicaPage() {
         </TabsContent>
 
         {/* TAB MATERIALI PUBBLICI */}
-        <TabsContent value="materiali">
-          <Card>
-            <CardContent className="p-12 text-center">
-              <BookOpen className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold mb-2">Materiali Pubblici</h3>
-              <p className="text-muted-foreground mb-6">
-                Questa sezione conterrà dispense, schemi e materiali condivisi dalla community.
-              </p>
-              <Badge variant="secondary">Coming Soon</Badge>
-            </CardContent>
-          </Card>
+        <TabsContent value="materiali" className="space-y-8">
+          
+          {/* Sezione 1: Biblioteca Normativa AI */}
+          <div className="space-y-4">
+            <h3 className="text-xl font-bold flex items-center gap-2">
+              <Scale className="h-5 w-5 text-primary" />
+              Biblioteca Normativa AI
+            </h3>
+            <p className="text-muted-foreground text-sm">
+              Accedi alle principali leggi analizzate dall'AI con collegamenti diretti e quiz generati.
+            </p>
+            <BibliotecaNormativa
+              normative={[
+                { 
+                  id: '1', 
+                  nome: 'Costituzione della Repubblica Italiana', 
+                  articoliAnalizzati: 139, 
+                  stato: 'completato',
+                  url: 'https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:costituzione:1947-12-27'
+                },
+                { 
+                  id: '2', 
+                  nome: 'Legge 241/1990 (Procedimento Amministrativo)', 
+                  articoliAnalizzati: 31, 
+                  stato: 'completato',
+                  url: 'https://www.normattiva.it/atto/caricaDettaglioAtto?atto.dataPubblicazioneGazzetta=1990-08-18&atto.codiceRedazionale=090G0294&atto.articolo.numero=0&atto.articolo.sottoArticolo=1&atto.articolo.sottoArticolo1=0&qId=6ec85cd3-5c5f-45ef-925e-d0b980c3f57e&tabID=0.10456650702230474&title=lbl.dettaglioAtto'
+                },
+                { 
+                  id: '3', 
+                  nome: 'D.Lgs. 165/2001 (TUPI)', 
+                  articoliAnalizzati: 74, 
+                  stato: 'completato',
+                  url: 'https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legislativo:2001-03-30;165'
+                },
+                { 
+                  id: '4', 
+                  nome: 'D.Lgs. 33/2013 (Trasparenza)', 
+                  articoliAnalizzati: 53, 
+                  stato: 'elaborazione',
+                  url: 'https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legislativo:2013-03-14;33'
+                },
+                { 
+                  id: '5', 
+                  nome: 'D.Lgs. 101/2018 (GDPR - Privacy)', 
+                  articoliAnalizzati: 22, 
+                  stato: 'completato',
+                  url: 'https://www.normattiva.it/atto/caricaDettaglioAtto?atto.dataPubblicazioneGazzetta=2018-09-04&atto.codiceRedazionale=18G00129&atto.articolo.numero=0&atto.articolo.sottoArticolo=1&atto.articolo.sottoArticolo1=0&qId=149b53bc-034f-4d41-8d06-96dec18e4fa1&tabID=0.10456650702230474&title=lbl.dettaglioAtto'
+                }
+              ]}
+              domandeGenerate={1250}
+              quizTipoConcorso={15}
+              onUploadPdf={(file) => console.log('Upload law', file)}
+              onGoToQuiz={() => setLocation('/quiz')}
+              onViewStats={() => setLocation('/stats')}
+            />
+          </div>
+
+          <div className="border-t my-8" />
+
+          {/* Sezione 2: Cartelle per Materie */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <FolderOpen className="h-5 w-5 text-primary" />
+                Documenti Consultabili
+              </h3>
+            </div>
+            
+            <p className="text-muted-foreground text-sm mb-4">
+              Consulta i nostri documenti , dispense e schemi divisi per materia
+            </p>
+
+            {selectedMateria ? (
+              // VISTA DENTRO LA CARTELLA
+              <div className="space-y-4 animate-in fade-in slide-in-from-left-4">
+                <div className="flex items-center justify-between bg-muted/30 p-4 rounded-lg border">
+                  <div className="flex items-center gap-3">
+                     <Button variant="ghost" size="sm" onClick={() => setSelectedMateria(null)}>
+                       <ArrowLeft className="h-4 w-4 mr-2" />
+                       Torna indietro
+                     </Button>
+                     <div className="h-6 w-px bg-border mx-2" />
+                     <h4 className="text-lg font-semibold flex items-center gap-2">
+                       <FolderOpen className="h-5 w-5 text-primary" />
+                       {selectedMateria}
+                     </h4>
+                  </div>
+                  
+                  <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Carica Documento
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-lg p-0">
+                      <UploadMaterial
+                        onUpload={handleUpload}
+                        onCancel={() => setIsUploadOpen(false)}
+                      />
+                    </DialogContent>
+                  </Dialog>
+                </div>
+
+                {/* Lista Materiali */}
+                {mockMaterials.filter(m => m.materia === selectedMateria).length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {mockMaterials
+                      .filter(m => m.materia === selectedMateria)
+                      .map((material) => (
+                        <MaterialCard
+                          key={material.id}
+                          {...material}
+                          onView={(id) => console.log("View:", id)}
+                          onDelete={(id) => setMockMaterials(prev => prev.filter(m => m.id !== id))}
+                        />
+                      ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 border-2 border-dashed rounded-lg bg-muted/10">
+                    <BookOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                    <h3 className="text-lg font-medium">Cartella Vuota</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Non hai ancora caricato materiali per {selectedMateria}.
+                    </p>
+                    <Button variant="outline" onClick={() => setIsUploadOpen(true)}>
+                      Carica il primo file
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // VISTA LISTA CARTELLE
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {materie.map(materia => {
+                  const count = mockMaterials.filter(m => m.materia === materia).length;
+                  return (
+                    <Card
+                      key={materia}
+                      className="cursor-pointer hover:border-primary hover:bg-muted/50 transition-all group"
+                      onClick={() => setSelectedMateria(materia)}
+                    >
+                      <CardContent className="flex flex-col items-center justify-center p-6 gap-3 text-center">
+                        <div className="p-3 bg-yellow-100 dark:bg-yellow-900/20 rounded-full group-hover:scale-110 transition-transform">
+                          <Folder className="h-8 w-8 text-yellow-600 dark:text-yellow-500 fill-yellow-600/20" />
+                        </div>
+                        <div>
+                          <span className="font-semibold block">{materia}</span>
+                          <span className="text-xs text-muted-foreground">{count} documenti</span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
 

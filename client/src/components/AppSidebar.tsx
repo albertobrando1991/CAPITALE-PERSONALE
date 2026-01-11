@@ -31,7 +31,8 @@ import {
   Target,
   FileText,
   Crown,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Lightbulb
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -47,6 +48,7 @@ const navItems = [
   { title: "Fonti & Materiali", url: "/fonti-placeholder", icon: Book },
   { title: "Fase 1: SQ3R", url: "/fase1-link-placeholder", icon: BookOpen },
   { title: "Fase 2: Acquisizione", url: "/phase2", icon: Layers },
+  { title: "Mnemotecniche", url: "/mnemotecniche", icon: Lightbulb },
   { title: "Libreria Pubblica", url: "/libreria", icon: Book },
   { title: "Flashcard", url: "/flashcards", icon: Layers },
   { title: "Quiz", url: "/quiz", icon: HelpCircle },
