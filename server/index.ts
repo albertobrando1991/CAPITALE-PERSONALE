@@ -2,6 +2,7 @@ import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import mnemotecnicheRoutes from './routes-mnemotecniche';
+import benessereRoutes from './routes-benessere';
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
@@ -115,6 +116,10 @@ app.use((req, res, next) => {
 
   // Register Mnemotecniche Routes
   app.use('/api/mnemotecniche', mnemotecnicheRoutes);
+
+  // Register Benessere Routes
+  console.log('Mounting /api/benessere routes...');
+  app.use('/api/benessere', benessereRoutes);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

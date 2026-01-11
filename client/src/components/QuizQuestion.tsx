@@ -43,7 +43,7 @@ export function QuizQuestion({
   };
 
   const getOptionClass = (index: number) => {
-    const base = "w-full min-h-14 justify-start text-left px-4 py-3";
+    const base = "w-full min-h-14 h-auto justify-start text-left px-4 py-3 whitespace-normal";
     
     if (!hasSubmitted) {
       if (selectedAnswer === index) {
@@ -82,7 +82,7 @@ export function QuizQuestion({
 
       <Card>
         <CardContent className="p-6">
-          <h2 className="text-xl font-medium mb-6">{question}</h2>
+          <h2 className="text-xl font-medium mb-6 break-words">{question}</h2>
 
           <div className="space-y-3">
             {options.map((option, index) => (
@@ -98,7 +98,7 @@ export function QuizQuestion({
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center text-sm font-medium">
                     {String.fromCharCode(65 + index)}
                   </span>
-                  <span className="flex-1">{option}</span>
+                  <span className="flex-1 break-words">{option}</span>
                   {hasSubmitted && index === correctAnswer && (
                     <CheckCircle className="h-5 w-5 text-status-online dark:text-status-online flex-shrink-0" />
                   )}

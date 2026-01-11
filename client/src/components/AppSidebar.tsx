@@ -32,7 +32,8 @@ import {
   FileText,
   Crown,
   Calendar as CalendarIcon,
-  Lightbulb
+  Lightbulb,
+  Wind
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -54,6 +55,7 @@ const navItems = [
   { title: "Quiz", url: "/quiz", icon: HelpCircle },
   { title: "Simulazioni", url: "/simulazioni", icon: Target },
   { title: "Pomodoro", url: "/pomodoro", icon: Timer },
+  { title: "Benessere", url: "/benessere", icon: Wind },
   { title: "Statistiche", url: "/stats", icon: BarChart3 },
 ];
 

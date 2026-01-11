@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { AppSidebar } from "@/components/AppSidebar";
+import AppHeader from "@/components/AppHeader";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/LoginPage";
@@ -38,6 +39,10 @@ import MyPodcastRequestsPage from "@/pages/MyPodcastRequestsPage";
 import AdminDashboard from "@/pages/AdminDashboard";
 import MnemotecnichePage from "@/pages/MnemotecnichePage";
 import { SpecialistaProvider } from "@/contexts/SpecialistaContext";
+import { BenessereProvider } from '@/contexts/BenessereContext';
+import BenessereWidget from '@/components/benessere/BenessereWidget';
+import HydrationReminder from '@/components/benessere/HydrationReminder';
+import BenesserePage from '@/pages/BenesserePage';
 
 function ProtectedRoutes() {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
@@ -68,10 +73,7 @@ function ProtectedRoutes() {
           onLogout={logout}
         />
         <div className="flex flex-col flex-1 overflow-hidden">
-          <header className="flex items-center justify-between gap-4 p-3 border-b bg-background sticky top-0 z-50">
-            <SidebarTrigger data-testid="button-sidebar-toggle" />
-            <ThemeToggle />
-          </header>
+          <AppHeader />
           <main className="flex-1 overflow-auto">
             <Switch>
               <Route path="/concorsi/:concorsoId/materie/:materiaId" component={MateriaPage} />
@@ -82,6 +84,7 @@ function ProtectedRoutes() {
               <Route path="/materials" component={MaterialsPage} />
               <Route path="/libreria" component={LibreriaPubblicaPage} />
               <Route path="/mnemotecniche" component={MnemotecnichePage} />
+              <Route path="/benessere" component={BenesserePage} />
               <Route path="/flashcards" component={FlashcardsPage} />
               <Route path="/quiz" component={QuizPage} />
               <Route path="/simulazioni" component={SimulazioniPage} />
@@ -135,8 +138,9 @@ function Router() {
 
   return (
     <ErrorBoundary>
-      <PomodoroProvider>
-        <Switch>
+      <BenessereProvider>
+        <PomodoroProvider>
+          <Switch>
           <Route path="/">
             <HomePage />
           </Route>
@@ -156,7 +160,10 @@ function Router() {
         
         {/* Widget Pomodoro Globale (solo se autenticato) */}
         {isAuthenticated && location !== '/pomodoro' && <PomodoroWidget />}
-      </PomodoroProvider>
+        {isAuthenticated && <BenessereWidget />}
+        {isAuthenticated && <HydrationReminder />}
+        </PomodoroProvider>
+      </BenessereProvider>
     </ErrorBoundary>
   );
 }

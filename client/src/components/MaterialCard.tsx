@@ -63,16 +63,6 @@ export function MaterialCard({
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
-          <div className="flex items-center gap-1">
-            <Layers className="h-4 w-4" />
-            <span>{flashcardsCount} flashcard</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <HelpCircle className="h-4 w-4" />
-            <span>{quizzesCount} quiz</span>
-          </div>
-        </div>
         <div className="flex gap-2">
           <Button
             variant="secondary"

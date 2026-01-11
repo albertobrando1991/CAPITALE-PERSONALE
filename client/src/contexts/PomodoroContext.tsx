@@ -1,5 +1,15 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { useToast } from '@/hooks/use-toast';
+
+// Importa le costanti audio (potrebbe essere necessario spostarle in un file shared o definire qui)
+const MEDITATION_AUDIOS = [
+  { id: 'none', url: null },
+  { id: 'rain', url: '/audio/rain.ogg' },
+  { id: 'ocean', url: '/audio/ocean.ogg' },
+  { id: 'forest', url: '/audio/forest.ogg' },
+  { id: 'space', url: '/audio/space.ogg' },
+  { id: 'piano', url: '/audio/piano.mp3' },
+];
 
 interface PomodoroState {
   // Timer
@@ -23,6 +33,12 @@ interface PomodoroState {
   // Widget
   isWidgetMinimized: boolean;
   isWidgetExpanded: boolean;
+
+  // Audio
+  backgroundAudio: string;
+  audioVolume: number;
+  isAudioPlaying: boolean;
+  // customAudioFile non salvato in localstorage per semplicità (richiede URL.createObjectURL che scade)
 }
 
 interface PomodoroContextType extends PomodoroState {
@@ -39,12 +55,19 @@ interface PomodoroContextType extends PomodoroState {
   // Interleaving
   setInterleavingEnabled: (enabled: boolean) => void;
   setSelectedMaterie: (materie: Array<{id: string; nome: string; icona: string}>) => void;
+
+  // Audio Actions
+  setBackgroundAudio: (audioId: string) => void;
+  setAudioVolume: (volume: number) => void;
+  setCustomAudioFile: (file: File | null) => void;
 }
 
 const PomodoroContext = createContext<PomodoroContextType | undefined>(undefined);
 
 export function PomodoroProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [customAudioFile, setCustomAudioFileState] = useState<File | null>(null);
 
   // Load from localStorage
   const loadState = (): PomodoroState => {
@@ -56,7 +79,12 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
       const lastUpdate = parsed.lastUpdate || now;
       if (now - lastUpdate > 3600000) { // 1 ora
         parsed.isRunning = false;
+        parsed.isAudioPlaying = false; // Reset audio playing state
       }
+      // Ensure audio defaults if missing
+      if (!parsed.backgroundAudio) parsed.backgroundAudio = 'none';
+      if (parsed.audioVolume === undefined) parsed.audioVolume = 0.3;
+      
       return parsed;
     }
     
@@ -75,10 +103,78 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
       currentMateriaIndex: 0,
       isWidgetMinimized: true,
       isWidgetExpanded: false,
+      backgroundAudio: 'none',
+      audioVolume: 0.3,
+      isAudioPlaying: false,
     };
   };
 
   const [state, setState] = useState<PomodoroState>(loadState);
+
+  // Audio Management Effect (Global)
+  useEffect(() => {
+    if (state.backgroundAudio === 'none') {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (state.isAudioPlaying) {
+        setState(prev => ({ ...prev, isAudioPlaying: false }));
+      }
+      return;
+    }
+
+    let audioUrl: string | null = null;
+
+    if (state.backgroundAudio === 'custom') {
+      if (customAudioFile) {
+        audioUrl = URL.createObjectURL(customAudioFile);
+      }
+    } else {
+      const selectedAudio = MEDITATION_AUDIOS.find(a => a.id === state.backgroundAudio);
+      if (selectedAudio) {
+        audioUrl = selectedAudio.url;
+      }
+    }
+
+    if (!audioUrl) return;
+
+    // Gestione creazione/aggiornamento audio element
+    let shouldUpdateAudio = false;
+    if (!audioRef.current) {
+      shouldUpdateAudio = true;
+    } else if (state.backgroundAudio !== 'custom' && audioRef.current.src.indexOf(audioUrl) === -1) {
+      // Nota: src.indexOf check approssimativo per path relativi risolti dal browser
+      shouldUpdateAudio = true;
+    } else if (state.backgroundAudio === 'custom' && !audioRef.current.src.startsWith('blob:')) {
+      shouldUpdateAudio = true;
+    }
+
+    if (shouldUpdateAudio) {
+      if (audioRef.current) audioRef.current.pause();
+      audioRef.current = new Audio(audioUrl);
+      audioRef.current.loop = true;
+      audioRef.current.volume = state.audioVolume;
+    }
+
+    // Aggiorna volume se cambiato
+    if (audioRef.current && Math.abs(audioRef.current.volume - state.audioVolume) > 0.01) {
+      audioRef.current.volume = state.audioVolume;
+    }
+
+    // Play/Pause logic based on timer running state
+    // Se il timer è in esecuzione, l'audio deve suonare.
+    if (state.isRunning && !state.isAudioPlaying) {
+      audioRef.current?.play().then(() => {
+        setState(prev => ({ ...prev, isAudioPlaying: true }));
+      }).catch(err => {
+        console.error('Errore play audio:', err);
+      });
+    } else if (!state.isRunning && state.isAudioPlaying) {
+      audioRef.current?.pause();
+      setState(prev => ({ ...prev, isAudioPlaying: false }));
+    }
+  }, [state.backgroundAudio, state.isRunning, state.audioVolume, customAudioFile, state.isAudioPlaying]);
 
   // Save to localStorage
   useEffect(() => {
@@ -194,11 +290,19 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
   };
 
   const resetTimer = () => {
+    // Stop audio on reset handled by effect when isRunning becomes false
+    // But we might want to force audio stop or reset currentTime
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+
     setState(prev => ({
       ...prev,
       timeRemaining: prev.durataLavoro * 60,
       isRunning: false,
       isPausa: false,
+      isAudioPlaying: false
     }));
   };
 
@@ -233,6 +337,21 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const setBackgroundAudio = (audioId: string) => {
+    setState(prev => ({ ...prev, backgroundAudio: audioId }));
+  };
+
+  const setAudioVolume = (volume: number) => {
+    setState(prev => ({ ...prev, audioVolume: volume }));
+  };
+
+  const setCustomAudioFile = (file: File | null) => {
+    setCustomAudioFileState(file);
+    if (file) {
+      setState(prev => ({ ...prev, backgroundAudio: 'custom' }));
+    }
+  };
+
   return (
     <PomodoroContext.Provider
       value={{
@@ -245,6 +364,9 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
         updateSettings,
         setInterleavingEnabled,
         setSelectedMaterie,
+        setBackgroundAudio,
+        setAudioVolume,
+        setCustomAudioFile,
       }}
     >
       {children}

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, boolean, timestamp, jsonb, real, pgEnum } from 'drizzle-orm/pg-core';
-import { users, concorsi } from './schema';
+import { users, concorsi } from './schema-base';
 import { documentiPubblici } from './schema-libreria';
 import { uuid } from 'drizzle-orm/pg-core';
 

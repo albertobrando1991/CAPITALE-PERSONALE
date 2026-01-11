@@ -8,6 +8,13 @@
       "when": 1768135433853,
       "tag": "0000_lyrical_paper_doll",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1768138098109,
+      "tag": "0001_small_legion",
+      "breakpoints": true
     }
   ]
 }

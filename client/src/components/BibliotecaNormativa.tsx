@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 import {
   BookOpen,
   Upload,
@@ -12,6 +13,7 @@ import {
   Target,
   BarChart3,
   ExternalLink,
+  Search,
 } from "lucide-react";
 
 interface Normativa {
@@ -43,6 +45,7 @@ export function BibliotecaNormativa({
   disabled = false,
 }: BibliotecaNormativaProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -81,6 +84,10 @@ export function BibliotecaNormativa({
     }
   };
 
+  const filteredNormative = normative.filter((norm) =>
+    norm.nome.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <Card data-testid="card-biblioteca-normativa">
       <CardHeader className="pb-3">
@@ -117,36 +124,61 @@ export function BibliotecaNormativa({
 
         {normative.length > 0 && (
           <div className="space-y-2">
-            <p className="text-sm font-medium">Normative Caricate:</p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium">Normative Caricate:</p>
+              <Badge variant="outline" className="text-[10px]">
+                {filteredNormative.length} su {normative.length}
+              </Badge>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Cerca normativa..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8 h-9"
+              />
+            </div>
+
             <div className="space-y-2 max-h-[150px] overflow-y-auto">
-              {normative.map((norm) => (
-                <div
-                  key={norm.id}
-                  className="flex items-center justify-between p-2 bg-muted rounded-lg"
-                  data-testid={`normativa-${norm.id}`}
-                >
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    {getStatoIcon(norm.stato)}
-                    <span className="text-sm truncate" title={norm.nome}>{norm.nome}</span>
+              {filteredNormative.length > 0 ? (
+                filteredNormative.map((norm) => (
+                  <div
+                    key={norm.id}
+                    className="flex items-center justify-between p-2 bg-muted rounded-lg"
+                    data-testid={`normativa-${norm.id}`}
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      {getStatoIcon(norm.stato)}
+                      <span className="text-sm truncate" title={norm.nome}>
+                        {norm.nome}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs">
+                        {norm.articoliAnalizzati} art.
+                      </Badge>
+                      {norm.url && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => window.open(norm.url, "_blank")}
+                          title="Apri su Normattiva"
+                        >
+                          <ExternalLink className="h-4 w-4 text-blue-600" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">
-                      {norm.articoliAnalizzati} art.
-                    </Badge>
-                    {norm.url && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => window.open(norm.url, '_blank')}
-                        title="Apri su Normattiva"
-                      >
-                        <ExternalLink className="h-4 w-4 text-blue-600" />
-                      </Button>
-                    )}
-                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4 text-sm text-muted-foreground italic">
+                  Nessuna normativa trovata per "{searchQuery}"
                 </div>
-              ))}
+              )}
             </div>
           </div>
         )}

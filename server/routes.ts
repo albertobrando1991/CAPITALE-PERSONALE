@@ -136,14 +136,36 @@ function getGeminiClient() {
 
 function cleanJson(text: string): string {
   if (!text) return "{}";
+  console.log("[cleanJson] Input text length:", text.length);
+  
   // Rimuovi blocchi markdown json
   let cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-  // Trova la prima graffa aperta e l'ultima chiusa
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace !== -1) {
-    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+  
+  // Cerca la prima parentesi quadra o graffa
+  const firstOpenBrace = cleaned.indexOf("{");
+  const firstOpenBracket = cleaned.indexOf("[");
+  
+  let startIndex = -1;
+  let endIndex = -1;
+  
+  // Determina se inizia prima un oggetto o un array
+  if (firstOpenBrace !== -1 && (firstOpenBracket === -1 || firstOpenBrace < firstOpenBracket)) {
+    // È un oggetto
+    startIndex = firstOpenBrace;
+    endIndex = cleaned.lastIndexOf("}");
+  } else if (firstOpenBracket !== -1) {
+    // È un array
+    startIndex = firstOpenBracket;
+    endIndex = cleaned.lastIndexOf("]");
   }
+  
+  if (startIndex !== -1 && endIndex !== -1) {
+    cleaned = cleaned.substring(startIndex, endIndex + 1);
+    console.log("[cleanJson] Extracted JSON substring length:", cleaned.length);
+  } else {
+    console.log("[cleanJson] WARNING: Could not find valid JSON start/end indices");
+  }
+  
   return cleaned;
 }
 
@@ -1539,6 +1561,108 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
     }
   });
 
+  app.post("/api/quiz/generate-from-file", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      console.log("[QUIZ-GEN] === INIZIO GENERAZIONE DA FILE ===");
+      
+      if (!req.file) {
+        return res.status(400).json({ error: "Nessun file caricato" });
+      }
+
+      // 1. Estrai testo
+      let fileContent: string;
+      if (req.file.mimetype === "application/pdf") {
+        try {
+          const filePath = join(uploadDir, req.file.filename);
+          const fileBuffer = readFileSync(filePath);
+          fileContent = await extractTextFromPDF(fileBuffer);
+        } catch (pdfError: any) {
+          console.error("[QUIZ-GEN] Errore estrazione PDF:", pdfError);
+          return res.status(500).json({ error: "Errore lettura PDF" });
+        }
+      } else {
+         // Fallback per file testo se necessario
+         const filePath = join(uploadDir, req.file.filename);
+         fileContent = readFileSync(filePath, "utf-8");
+      }
+
+      if (!fileContent || fileContent.trim().length < 100) {
+        return res.status(400).json({ error: "Testo insufficiente nel file" });
+      }
+
+      // 2. Prepara prompt per AI
+      const contentToAnalyze = fileContent.substring(0, 50000); // Limite caratteri
+      const systemPrompt = `Sei un professore esperto che crea quiz di verifica.
+Il tuo compito è generare un quiz a risposta multipla basato ESCLUSIVAMENTE sul testo fornito dall'utente.
+Non inventare domande su argomenti non presenti nel testo.
+Se il testo è troppo breve per 15 domande, generane quante possibile (minimo 5).
+
+FORMATO OUTPUT RICHIESTO (JSON array):
+[
+  {
+    "question": "Domanda basata sul testo?",
+    "options": ["Opzione A (errata)", "Opzione B (corretta)", "Opzione C (errata)", "Opzione D (errata)"],
+    "correctAnswer": 1
+  }
+]
+Nota: correctAnswer è l'indice (0-3) della risposta corretta nell'array options.
+IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`json) e senza testo introduttivo.`;
+
+      const userPrompt = `Genera un quiz di 15 domande basato su questo testo:\n\n${contentToAnalyze}`;
+
+      // 3. Chiamata AI (Gemini o OpenAI)
+      let questionsJson = "[]";
+      const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+
+      if (shouldUseGemini) {
+        try {
+           console.log("[QUIZ-GEN] Usando Gemini...");
+           const geminiPrompt = `${systemPrompt}\n\n${userPrompt} Restituisci SOLO il JSON valido.`;
+           questionsJson = await analyzeWithGemini(geminiPrompt, "");
+           questionsJson = cleanJson(questionsJson);
+        } catch (err) {
+           console.error("[QUIZ-GEN] Gemini fallito, fallback a OpenAI", err);
+           questionsJson = "[]";
+        }
+      }
+
+      if (questionsJson === "[]" || !questionsJson) {
+        console.log("[QUIZ-GEN] Usando OpenAI...");
+        const openaiClient = getOpenAIClient();
+        const response = await openaiClient.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3, // Bassa temperatura per fedeltà al testo
+        });
+        questionsJson = response.choices[0]?.message?.content || "[]";
+        questionsJson = cleanJson(questionsJson);
+      }
+
+      // 4. Parse e Risposta
+      let questions = [];
+      try {
+        const parsed = JSON.parse(questionsJson);
+        // Gestisci caso in cui l'AI restituisca un oggetto { "questions": [...] } invece di array diretto
+        questions = Array.isArray(parsed) ? parsed : (parsed.questions || []);
+      } catch (e) {
+        console.error("[QUIZ-GEN] Errore parsing JSON AI:", e);
+        return res.status(500).json({ error: "Errore nella generazione delle domande (formato non valido)" });
+      }
+
+      console.log(`[QUIZ-GEN] Generate ${questions.length} domande`);
+      res.json({ questions });
+
+    } catch (error: any) {
+      console.error("[QUIZ-GEN] Errore generale:", error);
+      res.status(500).json({ error: "Errore del server durante la generazione" });
+    }
+  });
+
   app.post("/api/phase1/complete", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
@@ -2113,14 +2237,26 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
       const userId = getUserId(req);
       
       // 1. Ottieni progressi generali
-      const progress = await storage.getUserProgress(userId);
+      let progress;
+      try {
+        progress = await storage.getUserProgress(userId);
+      } catch (err) {
+        console.error("Error fetching user progress:", err);
+        progress = null;
+      }
       
       // 2. Ottieni ultime simulazioni completate
-      const recentSimulations = await simulazioniStorage.getSimulazioni(userId);
-      const completedSimulations = recentSimulations
-        .filter(s => s.completata)
-        .sort((a, b) => new Date(b.dataCompletamento || 0).getTime() - new Date(a.dataCompletamento || 0).getTime())
-        .slice(0, 10);
+      let completedSimulations: Simulazione[] = [];
+      try {
+        const recentSimulations = await simulazioniStorage.getSimulazioni(userId);
+        completedSimulations = recentSimulations
+          .filter(s => s.completata)
+          .sort((a, b) => new Date(b.dataCompletamento || 0).getTime() - new Date(a.dataCompletamento || 0).getTime())
+          .slice(0, 10);
+      } catch (err) {
+        console.error("Error fetching simulations:", err);
+      }
+
         
       // 3. Calcola precisione media
       let averageAccuracy = 0;

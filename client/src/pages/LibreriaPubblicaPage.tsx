@@ -6,25 +6,29 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ArrowLeft, Book, Brain, TrendingUp, Target, Lightbulb,
   CheckCircle, Award, BookOpen, Download, ExternalLink, Clock,
-  Home, Hash, Film, Trash2, Plus, Scale, Folder, FolderOpen
+  Home, Hash, Film, Trash2, Plus, Scale, Folder, FolderOpen,
+  Wind, Moon, Droplets, Heart
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
 import { BibliotecaNormativa } from '@/components/BibliotecaNormativa';
 import { UploadMaterial } from '@/components/UploadMaterial';
 import { MaterialCard } from '@/components/MaterialCard';
 
+
 export default function LibreriaPubblicaPage() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [selectedArticle, setSelectedArticle] = useState<string | null>(null);
   
   // State per Materiali
   const [selectedMateria, setSelectedMateria] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [mockMaterials, setMockMaterials] = useState<any[]>([
-    { id: '1', title: 'Costituzione Italiana', type: 'normativa', status: 'completed', flashcardsCount: 120, quizzesCount: 15, materia: 'Diritto Costituzionale' },
-    { id: '2', title: 'Legge 241/90', type: 'normativa', status: 'completed', flashcardsCount: 85, quizzesCount: 10, materia: 'Diritto Amministrativo' },
-    { id: '3', title: 'Riassunto Privato', type: 'manuale', status: 'completed', flashcardsCount: 40, quizzesCount: 5, materia: 'Diritto Privato' },
+    { id: '1', title: 'Costituzione Italiana', type: 'normativa', status: 'completed', flashcardsCount: 120, quizzesCount: 15, materia: 'Diritto Costituzionale', fileUrl: '/documents/dummy.pdf' },
+    { id: '2', title: 'Legge 241/90', type: 'normativa', status: 'completed', flashcardsCount: 85, quizzesCount: 10, materia: 'Diritto Amministrativo', fileUrl: '/documents/dummy.pdf' },
+    { id: '3', title: 'Riassunto Privato', type: 'manuale', status: 'completed', flashcardsCount: 40, quizzesCount: 5, materia: 'Diritto Privato', fileUrl: '/documents/dummy.pdf' },
   ]);
 
   const materie = [
@@ -38,8 +42,10 @@ export default function LibreriaPubblicaPage() {
   ];
 
   const handleUpload = async (file: File, title: string, type: string) => {
-    // Simulazione upload
+    // Simulazione upload: Creiamo un URL locale per il file
     console.log("Uploading:", title, type, selectedMateria);
+    const fileUrl = URL.createObjectURL(file);
+    
     setMockMaterials(prev => [...prev, {
         id: String(Date.now()),
         title,
@@ -47,9 +53,26 @@ export default function LibreriaPubblicaPage() {
         status: 'processing',
         flashcardsCount: 0,
         quizzesCount: 0,
-        materia: selectedMateria
+        materia: selectedMateria,
+        fileUrl: fileUrl // Salviamo l'URL del file
     }]);
     setIsUploadOpen(false);
+  };
+
+  const handleViewMaterial = (id: string) => {
+    const material = mockMaterials.find(m => m.id === id);
+    if (material) {
+      if (material.fileUrl) {
+        window.open(material.fileUrl, '_blank');
+      } else {
+        // Fallback per eventuali materiali senza file
+        toast({
+          title: "Documento non disponibile",
+          description: `Impossibile aprire il documento: ${material.title}`,
+          variant: "destructive"
+        });
+      }
+    }
   };
 
   return (
@@ -76,6 +99,7 @@ export default function LibreriaPubblicaPage() {
             <Lightbulb className="h-4 w-4" />
             Mnemotecniche
           </TabsTrigger>
+
           <TabsTrigger value="guide" className="gap-2">
             <Book className="h-4 w-4" />
             Guide
@@ -933,7 +957,7 @@ export default function LibreriaPubblicaPage() {
                         <MaterialCard
                           key={material.id}
                           {...material}
-                          onView={(id) => console.log("View:", id)}
+                          onView={handleViewMaterial}
                           onDelete={(id) => setMockMaterials(prev => prev.filter(m => m.id !== id))}
                         />
                       ))}

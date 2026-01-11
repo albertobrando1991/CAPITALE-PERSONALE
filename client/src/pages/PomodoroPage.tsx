@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
   ArrowLeft, Play, Pause, RotateCcw, Settings,
-  Clock, Coffee, CheckCircle2, Shuffle, Brain, AlertCircle
+  Clock, Coffee, CheckCircle2, Shuffle, Brain, AlertCircle,
+  Volume2, VolumeX
 } from 'lucide-react';
 import {
   Dialog,
@@ -30,17 +31,41 @@ import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 
 import { usePomodoro } from '@/contexts/PomodoroContext';
+import { useBenessere } from '@/contexts/BenessereContext';
+import { MEDITATION_AUDIOS } from '@/components/PomodoroTimer';
 
 export default function PomodoroPage() {
   const [, setLocation] = useLocation();
   const pomodoro = usePomodoro(); // Usa il context globale invece di state locale
+  const { addGlass } = useBenessere();
   const { toast } = useToast();
 
-  // Settings
-  // Rimosso useState locale per usare pomodoro.* dal context
-  
   // Dialog
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  // Effect per notifica completamento Pomodoro e suggerimenti Benessere
+  const [prevCicli, setPrevCicli] = useState(pomodoro.cicliCompletati);
+
+  useEffect(() => {
+    if (pomodoro.cicliCompletati > prevCicli) {
+      // Pomodoro completato
+      toast({
+        title: "⏰ Pomodoro Completato!",
+        description: "Prendi una pausa: bevi un bicchiere d'acqua o fai Box Breathing",
+        action: (
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => addGlass()}>
+              💧 +1 Acqua
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setLocation('/benessere?tab=breathing')}>
+              🧘 Breathing
+            </Button>
+          </div>
+        )
+      });
+      setPrevCicli(pomodoro.cicliCompletati);
+    }
+  }, [pomodoro.cicliCompletati, prevCicli, addGlass, toast, setLocation]);
 
   // Fetch concorsi e materie
   const { data: concorsi = [] } = useQuery({
@@ -198,10 +223,19 @@ export default function PomodoroPage() {
           )}
 
           {/* Timer Display */}
-          <div className="text-center mb-8">
+          <div className="text-center mb-8 relative">
             <div className="text-8xl font-mono font-bold mb-4">
               {formatTime(pomodoro.timeRemaining)}
             </div>
+            {/* Audio Indicator */}
+            {pomodoro.isAudioPlaying && (
+              <div className="absolute top-0 right-0 left-0 flex justify-center -mt-6">
+                 <div className="flex items-center gap-1 bg-purple-100 dark:bg-purple-900/30 px-3 py-1 rounded-full">
+                  <Volume2 className="h-4 w-4 text-purple-600 animate-pulse" />
+                  <span className="text-xs text-purple-600 font-medium">Audio ON</span>
+                </div>
+              </div>
+            )}
             <Progress value={progressPercentage} className="h-3 mb-4" />
             <p className="text-sm text-muted-foreground">
               {pomodoro.isPausa
@@ -238,6 +272,84 @@ export default function PomodoroPage() {
               <RotateCcw className="h-5 w-5 mr-2" />
               Reset
             </Button>
+          </div>
+
+          {/* Audio Controls */}
+          <div className="mt-8 pt-6 border-t max-w-md mx-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-purple-100 rounded-full">
+                  <Volume2 className="h-4 w-4 text-purple-600" />
+                </div>
+                <h3 className="font-semibold">Audio Background</h3>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Select
+                  value={pomodoro.backgroundAudio}
+                  onValueChange={pomodoro.setBackgroundAudio}
+                  disabled={pomodoro.isRunning}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Scegli audio..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MEDITATION_AUDIOS.map((audio) => (
+                      <SelectItem key={audio.id} value={audio.id}>
+                        <div className="flex items-center gap-2">
+                          <span>{audio.icon}</span>
+                          <span>{audio.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="custom">
+                      <div className="flex items-center gap-2">
+                        <span>🎵</span>
+                        <span>Carica Audio</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {pomodoro.backgroundAudio !== 'none' && (
+                  <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900/50 p-2 rounded-md border">
+                    <VolumeX className="h-4 w-4 text-muted-foreground" />
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={pomodoro.audioVolume}
+                      onChange={(e) => pomodoro.setAudioVolume(parseFloat(e.target.value))}
+                      className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                    />
+                    <Volume2 className="h-4 w-4 text-purple-600" />
+                  </div>
+                )}
+              </div>
+
+              {pomodoro.backgroundAudio === 'custom' && (
+                <div>
+                  <Input
+                    type="file"
+                    accept="audio/*"
+                    disabled={pomodoro.isRunning}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        pomodoro.setCustomAudioFile(file);
+                        toast({
+                          title: "Audio Caricato",
+                          description: file.name
+                        });
+                      }
+                    }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>

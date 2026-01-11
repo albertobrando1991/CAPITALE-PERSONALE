@@ -2,47 +2,13 @@ import { pgTable, text, serial, integer, boolean, timestamp, jsonb, varchar, rea
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
+import { users, concorsi } from "./schema-base";
+
+export * from "./schema-base";
 
 // ============================================
 // CORE TABLES
 // ============================================
-
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: text("email").unique(),
-  firstName: text("first_name"),
-  lastName: text("last_name"),
-  profileImageUrl: text("profile_image_url"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
-export type User = typeof users.$inferSelect;
-export type InsertUser = typeof users.$inferInsert;
-// UpsertUser needs to allow passing ID explicitly for auth flows
-export type UpsertUser = InsertUser & { id?: string };
-
-export const concorsi = pgTable("concorsi", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
-  nome: text("nome").notNull(),
-  titoloEnte: text("titolo_ente"),
-  tipoConcorso: text("tipo_concorso"),
-  posti: integer("posti"),
-  scadenzaDomanda: timestamp("scadenza_domanda"),
-  dataPresuntaEsame: timestamp("data_presunta_esame"),
-  mesiPreparazione: integer("mesi_preparazione"),
-  oreSettimanali: integer("ore_settimanali"),
-  dataInizioStudio: timestamp("data_inizio_studio"),
-  bandoAnalysis: jsonb("bando_analysis"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-export const insertConcorsoSchema = createInsertSchema(concorsi).omit({ id: true, createdAt: true, updatedAt: true });
-export type Concorso = typeof concorsi.$inferSelect;
-export type InsertConcorso = typeof concorsi.$inferInsert;
 
 export const materials = pgTable("materials", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -243,3 +209,119 @@ export const insertFilmMentaliSchema = createInsertSchema(filmMentali).omit({
 });
 export type FilmMentali = typeof filmMentali.$inferSelect;
 export type InsertFilmMentali = typeof filmMentali.$inferInsert;
+
+// ============================================
+// BENESSERE PSICOFISICO TABLES
+// ============================================
+
+export const breathingSessions = pgTable("breathing_sessions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  concorsoId: varchar("concorso_id").references(() => concorsi.id, { onDelete: "set null" }),
+  startedAt: timestamp("started_at").notNull(),
+  endedAt: timestamp("ended_at"),
+  cyclesCompleted: integer("cycles_completed").default(0),
+  durationSeconds: integer("duration_seconds"),
+  context: varchar("context", { length: 50 }), // 'pre_study', 'pre_exam', 'break', 'stress_relief'
+  heartRateBefore: integer("heart_rate_before"),
+  heartRateAfter: integer("heart_rate_after"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertBreathingSessionSchema = createInsertSchema(breathingSessions).omit({ 
+  id: true, 
+  createdAt: true 
+});
+export type BreathingSession = typeof breathingSessions.$inferSelect;
+export type InsertBreathingSession = typeof breathingSessions.$inferInsert;
+
+export const reframingLogs = pgTable("reframing_logs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  concorsoId: varchar("concorso_id").references(() => concorsi.id, { onDelete: "set null" }),
+  anxiousThought: text("anxious_thought").notNull(),
+  reframedThought: text("reframed_thought").notNull(),
+  aiSuggestion: text("ai_suggestion"),
+  aiModel: varchar("ai_model", { length: 50 }),
+  effectivenessRating: integer("effectiveness_rating"),
+  context: varchar("context", { length: 50 }),
+  tags: text("tags").array(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertReframingLogSchema = createInsertSchema(reframingLogs).omit({ 
+  id: true, 
+  createdAt: true 
+});
+export type ReframingLog = typeof reframingLogs.$inferSelect;
+export type InsertReframingLog = typeof reframingLogs.$inferInsert;
+
+export const sleepLogs = pgTable("sleep_logs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: timestamp("date").notNull(), // Drizzle doesn't have a distinct DATE type for PG in core, usually uses timestamp or string. Using timestamp for now or date string.
+  bedtime: text("bedtime"), // TIME type usually mapped to string in JS
+  wakeTime: text("wake_time"),
+  totalHours: real("total_hours"),
+  qualityRating: integer("quality_rating"),
+  remSleepHours: real("rem_sleep_hours"),
+  deepSleepHours: real("deep_sleep_hours"),
+  interruptions: integer("interruptions").default(0),
+  notes: text("notes"),
+  moodOnWaking: varchar("mood_on_waking", { length: 50 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertSleepLogSchema = createInsertSchema(sleepLogs).omit({ 
+  id: true, 
+  createdAt: true, 
+  updatedAt: true 
+});
+export type SleepLog = typeof sleepLogs.$inferSelect;
+export type InsertSleepLog = typeof sleepLogs.$inferInsert;
+
+export const hydrationLogs = pgTable("hydration_logs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: timestamp("date").notNull(),
+  glassesCount: integer("glasses_count").default(0),
+  targetGlasses: integer("target_glasses").default(8),
+  lastDrinkAt: timestamp("last_drink_at"),
+  lastReminderAt: timestamp("last_reminder_at"),
+  reminderEnabled: boolean("reminder_enabled").default(true),
+  reminderIntervalMinutes: integer("reminder_interval_minutes").default(60),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertHydrationLogSchema = createInsertSchema(hydrationLogs).omit({ 
+  id: true, 
+  createdAt: true, 
+  updatedAt: true 
+});
+export type HydrationLog = typeof hydrationLogs.$inferSelect;
+export type InsertHydrationLog = typeof hydrationLogs.$inferInsert;
+
+export const nutritionLogs = pgTable("nutrition_logs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  mealTime: timestamp("meal_time").notNull(),
+  mealType: varchar("meal_type", { length: 20 }), // 'breakfast', 'lunch', 'dinner', 'snack'
+  description: text("description"),
+  energyLevelBefore: integer("energy_level_before"),
+  energyLevelAfter: integer("energy_level_after"),
+  brainFog: boolean("brain_fog").default(false),
+  glycemicSpike: boolean("glycemic_spike").default(false),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertNutritionLogSchema = createInsertSchema(nutritionLogs).omit({ 
+  id: true, 
+  createdAt: true 
+});
+export type NutritionLog = typeof nutritionLogs.$inferSelect;
+export type InsertNutritionLog = typeof nutritionLogs.$inferInsert;

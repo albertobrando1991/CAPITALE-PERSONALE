@@ -35,8 +35,12 @@ import {
   CheckCircle,
   Library,
   Lightbulb,
+  Wind,
+  Droplets,
+  Moon,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBenessere } from "@/contexts/BenessereContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ProssimeRevisioniWidget } from "@/components/ProssimeRevisioniWidget";
@@ -44,6 +48,7 @@ import type { Concorso, Simulazione } from "@shared/schema";
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const { stats } = useBenessere();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -524,6 +529,65 @@ export default function DashboardPage() {
               </Link>
             </CardContent>
           </Card>
+
+          {/* Benessere Widget Card */}
+          {stats && (
+            <Card className="bg-gradient-to-br from-purple-50 via-blue-50 to-white dark:from-purple-950/20 dark:via-blue-950/20 dark:to-background border-2 border-purple-200 dark:border-purple-800">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Wind className="h-5 w-5 text-purple-600" />
+                  Il Tuo Benessere Oggi
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Gestisci stress, sonno e mindset per massimizzare le performance
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  {/* Hydration */}
+                  <div className="text-center p-2 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <Droplets className="h-5 w-5 text-blue-600 mx-auto mb-1" />
+                    <p className="text-xl font-bold text-blue-600">
+                      {stats.hydration.glasses_today}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      / {stats.hydration.target_today} 🥤
+                    </p>
+                  </div>
+
+                  {/* Breathing */}
+                  <div className="text-center p-2 bg-purple-50 dark:bg-purple-950/30 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <Wind className="h-5 w-5 text-purple-600 mx-auto mb-1" />
+                    <p className="text-xl font-bold text-purple-600">
+                      {stats.breathing.sessions_today}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      sessioni
+                    </p>
+                  </div>
+
+                  {/* Sleep */}
+                  <div className="text-center p-2 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                    <Moon className="h-5 w-5 text-indigo-600 mx-auto mb-1" />
+                    <p className="text-xl font-bold text-indigo-600">
+                      {stats.sleep.hours_last_night || '--'}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      ore sonno
+                    </p>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => setLocation('/benessere')}
+                  variant="outline"
+                  className="w-full h-8 text-xs"
+                >
+                  Vai al Centro Benessere →
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

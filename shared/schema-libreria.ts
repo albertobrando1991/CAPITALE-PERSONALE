@@ -1,5 +1,5 @@
 import { pgTable, uuid, text, timestamp, integer, boolean, varchar } from 'drizzle-orm/pg-core';
-import { users } from './schema';
+import { users } from './schema-base';
 
 // Materie disponibili (enum centralizzato)
 export const materieEnum = [

@@ -111,18 +111,18 @@ export function QuizResults({
                 className="p-4 bg-muted rounded-lg space-y-2"
                 data-testid={`wrong-answer-${index}`}
               >
-                <p className="font-medium">{wrong.question}</p>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="destructive" className="gap-1">
-                    <XCircle className="h-3 w-3" />
-                    Tua risposta: {wrong.yourAnswer}
+                <p className="font-medium break-words">{wrong.question}</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Badge variant="destructive" className="gap-1 h-auto whitespace-normal text-left justify-start py-1">
+                    <XCircle className="h-3 w-3 flex-shrink-0 mt-0.5" />
+                    <span className="break-words">Tua risposta: {wrong.yourAnswer}</span>
                   </Badge>
                   <Badge
                     variant="outline"
-                    className="gap-1 bg-status-online/10 text-status-online border-status-online/20 dark:bg-status-online/20 dark:text-status-online dark:border-status-online/30"
+                    className="gap-1 bg-status-online/10 text-status-online border-status-online/20 dark:bg-status-online/20 dark:text-status-online dark:border-status-online/30 h-auto whitespace-normal text-left justify-start py-1"
                   >
-                    <CheckCircle className="h-3 w-3" />
-                    Corretta: {wrong.correctAnswer}
+                    <CheckCircle className="h-3 w-3 flex-shrink-0 mt-0.5" />
+                    <span className="break-words">Corretta: {wrong.correctAnswer}</span>
                   </Badge>
                 </div>
               </div>
