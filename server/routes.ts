@@ -895,8 +895,8 @@ Restituisci SOLO un array JSON di flashcard:
   ...
 ]`;
            content = await analyzeWithGemini(geminiPrompt, contentToAnalyze);
-           // Clean markdown
-           content = content.replace(/```json/g, "").replace(/```/g, "").trim();
+           // Use robust cleanJson
+           content = cleanJson(content);
         } catch (err) {
            console.error("Gemini flashcard generation failed, falling back to OpenAI", err);
            content = "[]"; // Reset to trigger fallback
@@ -931,10 +931,17 @@ Restituisci SOLO un array JSON di flashcard:
           max_tokens: 16000,
         });
         content = response.choices[0]?.message?.content || "[]";
+        content = cleanJson(content);
       }
       
-      const jsonMatch = content.match(/\[[\s\S]*\]/);
-      const flashcardsData = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+      let flashcardsData = [];
+      try {
+        flashcardsData = JSON.parse(content);
+      } catch (parseError) {
+        console.error("Error parsing flashcards JSON:", parseError);
+        console.error("Content that failed parsing:", content.substring(0, 200) + "...");
+        throw new Error("Errore nel parsing della risposta AI");
+      }
 
       // Inizializza parametri SM-2 per nuove flashcard
       const sm2Initial = initializeSM2();

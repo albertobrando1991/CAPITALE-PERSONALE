@@ -182,47 +182,6 @@ export function BibliotecaNormativa({
             </div>
           </div>
         )}
-
-        {(domandeGenerate > 0 || quizTipoConcorso > 0) && (
-          <div className="space-y-2 p-3 bg-muted rounded-lg">
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-1">
-                <Target className="h-4 w-4" />
-                Domande Generate:
-              </span>
-              <Badge data-testid="badge-domande-generate">{domandeGenerate}</Badge>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-1">
-                <BarChart3 className="h-4 w-4" />
-                Quiz Tipo Concorso:
-              </span>
-              <Badge variant="secondary" data-testid="badge-quiz-tipo">
-                {quizTipoConcorso}
-              </Badge>
-            </div>
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          <Button
-            className="flex-1"
-            onClick={onGoToQuiz}
-            disabled={disabled || domandeGenerate === 0 || isLoading}
-            data-testid="button-vai-quiz-normativa"
-          >
-            <Target className="h-4 w-4 mr-2" />
-            Vai ai Quiz
-          </Button>
-          <Button
-            variant="outline"
-            onClick={onViewStats}
-            disabled={disabled || normative.length === 0}
-            data-testid="button-vedi-analisi-normativa"
-          >
-            <BarChart3 className="h-4 w-4" />
-          </Button>
-        </div>
       </CardContent>
     </Card>
   );
