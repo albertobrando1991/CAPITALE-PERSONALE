@@ -44,6 +44,10 @@ export function getSession() {
     });
   // }
 
+  if (!process.env.SESSION_SECRET && process.env.NODE_ENV === 'production') {
+    console.warn("⚠️ WARNING: SESSION_SECRET is not set. Using default insecure secret. This is dangerous for production!");
+  }
+
   return session({
     secret: process.env.SESSION_SECRET || "local_dev_secret",
     store: store,

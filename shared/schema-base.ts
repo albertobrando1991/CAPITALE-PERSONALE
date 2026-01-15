@@ -28,11 +28,11 @@ export const concorsi = pgTable("concorsi", {
   titoloEnte: text("titolo_ente"),
   tipoConcorso: text("tipo_concorso"),
   posti: integer("posti"),
-  scadenzaDomanda: timestamp("scadenza_domanda"),
-  dataPresuntaEsame: timestamp("data_presunta_esame"),
+  scadenzaDomanda: text("scadenza_domanda"), // Changed from timestamp to text to match DB
+  dataPresuntaEsame: text("data_presunta_esame"), // Changed to text to match DB potential mismatch
   mesiPreparazione: integer("mesi_preparazione"),
   oreSettimanali: integer("ore_settimanali"),
-  dataInizioStudio: timestamp("data_inizio_studio"),
+  dataInizioStudio: text("data_inizio_studio"), // Changed to text to match DB potential mismatch
   bandoAnalysis: jsonb("bando_analysis"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

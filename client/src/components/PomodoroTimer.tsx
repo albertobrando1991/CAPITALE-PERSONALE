@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Play, Pause, RotateCcw, Coffee, Volume2, VolumeX } from "lucide-react";
+import { Play, Pause, RotateCcw, Coffee, Volume2, VolumeX, ChevronDown, ChevronUp } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -102,6 +102,9 @@ export function PomodoroTimer({
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [customAudioFile, setCustomAudioFile] = useState<File | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // State per collassare/espandere
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const totalTime = isBreak ? breakDuration * 60 : workDuration * 60;
   const progress = ((totalTime - timeLeft) / totalTime) * 100;
@@ -235,21 +238,36 @@ export function PomodoroTimer({
   }, [audioVolume]);
 
   return (
-    <Card className="w-full max-w-xs" data-testid="pomodoro-timer">
-      <CardContent className="p-6">
-        <div className="text-center">
-          <div className="mb-4">
-            <span
-              className={`text-sm font-medium px-3 py-1 rounded-full ${
-                isBreak
-                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                  : "bg-primary/10 text-primary"
-              }`}
-            >
-              {isBreak ? "Pausa" : "Studio"}
-            </span>
-          </div>
+    <Card className={`w-full max-w-xs transition-all duration-300 ${isExpanded ? '' : 'bg-card/50 hover:bg-card'}`} data-testid="pomodoro-timer">
+      <CardContent className="p-4">
+        {/* Header compatto sempre visibile */}
+        <div 
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setIsExpanded(!isExpanded)}
+        >
+            <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-full ${isBreak ? 'bg-green-100 text-green-700' : 'bg-primary/10 text-primary'}`}>
+                    {isBreak ? <Coffee className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                </div>
+                <div>
+                    <div className="font-mono font-bold text-xl">
+                        {formatTime(timeLeft)}
+                    </div>
+                    <div className="text-xs text-muted-foreground flex items-center gap-2">
+                        {isBreak ? "Pausa" : "Focus"}
+                        {isAudioPlaying && <Volume2 className="h-3 w-3 text-purple-500 animate-pulse" />}
+                    </div>
+                </div>
+            </div>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </Button>
+        </div>
 
+        {/* Contenuto espanso */}
+        {isExpanded && (
+            <div className="mt-6 text-center animate-in slide-in-from-top-2 duration-200">
+          
           <div className="relative w-40 h-40 mx-auto mb-6">
             <svg className="w-full h-full transform -rotate-90">
               <circle
@@ -394,7 +412,8 @@ export function PomodoroTimer({
               )}
             </div>
           </div>
-        </div>
+            </div>
+        )}
       </CardContent>
     </Card>
   );

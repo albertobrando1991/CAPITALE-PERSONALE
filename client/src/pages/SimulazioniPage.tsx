@@ -98,9 +98,9 @@ export default function SimulazioniPage() {
   return (
     <div className="container mx-auto p-6 max-w-6xl space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold mb-2">Simulazioni d'Esame</h1>
+        <h1 className="text-3xl font-semibold mb-2">Fase 4: Simulazioni Esame</h1>
         <p className="text-muted-foreground">
-          Crea e gestisci simulazioni d'esame per testare le tue conoscenze
+          Crea e gestisci simulazioni d'esame per testare le tue conoscenze in condizioni reali.
         </p>
       </div>
 

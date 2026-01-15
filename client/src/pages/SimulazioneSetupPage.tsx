@@ -52,11 +52,11 @@ export default function SimulazioneSetupPage() {
     <div className="container mx-auto p-4 max-w-4xl">
       <Button
         variant="ghost"
-        onClick={() => setLocation(`/phase2?id=${concorsoId}`)}
+        onClick={() => setLocation(`/concorsi/${concorsoId}/fase3`)}
         className="mb-4"
       >
         <ArrowLeft className="h-4 w-4 mr-2" />
-        Torna alla Fase 2
+        Torna alla Fase 3
       </Button>
       <SimulazioneSetup
         concorsoId={concorsoId}

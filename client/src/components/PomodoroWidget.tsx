@@ -5,10 +5,11 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
   Play, Pause, RotateCcw, Settings, X, Maximize2, Minimize2,
-  Clock, Coffee, Brain, Shuffle, ChevronUp, ChevronDown
+  Clock, Coffee, Brain, Shuffle, ChevronUp, ChevronDown, GripHorizontal
 } from 'lucide-react';
 import { usePomodoro } from '@/contexts/PomodoroContext';
 import { useLocation } from 'wouter';
+import { motion } from "framer-motion";
 import {
   Dialog,
   DialogContent,
@@ -58,7 +59,11 @@ export function PomodoroWidget() {
   // Widget Minimized (Mini Timer)
   if (pomodoro.isWidgetMinimized) {
     return (
-      <div className="fixed bottom-6 right-6 z-50">
+      <motion.div 
+        drag
+        dragMomentum={false}
+        className="fixed bottom-6 right-6 z-50"
+      >
         <Card
           className="p-4 cursor-pointer hover:shadow-lg transition-shadow border-2 border-primary"
           onClick={pomodoro.toggleWidget}
@@ -81,18 +86,23 @@ export function PomodoroWidget() {
             <ChevronUp className="h-4 w-4 text-muted-foreground" />
           </div>
         </Card>
-      </div>
+      </motion.div>
     );
   }
 
   // Widget Expanded (Full Timer)
   return (
     <>
-      <div className="fixed bottom-6 right-6 z-50 w-96">
+      <motion.div 
+        drag
+        dragMomentum={false}
+        className="fixed bottom-6 right-6 z-50 w-96"
+      >
         <Card className="border-2 border-primary shadow-xl">
           {/* Header */}
-          <div className="flex items-center justify-between p-3 border-b bg-muted/30">
+          <div className="flex items-center justify-between p-3 border-b bg-muted/30 cursor-move">
             <div className="flex items-center gap-2">
+              <GripHorizontal className="h-4 w-4 text-muted-foreground" />
               <Clock className="h-4 w-4 text-primary" />
               <span className="font-semibold text-sm">Timer Pomodoro</span>
             </div>
@@ -204,7 +214,7 @@ export function PomodoroWidget() {
             </div>
           </div>
         </Card>
-      </div>
+      </motion.div>
 
       {/* Settings Dialog */}
       <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>

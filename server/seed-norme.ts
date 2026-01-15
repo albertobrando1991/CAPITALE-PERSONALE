@@ -125,9 +125,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { Client } = await import('pg');
   
   if (!process.env.DATABASE_URL) {
-      // Fallback manuale per ambiente locale se dotenv non funziona come previsto
-      process.env.DATABASE_URL = "postgresql://postgres.doebzsizcqibicdazmzi:XmZGwELt1ahxF069@aws-1-eu-west-1.pooler.supabase.com:6543/postgres?sslmode=require";
-      console.log("⚠️  Usato fallback DATABASE_URL");
+      console.error("❌ DATABASE_URL mancante. Impossibile eseguire il seeding.");
+      process.exit(1);
   }
 
   const client = new Client({

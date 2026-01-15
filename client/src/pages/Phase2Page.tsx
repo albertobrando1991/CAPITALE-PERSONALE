@@ -212,6 +212,59 @@ export default function Phase2Page() {
 
   const bandoData = concorso?.bandoAnalysis as BandoData | null;
   const materie = bandoData?.materie || [];
+  
+  // Lista predefinita di materie per concorsi pubblici
+  const DEFAULT_MATERIE = [
+    "Diritto costituzionale",
+    "Diritto amministrativo",
+    "Diritto civile",
+    "Diritto penale",
+    "Diritto processuale civile",
+    "Diritto processuale penale",
+    "Diritto commerciale",
+    "Diritto tributario",
+    "Diritto del lavoro / diritto sindacale",
+    "Diritto dell’Unione Europea",
+    "Legislazione nazionale e regionale",
+    "Normativa sulla trasparenza e anticorruzione",
+    "Codice dei contratti pubblici",
+    "Contabilità pubblica",
+    "Ragioneria generale e applicata",
+    "Economia politica / Scienza delle finanze",
+    "Bilancio dello Stato e degli Enti Locali",
+    "Gestione delle risorse finanziarie e controllo di gestione",
+    "Ingegneria civile / infrastrutture",
+    "Ingegneria elettronica / informatica",
+    "Architettura e urbanistica",
+    "Agraria / forestale / ambiente",
+    "Informatica (programmazione, reti, sicurezza)",
+    "Statistica e metodologia della ricerca",
+    "Tecniche di comunicazione e gestione documentale",
+    "Sicurezza sul lavoro (D.Lgs. 81/08)",
+    "Protezione civile e gestione emergenze",
+    "Lingua italiana e comprensione testuale",
+    "Lingue straniere",
+    "Cultura generale / storia / geografia",
+    "Ordinamenti delle Forze Armate / Polizia",
+    "Tecniche investigative e sicurezza",
+    "Psicologia applicata alle Forze dell’Ordine",
+    "Educazione fisica",
+    "Pedagogia e didattica",
+    "Metodologia dell’insegnamento",
+    "Psicologia dell’apprendimento",
+    "Logica e ragionamento critico",
+    "Quiz di cultura generale",
+    "Matematica di base e ragionamento numerico",
+    "Problem solving",
+    "Informatica di base"
+  ];
+
+  // Combina le materie del bando con quelle di default, rimuove duplicati e "Generale"
+  const allMaterie = Array.from(new Set([
+    ...materie.map(m => m.nome),
+    ...DEFAULT_MATERIE
+  ])).filter(nome => nome !== 'Generale').sort();
+
   const totalFlashcards = flashcards.length;
   const materialsWithFlashcards = materials.filter((m) => (m.flashcardGenerate || 0) > 0).length;
 
@@ -386,12 +439,11 @@ export default function Phase2Page() {
                           <SelectValue placeholder="Seleziona materia" />
                         </SelectTrigger>
                         <SelectContent>
-                          {materie.map((m) => (
-                            <SelectItem key={m.nome} value={m.nome}>
-                              {m.nome}
+                          {allMaterie.map((nome) => (
+                            <SelectItem key={nome} value={nome}>
+                              {nome}
                             </SelectItem>
                           ))}
-                          <SelectItem value="Generale">Generale</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

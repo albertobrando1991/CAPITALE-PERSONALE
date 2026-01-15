@@ -33,7 +33,8 @@ import {
   Crown,
   Calendar as CalendarIcon,
   Lightbulb,
-  Wind
+  Wind,
+  Zap
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -49,11 +50,12 @@ const navItems = [
   { title: "Fonti & Materiali", url: "/fonti-placeholder", icon: Book },
   { title: "Fase 1: SQ3R", url: "/fase1-link-placeholder", icon: BookOpen },
   { title: "Fase 2: Acquisizione", url: "/phase2", icon: Layers },
+  { title: "Fase 3: Consolidamento", url: "/fase3-link-placeholder", icon: Zap },
+  { title: "Fase 4: Simulazioni Esame", url: "/simulazioni", icon: Target },
   { title: "Mnemotecniche", url: "/mnemotecniche", icon: Lightbulb },
   { title: "Libreria Pubblica", url: "/libreria", icon: Book },
   { title: "Flashcard", url: "/flashcards", icon: Layers },
   { title: "Quiz", url: "/quiz", icon: HelpCircle },
-  { title: "Simulazioni", url: "/simulazioni", icon: Target },
   { title: "Pomodoro", url: "/pomodoro", icon: Timer },
   { title: "Benessere", url: "/benessere", icon: Wind },
   { title: "Statistiche", url: "/stats", icon: BarChart3 },
@@ -116,6 +118,14 @@ export function AppSidebar({ userName, userLevel, onLogout }: AppSidebarProps) {
     }
     if (item.title === "Fase 2: Acquisizione") {
       return { ...item, url: getTargetUrl('/fase2') };
+    }
+    // Aggiungi Fase 3
+    if (item.title === "Fase 3: Consolidamento") {
+      return { ...item, url: getTargetUrl('/fase3') };
+    }
+    // Aggiungi Fase 4
+    if (item.title === "Fase 4: Simulazioni Esame") {
+      return { ...item, url: getTargetUrl('/simulazioni') };
     }
     if (item.title === "Flashcard") {
       return { ...item, url: activeConcorsoId !== 'default' ? `/flashcards?concorsoId=${activeConcorsoId}` : '/flashcards' };

@@ -1,13 +1,11 @@
-export const ADMIN_EMAILS = [
-  'albertobrando1991@gmail.com',
-  'dev@trae-ai.com', // Per test
-];
+export const ADMIN_EMAILS = process.env.ADMIN_EMAILS 
+  ? process.env.ADMIN_EMAILS.split(',').map(email => email.trim())
+  : []; // Nessun admin di default se manca env var
 
 // Staff emails (can upload podcasts and manage requests)
-export const STAFF_EMAILS = [
-  'staff@trae-ai.com',
-  'support@trae-ai.com',
-];
+export const STAFF_EMAILS = process.env.STAFF_EMAILS
+  ? process.env.STAFF_EMAILS.split(',').map(email => email.trim())
+  : [];
 
 export function isAdmin(email?: string): boolean {
   if (!email) return false;

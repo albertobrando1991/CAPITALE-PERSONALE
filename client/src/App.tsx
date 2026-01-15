@@ -43,6 +43,10 @@ import { BenessereProvider } from '@/contexts/BenessereContext';
 import BenessereWidget from '@/components/benessere/BenessereWidget';
 import HydrationReminder from '@/components/benessere/HydrationReminder';
 import BenesserePage from '@/pages/BenesserePage';
+import { Fase3Provider } from '@/contexts/Fase3Context';
+import Fase3Dashboard from '@/pages/concorsi/Fase3Dashboard';
+import DrillSessionPage from '@/pages/concorsi/fase3/DrillSessionPage';
+import ReviewCalendarPage from '@/pages/concorsi/fase3/ReviewCalendarPage';
 
 function ProtectedRoutes() {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
@@ -106,6 +110,9 @@ function ProtectedRoutes() {
               <Route path="/podcast/my-requests" component={MyPodcastRequestsPage} />
               <Route path="/concorsi/:concorsoId/fase1/capitolo/:id" component={CapitoloPage} />
               <Route path="/concorsi/:concorsoId/fase2" component={Phase2Page} />
+              <Route path="/concorsi/:concorsoId/fase3" component={Fase3Dashboard} />
+              <Route path="/concorsi/:concorsoId/fase3/drill" component={DrillSessionPage} />
+              <Route path="/concorsi/:concorsoId/fase3/review" component={ReviewCalendarPage} />
               <Route path="/admin" component={AdminDashboard} />
               <Route component={NotFound} />
             </Switch>
@@ -140,8 +147,9 @@ function Router() {
     <ErrorBoundary>
       <BenessereProvider>
         <PomodoroProvider>
-          <Switch>
-          <Route path="/">
+          <Fase3Provider>
+            <Switch>
+            <Route path="/">
             <HomePage />
           </Route>
           <Route path="/login">
@@ -162,6 +170,7 @@ function Router() {
         {isAuthenticated && location !== '/pomodoro' && <PomodoroWidget />}
         {isAuthenticated && <BenessereWidget />}
         {isAuthenticated && <HydrationReminder />}
+        </Fase3Provider>
         </PomodoroProvider>
       </BenessereProvider>
     </ErrorBoundary>

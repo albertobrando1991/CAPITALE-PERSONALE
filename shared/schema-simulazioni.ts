@@ -19,7 +19,8 @@ export const simulazioni = pgTable(
     durataMinuti: integer("durata_minuti").notNull().default(60),
     tipoSimulazione: text("tipo_simulazione").notNull().default("completa"), // "completa" | "materia" | "allenamento"
     materieFiltrate: jsonb("materie_filtrate").default([]), // Array di stringhe con nomi materie
-    
+    generatedQuestions: jsonb("generated_questions").default([]), // Nuova colonna per domande generate AI
+
     // Stato simulazione
     completata: boolean("completata").notNull().default(false),
     punteggio: real("punteggio"), // Punteggio finale calcolato

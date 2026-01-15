@@ -7,12 +7,11 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertConcorsoSchema, insertMaterialSchema, insertCalendarEventSchema, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "@shared/schema";
 import { calculateSM2, initializeSM2 } from "./sm2-algorithm";
 import { z } from "zod";
-import OpenAI from "openai";
+import { generateWithFallback, getOpenAIClient, getGeminiClient, cleanJson } from "./services/ai";
 import multer from "multer";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { readFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Configura multer per salvare file su disco
 const uploadDir = join(process.cwd(), "uploads", "materials");
@@ -101,89 +100,6 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   return fullText;
 }
 
-let openai: OpenAI | null = null;
-let genAI: GoogleGenerativeAI | null = null;
-
-function getOpenAIClient() {
-  if (!openai) {
-    console.log("[getOpenAIClient] Controllo chiave API...");
-    const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-    
-    if (!apiKey) {
-      console.error("[getOpenAIClient] ERRORE: OPENAI_API_KEY non configurata!");
-      throw new Error("OPENAI_API_KEY non configurata. Aggiungi OPENAI_API_KEY nel file .env");
-    }
-    
-    console.log("[getOpenAIClient] Creazione client OpenAI...");
-    openai = new OpenAI({
-      apiKey: apiKey,
-      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-    });
-    console.log("[getOpenAIClient] Client creato con successo");
-  }
-  return openai;
-}
-
-function getGeminiClient() {
-  if (!genAI) {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (apiKey) {
-      genAI = new GoogleGenerativeAI(apiKey);
-    }
-  }
-  return genAI;
-}
-
-function cleanJson(text: string): string {
-  if (!text) return "{}";
-  console.log("[cleanJson] Input text length:", text.length);
-  
-  // Rimuovi blocchi markdown json
-  let cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-  
-  // Cerca la prima parentesi quadra o graffa
-  const firstOpenBrace = cleaned.indexOf("{");
-  const firstOpenBracket = cleaned.indexOf("[");
-  
-  let startIndex = -1;
-  let endIndex = -1;
-  
-  // Determina se inizia prima un oggetto o un array
-  if (firstOpenBrace !== -1 && (firstOpenBracket === -1 || firstOpenBrace < firstOpenBracket)) {
-    // È un oggetto
-    startIndex = firstOpenBrace;
-    endIndex = cleaned.lastIndexOf("}");
-  } else if (firstOpenBracket !== -1) {
-    // È un array
-    startIndex = firstOpenBracket;
-    endIndex = cleaned.lastIndexOf("]");
-  }
-  
-  if (startIndex !== -1 && endIndex !== -1) {
-    cleaned = cleaned.substring(startIndex, endIndex + 1);
-    console.log("[cleanJson] Extracted JSON substring length:", cleaned.length);
-  } else {
-    console.log("[cleanJson] WARNING: Could not find valid JSON start/end indices");
-  }
-  
-  return cleaned;
-}
-
-// Helper to use Gemini for analysis
-async function analyzeWithGemini(prompt: string, content: string): Promise<string> {
-  const client = getGeminiClient();
-  if (!client) throw new Error("Gemini API key not configured");
-  
-  const model = client.getGenerativeModel({ model: "gemini-2.0-flash" });
-  
-  const result = await model.generateContent([
-    prompt,
-    content
-  ]);
-  
-  return result.response.text();
-}
-
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
 }
@@ -209,6 +125,7 @@ export async function registerRoutes(
   console.log("Registering routes...");
 
   // Registra routes
+  // app.use('/api/fase3', fase3Routes); // Moved to index.ts
   registerSQ3RRoutes(app);
   registerLibreriaRoutes(app);
   registerEdisesRoutes(app);
@@ -279,61 +196,20 @@ VINCOLI:
 
 Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
 
-      // SYSTEM HYBRID: Use Gemini if available (faster/cheaper), fallback to OpenAI
+      // SYSTEM HYBRID: Use Gemini -> Vercel Gateway -> OpenAI
       let spiegazione: string | null = null;
-      const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
 
-      if (shouldUseGemini) {
-        try {
-           console.log("Tentativo generazione con Gemini...");
-           const geminiPrompt = `${prompt} Restituisci SOLO il testo della spiegazione.`;
-           spiegazione = await analyzeWithGemini(geminiPrompt, "");
-           // Clean markdown
-           if (spiegazione) {
-             spiegazione = spiegazione.replace(/```/g, "").trim();
-             console.log("Gemini ha generato una spiegazione di lunghezza:", spiegazione.length);
-           }
-        } catch (err: any) {
-           console.error("Gemini explanation failed, falling back to OpenAI", err.message);
-           spiegazione = null;
-        }
-      } else {
-        console.log("Gemini non configurato, skip.");
-      }
-
-      if (!spiegazione) {
-        // Chiama OpenAI
-        try {
-          const openai = getOpenAIClient();
-          if (!openai) throw new Error("OpenAI Client non inizializzato");
-          
-          console.log('🤖 Chiamata OpenAI per spiegazione...');
-          
-          const completion = await openai.chat.completions.create({
-            model: 'gpt-4o-mini', // Modello veloce ed economico
-            messages: [
-              {
-                role: 'system',
-                content: 'Sei un tutor esperto e paziente per concorsi pubblici italiani. Spiega concetti complessi in modo semplice e memorabile.'
-              },
-              {
-                role: 'user',
-                content: prompt
-              }
-            ],
-            temperature: 0.7,
-            max_tokens: 800,
-            top_p: 1,
-            frequency_penalty: 0.3,
-            presence_penalty: 0.3
-          });
-          
-          spiegazione = completion.choices[0]?.message?.content;
-        } catch (openaiErr: any) {
-          console.error("Errore OpenAI:", openaiErr.message);
-          // Rilancia l'errore per farlo catturare dal catch generale
-          throw new Error(`Errore generazione AI: ${openaiErr.message}`);
-        }
+      try {
+        const systemPrompt = "Sei un tutor esperto e paziente per concorsi pubblici italiani. Spiega concetti complessi in modo semplice e memorabile.";
+        spiegazione = await generateWithFallback({
+          systemPrompt,
+          userPrompt: prompt,
+          temperature: 0.7
+        });
+      } catch (err: any) {
+        console.error("Errore generazione spiegazione:", err.message);
+        // Rilancia l'errore per farlo catturare dal catch generale
+        throw new Error(`Errore generazione AI: ${err.message}`);
       }
       
       if (!spiegazione) {
@@ -874,13 +750,9 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
 
       const contentToAnalyze = material.contenuto.substring(0, 30000);
 
-      // SYSTEM HYBRID: Use Gemini if available, fallback to OpenAI
       let content = "[]";
-      const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-
-      if (shouldUseGemini) {
-        try {
-           const geminiPrompt = `Sei un esperto creatore di flashcard per la preparazione ai concorsi pubblici italiani. 
+      try {
+        const systemPrompt = `Sei un esperto creatore di flashcard per la preparazione ai concorsi pubblici italiani. 
 Genera ALMENO 50 flashcard diverse dal testo fornito. Crea domande precise e risposte concise che coprono tutti i concetti importanti.
 
 ISTRUZIONI:
@@ -894,44 +766,17 @@ Restituisci SOLO un array JSON di flashcard:
   {"fronte": "Domanda?", "retro": "Risposta"},
   ...
 ]`;
-           content = await analyzeWithGemini(geminiPrompt, contentToAnalyze);
-           // Use robust cleanJson
-           content = cleanJson(content);
-        } catch (err) {
-           console.error("Gemini flashcard generation failed, falling back to OpenAI", err);
-           content = "[]"; // Reset to trigger fallback
-        }
-      }
-
-      if (content === "[]" || !content) {
-        const openaiClient = getOpenAIClient();
-        const response = await openaiClient.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            {
-              role: "system",
-              content: `Sei un esperto creatore di flashcard per la preparazione ai concorsi pubblici italiani. 
-Genera ALMENO 50 flashcard diverse dal testo fornito. Crea domande precise e risposte concise che coprono tutti i concetti importanti.
-
-ISTRUZIONI:
-- Genera il maggior numero possibile di flashcard (minimo 50, idealmente 60-80)
-- Copri TUTTI i concetti chiave, definizioni, articoli di legge, date, numeri
-- Varia i tipi di domande: definizioni, applicazioni, confronti, casi pratici
-- Ogni flashcard deve essere unica e non ripetitiva
-
-Restituisci SOLO un array JSON di flashcard:
-[
-  {"fronte": "Domanda?", "retro": "Risposta"},
-  ...
-]`
-            },
-            { role: "user", content: contentToAnalyze }
-          ],
-          temperature: 0.4,
-          max_tokens: 16000,
+        
+        console.log("Invio richiesta generazione flashcard...");
+        content = await generateWithFallback({
+           systemPrompt,
+           userPrompt: contentToAnalyze,
+           jsonMode: true,
+           temperature: 0.4
         });
-        content = response.choices[0]?.message?.content || "[]";
-        content = cleanJson(content);
+      } catch (err: any) {
+         console.error("Errore generazione flashcards:", err.message);
+         // content rimane "[]"
       }
       
       let flashcardsData = [];
@@ -1118,155 +963,10 @@ Restituisci SOLO un array JSON di flashcard:
   });
 
   // Endpoint per spiegazioni AI durante studio flashcard
-  app.post('/api/flashcards/:id/spiega', isAuthenticated, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const userId = getUserId(req);
-      
-      console.log(`💡 POST /api/flashcards/${id}/spiega`);
-      
-      // Controlla se esiste già una spiegazione in cache
-      // Nota: db.query non è disponibile qui, usiamo storage o implementiamo query diretta se necessario
-      // Per semplicità ora, generiamo sempre (ma potremmo aggiungere cache su storage.ts)
-      
-      // Ottieni la flashcard
-      const flashcard = await storage.getFlashcard(id, userId);
-      
-      if (!flashcard) {
-        return res.status(404).json({ error: 'Flashcard non trovata' });
-      }
-      
-      // Ottieni il concorso per contesto
-      const concorso = await storage.getConcorso(flashcard.concorsoId, userId);
-      
-      if (!concorso) {
-        return res.status(404).json({ error: 'Concorso non trovato' });
-      }
-      
-      console.log('📚 Generazione spiegazione per:', {
-        materia: flashcard.materia,
-        domanda: flashcard.fronte.substring(0, 50) + '...'
-      });
-      
-      // Prepara il prompt per OpenAI
-      const prompt = `Sei un tutor esperto per concorsi pubblici italiani.
-
-CONTESTO CONCORSO:
-- Ente: ${concorso.titoloEnte}
-- Tipo: ${concorso.tipoConcorso}
-- Materia: ${flashcard.materia}
-
-DOMANDA DELLA FLASHCARD:
-${flashcard.fronte}
-
-RISPOSTA CORRETTA:
-${flashcard.retro}
-
-COMPITO:
-Fornisci una spiegazione SEMPLICE e APPROFONDITA di questo argomento, come se stessi spiegando a uno studente che deve preparare questo concorso pubblico.
-
-STRUTTURA DELLA SPIEGAZIONE:
-1. **Spiegazione Semplice** (2-3 frasi chiare, come se parlassi a un bambino)
-2. **Contesto e Importanza** (perché è rilevante per il concorso)
-3. **Dettagli Chiave** (i punti fondamentali da ricordare)
-4. **Esempio Pratico** (un caso concreto nella Pubblica Amministrazione italiana)
-5. **Come Ricordarlo** (un trucco mnemonico o analogia)
-
-VINCOLI:
-- Usa un linguaggio SEMPLICE e DIRETTO
-- Massimo 300 parole
-- Evita tecnicismi eccessivi
-- Focalizzati sulla preparazione al concorso
-- Sii pratico e concreto
-
-Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
-
-      // SYSTEM HYBRID: Use Gemini if available (faster/cheaper), fallback to OpenAI
-      let spiegazione: string | null = null;
-      const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-
-      if (shouldUseGemini) {
-        try {
-           console.log("Tentativo generazione con Gemini...");
-           const geminiPrompt = `${prompt} Restituisci SOLO il testo della spiegazione.`;
-           spiegazione = await analyzeWithGemini(geminiPrompt, "");
-           // Clean markdown
-           if (spiegazione) {
-             spiegazione = spiegazione.replace(/```/g, "").trim();
-             console.log("Gemini ha generato una spiegazione di lunghezza:", spiegazione.length);
-           }
-        } catch (err: any) {
-           console.error("Gemini explanation failed, falling back to OpenAI", err.message);
-           spiegazione = null;
-        }
-      } else {
-        console.log("Gemini non configurato, skip.");
-      }
-
-      if (!spiegazione) {
-        // Chiama OpenAI
-        try {
-          const openai = getOpenAIClient();
-          if (!openai) throw new Error("OpenAI Client non inizializzato");
-          
-          console.log('🤖 Chiamata OpenAI per spiegazione...');
-          
-          const completion = await openai.chat.completions.create({
-            model: 'gpt-4o-mini', // Modello veloce ed economico
-            messages: [
-              {
-                role: 'system',
-                content: 'Sei un tutor esperto e paziente per concorsi pubblici italiani. Spiega concetti complessi in modo semplice e memorabile.'
-              },
-              {
-                role: 'user',
-                content: prompt
-              }
-            ],
-            temperature: 0.7,
-            max_tokens: 800,
-            top_p: 1,
-            frequency_penalty: 0.3,
-            presence_penalty: 0.3
-          });
-          
-          spiegazione = completion.choices[0]?.message?.content;
-        } catch (openaiErr: any) {
-          console.error("Errore OpenAI:", openaiErr.message);
-          // Rilancia l'errore per farlo catturare dal catch generale
-          throw new Error(`Errore generazione AI: ${openaiErr.message}`);
-        }
-      }
-      
-      if (!spiegazione) {
-        throw new Error('Nessuna spiegazione ricevuta da AI (risposta vuota)');
-      }
-      
-      console.log('✅ Spiegazione generata:', spiegazione.substring(0, 100) + '...');
-      
-      // Salva la spiegazione in cache (opzionale)
-      // Puoi creare una tabella spiegazioni_cache per non rigenerare le stesse
-      
-      res.json({
-        success: true,
-        spiegazione,
-        flashcard: {
-          id: flashcard.id,
-          fronte: flashcard.fronte,
-          materia: flashcard.materia
-        }
-      });
-      
-    } catch (error: any) {
-      console.error('❌ Errore generazione spiegazione:', error);
-      res.status(500).json({
-        error: 'Errore nella generazione della spiegazione',
-        dettagli: error instanceof Error ? error.message : 'Errore sconosciuto'
-      });
-    }
-  });
-
-
+  // NOTA: Questo endpoint sembra duplicato (vedi sopra riga 136).
+  // Manteniamo quello sopra e rimuoviamo questo se necessario, ma per ora lo lascio commentato o rimuovo se identico.
+  // Quello sopra era riga 136. Quello qui sotto era riga 1026.
+  // Sono identici. Rimuovo il duplicato.
 
   app.post("/api/analyze-bando", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
     try {
@@ -1374,62 +1074,19 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
       const userPrompt = `Analizza questo bando di concorso pubblico italiano ed estrai tutte le informazioni richieste:\n\n${contentToSend}`;
       console.log(`[BANDO] Invio ${contentToSend.length} caratteri a OpenAI`);
 
-      // SYSTEM HYBRID: Use Gemini if available (faster/cheaper for large context), fallback to OpenAI
       let content: string | null = null;
-      const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-
-      if (shouldUseGemini) {
-        console.log("Using Gemini for analysis...");
-        try {
-           const geminiPrompt = `${systemPrompt}\n\n${userPrompt} Restituisci SOLO JSON valido senza markdown.`;
-           content = await analyzeWithGemini(geminiPrompt, contentToSend);
-           console.log("[BANDO] Risposta Gemini ricevuta (lunghezza: " + content.length + ")");
-           content = cleanJson(content);
-        } catch (err) {
-           console.error("Gemini analysis failed, falling back to OpenAI", err);
-           // Fallback will happen below if content is null
-           content = null;
-        }
-      }
-
-      if (!content) {
-        // 5. Chiama OpenAI
-        console.log("[BANDO] Chiamata API OpenAI...");
-        try {
-          const openaiClient = getOpenAIClient();
-          const response = await openaiClient.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt }
-            ],
-            response_format: { type: "json_object" },
-            temperature: 0.2,
-            max_tokens: 4000,
-          });
-          console.log("[BANDO] Risposta OpenAI ricevuta");
-          content = response.choices[0]?.message?.content;
-          if (content) {
-            content = cleanJson(content);
-          }
-        } catch (openaiError: any) {
-          console.error("[BANDO] ERRORE chiamata OpenAI:", openaiError.message);
-          console.error("[BANDO] Status:", openaiError.response?.status);
-          console.error("[BANDO] Stack:", openaiError.stack);
-          if (openaiError.response?.status === 401) {
-            return res.status(500).json({ 
-              error: "Chiave API OpenAI non valida",
-              details: "Verifica la chiave nel file .env"
-            });
-          }
-          if (openaiError.response?.status === 429) {
-            return res.status(500).json({ 
-              error: "Limite di rate raggiunto",
-              details: "Riprova più tardi"
-            });
-          }
-          throw openaiError;
-        }
+      try {
+        console.log("Invio richiesta AI per analisi bando...");
+        content = await generateWithFallback({
+           systemPrompt,
+           userPrompt,
+           jsonMode: true,
+           temperature: 0.2
+        });
+        console.log("Risposta AI ricevuta");
+      } catch (err: any) {
+        console.error("[BANDO] ERRORE generazione AI:", err.message);
+        throw err;
       }
 
       // 6. Parse risposta
@@ -1618,36 +1275,19 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
 
       const userPrompt = `Genera un quiz di 15 domande basato su questo testo:\n\n${contentToAnalyze}`;
 
-      // 3. Chiamata AI (Gemini o OpenAI)
+      // 3. Chiamata AI (Gemini -> Vercel -> OpenAI)
       let questionsJson = "[]";
-      const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-
-      if (shouldUseGemini) {
-        try {
-           console.log("[QUIZ-GEN] Usando Gemini...");
-           const geminiPrompt = `${systemPrompt}\n\n${userPrompt} Restituisci SOLO il JSON valido.`;
-           questionsJson = await analyzeWithGemini(geminiPrompt, "");
-           questionsJson = cleanJson(questionsJson);
-        } catch (err) {
-           console.error("[QUIZ-GEN] Gemini fallito, fallback a OpenAI", err);
-           questionsJson = "[]";
-        }
-      }
-
-      if (questionsJson === "[]" || !questionsJson) {
-        console.log("[QUIZ-GEN] Usando OpenAI...");
-        const openaiClient = getOpenAIClient();
-        const response = await openaiClient.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.3, // Bassa temperatura per fedeltà al testo
+      try {
+        console.log("[QUIZ-GEN] Invio richiesta AI...");
+        questionsJson = await generateWithFallback({
+           systemPrompt,
+           userPrompt,
+           jsonMode: true,
+           temperature: 0.3
         });
-        questionsJson = response.choices[0]?.message?.content || "[]";
-        questionsJson = cleanJson(questionsJson);
+      } catch (err: any) {
+        console.error("[QUIZ-GEN] ERRORE AI:", err.message);
+        // Lascia questionsJson come "[]" per gestire l'errore nel parsing
       }
 
       // 4. Parse e Risposta
@@ -2151,10 +1791,9 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
 
       console.log("[SPECIALISTA] Richiesta spiegazione per:", concetto.substring(0, 100));
 
-      // SYSTEM HYBRID: Use Gemini if available (faster/cheaper), fallback to OpenAI
+      // SYSTEM HYBRID: Use Gemini -> Vercel -> OpenAI
       let spiegazione: string | null = null;
-      const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-
+      
       const systemPrompt = `Sei uno specialista esperto in concorsi pubblici italiani, con focus su: ${materieConcorso}.
 
 Il tuo compito è spiegare concetti in modo CHIARO, SEMPLICE e DIRETTO.
@@ -2173,34 +1812,16 @@ REGOLE:
 
 IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi sapere se hai altre domande".`;
 
-      if (shouldUseGemini) {
-        try {
-           const geminiPrompt = `${systemPrompt}\n\nSpiega questo concetto: ${concetto}`;
-           spiegazione = await analyzeWithGemini(geminiPrompt, "");
-           // Clean markdown
-           spiegazione = spiegazione.replace(/```/g, "").trim();
-        } catch (err) {
-           console.error("Gemini explanation failed, falling back to OpenAI", err);
-           spiegazione = null;
-        }
-      }
-
-      if (!spiegazione) {
-        const openaiClient = getOpenAIClient();
-        if (!openaiClient) {
-          return res.status(500).json({ error: "Servizio AI non disponibile" });
-        }
-
-        const response = await openaiClient.chat.completions.create({
-          model: "gpt-4o-mini", // Usa mini per velocità e costo ridotto
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: `Spiega questo concetto: ${concetto}` }
-          ],
-          temperature: 0.7,
-          max_tokens: 500,
+      try {
+        const userPrompt = `Spiega questo concetto: ${concetto}`;
+        spiegazione = await generateWithFallback({
+          systemPrompt,
+          userPrompt,
+          temperature: 0.7
         });
-        spiegazione = response.choices[0].message.content;
+      } catch (err: any) {
+        console.error("Errore generazione spiegazione:", err.message);
+        throw new Error(`Errore generazione AI: ${err.message}`);
       }
 
       if (!spiegazione) {
@@ -2235,8 +1856,6 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
       });
     }
   });
-
-
 
   // Endpoint per statistiche aggregate dell'utente
   app.get("/api/stats", isAuthenticated, async (req: Request, res: Response) => {
