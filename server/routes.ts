@@ -100,6 +100,148 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   return fullText;
 }
 
+<<<<<<< HEAD
+=======
+let openai: OpenAI | null = null;
+let genAI: GoogleGenerativeAI | null = null;
+
+function getOpenAIClient() {
+  if (!openai) {
+    console.log("[getOpenAIClient] Controllo chiave API...");
+    const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    
+    if (!apiKey) {
+      console.error("[getOpenAIClient] ERRORE: OPENAI_API_KEY non configurata!");
+      throw new Error("OPENAI_API_KEY non configurata. Aggiungi OPENAI_API_KEY nel file .env");
+    }
+    
+    console.log("[getOpenAIClient] Creazione client OpenAI...");
+    openai = new OpenAI({
+      apiKey: apiKey,
+      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+    });
+    console.log("[getOpenAIClient] Client creato con successo");
+  }
+  return openai;
+}
+
+function getGeminiClient() {
+  if (!genAI) {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (apiKey) {
+      genAI = new GoogleGenerativeAI(apiKey);
+    }
+  }
+  return genAI;
+}
+
+function cleanJson(text: string): string {
+  if (!text) return "{}";
+  console.log("[cleanJson] Input text length:", text.length);
+  
+  // Rimuovi blocchi markdown json
+  let cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
+  
+  // Cerca la prima parentesi quadra o graffa
+  const firstOpenBrace = cleaned.indexOf("{");
+  const firstOpenBracket = cleaned.indexOf("[");
+  
+  let startIndex = -1;
+  let endIndex = -1;
+  
+  // Determina se inizia prima un oggetto o un array
+  if (firstOpenBrace !== -1 && (firstOpenBracket === -1 || firstOpenBrace < firstOpenBracket)) {
+    // È un oggetto
+    startIndex = firstOpenBrace;
+    endIndex = cleaned.lastIndexOf("}");
+  } else if (firstOpenBracket !== -1) {
+    // È un array
+    startIndex = firstOpenBracket;
+    endIndex = cleaned.lastIndexOf("]");
+  }
+  
+  if (startIndex !== -1 && endIndex !== -1) {
+    cleaned = cleaned.substring(startIndex, endIndex + 1);
+    console.log("[cleanJson] Extracted JSON substring length:", cleaned.length);
+  } else {
+    console.log("[cleanJson] WARNING: Could not find valid JSON start/end indices");
+  }
+  
+  return cleaned;
+}
+
+// Helper to use Gemini for analysis
+async function analyzeWithGemini(prompt: string, content: string): Promise<string> {
+  const client = getGeminiClient();
+  if (!client) throw new Error("Gemini API key not configured");
+  
+  const model = client.getGenerativeModel({ model: "gemini-2.0-flash" });
+  
+  const result = await model.generateContent([
+    prompt,
+    content
+  ]);
+  
+  return result.response.text();
+}
+
+function getVercelClient() {
+  const apiKey = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_AI_API_KEY;
+  const baseURL = process.env.AI_GATEWAY_BASE_URL || process.env.VERCEL_AI_BASE_URL;
+  if (!apiKey || !baseURL) return null;
+  return new OpenAI({ apiKey, baseURL });
+}
+
+async function generateWithFallback(opts: { systemPrompt: string; userPrompt: string; jsonMode?: boolean; temperature?: number; }): Promise<string> {
+  const { systemPrompt, userPrompt, jsonMode = false, temperature = 0.7 } = opts;
+  let out: string | null = null;
+  try {
+    out = await analyzeWithGemini(`${systemPrompt}${jsonMode ? "\nRestituisci SOLO JSON valido." : ""}`, userPrompt);
+    if (jsonMode && out) out = cleanJson(out);
+  } catch {}
+  if (out && out.trim().length > 0) return out;
+  try {
+    const c = getOpenAIClient();
+    const r = await c.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      response_format: jsonMode ? { type: "json_object" } : undefined,
+      temperature
+    });
+    out = r.choices[0]?.message?.content || null;
+    if (jsonMode && out) out = cleanJson(out);
+  } catch {}
+  if (out && out.trim().length > 0) return out;
+  try {
+    const vc = getVercelClient();
+    if (vc) {
+      const r = await vc.chat.completions.create({
+        model: "openai/gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        temperature
+      });
+      out = r.choices[0]?.message?.content || null;
+      if (jsonMode && out) out = cleanJson(out);
+    }
+  } catch {}
+  if (out && out.trim().length > 0) return out || "";
+  if (jsonMode) {
+    const tokens = userPrompt.replace(/[^\p{L}\p{N} ]+/gu, " ").split(/\s+/).filter(Boolean);
+    const base = Array.from(new Set(tokens)).filter(t => t.length > 4).slice(0, 10);
+    const items = (base.length ? base : ["Concetto","Definizione","Principio","Procedura","Norma"]).slice(0, 10)
+      .map(k => ({ fronte: `Che cos'è ${k}?`, retro: `${k}: spiegazione sintetica.` }));
+    return JSON.stringify(items);
+  }
+  return "";
+}
+
+>>>>>>> 35246ff (Aggiornamento: Fix API Gemini, eliminazione flashcard, menu materie completo)
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
 }
@@ -749,6 +891,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       }
 
       const contentToAnalyze = material.contenuto.substring(0, 30000);
+<<<<<<< HEAD
 
       let content = "[]";
       try {
@@ -778,35 +921,100 @@ Restituisci SOLO un array JSON di flashcard:
          console.error("Errore generazione flashcards:", err.message);
          // content rimane "[]"
       }
+=======
+>>>>>>> 35246ff (Aggiornamento: Fix API Gemini, eliminazione flashcard, menu materie completo)
       
-      let flashcardsData = [];
+      console.log(`[GEN-FLASHCARDS] Analisi testo (primi 500 caratteri): ${contentToAnalyze.substring(0, 500)}...`);
+
+      const systemPrompt = `Sei un esperto creatore di flashcard per concorsi pubblici italiani.
+Il tuo compito è generare flashcard basate ESCLUSIVAMENTE sul testo fornito.
+NON usare conoscenze esterne. Attieniti strettamente al contenuto del documento.
+Genera almeno 30 flashcard (fino a 50 se il testo lo consente) con domande precise e risposte concise.
+Restituisci SOLO un array JSON valido con oggetti { "fronte": "domanda", "retro": "risposta" }.`;
+      
+      const content = await generateWithFallback({ systemPrompt, userPrompt: `Testo da analizzare:\n\n${contentToAnalyze}`, jsonMode: true, temperature: 0.3 });
+      
+      let flashcardsData: any = [];
       try {
-        flashcardsData = JSON.parse(content);
+        const parsed = typeof content === 'string' ? JSON.parse(content) : content;
+        if (Array.isArray(parsed)) {
+          flashcardsData = parsed;
+        } else if (parsed && Array.isArray(parsed.flashcards)) {
+          flashcardsData = parsed.flashcards;
+        } else if (parsed && Array.isArray(parsed.questions)) {
+          // Converti struttura domande in flashcard
+          flashcardsData = parsed.questions.map((q: any) => ({
+            fronte: q.question || q.text,
+            retro: Array.isArray(q.options) ? q.options[(typeof q.correctAnswer === 'number' ? q.correctAnswer : 0)] || q.correctAnswer : (q.correctAnswer || q.explanation || 'Risposta')
+          }));
+        } else if (parsed && Array.isArray(parsed.items)) {
+          flashcardsData = parsed.items;
+        } else if (typeof parsed === 'string') {
+          try {
+            const second = JSON.parse(parsed);
+            flashcardsData = Array.isArray(second) ? second : (second.flashcards || second.items || []);
+          } catch {
+            flashcardsData = [];
+          }
+        }
       } catch (parseError) {
         console.error("Error parsing flashcards JSON:", parseError);
-        console.error("Content that failed parsing:", content.substring(0, 200) + "...");
-        throw new Error("Errore nel parsing della risposta AI");
+        console.error("Content that failed parsing:", String(content).substring(0, 200) + "...");
+        flashcardsData = [];
+      }
+
+      if (!Array.isArray(flashcardsData)) {
+        flashcardsData = [];
+      }
+
+      // Se l'AI non ha restituito dati validi, lancia un errore invece di generare placeholder inutili
+      if (flashcardsData.length === 0) {
+        console.error("[GEN-FLASHCARDS] Errore: Nessuna flashcard generata dall'AI (tutti i fallback falliti o parsing errato)");
+        return res.status(500).json({ 
+          error: "Impossibile generare flashcard dal documento.", 
+          details: "L'intelligenza artificiale non è riuscita a estrarre domande dal testo. Verifica che il PDF contenga testo selezionabile e non sia una scansione immagine."
+        });
       }
 
       // Inizializza parametri SM-2 per nuove flashcard
       const sm2Initial = initializeSM2();
       const now = new Date();
       
-      const flashcardsToInsert = flashcardsData.map((f: any) => ({
-        userId,
-        concorsoId: material.concorsoId,
-        materia: material.materia || "Generale",
-        fonte: material.nome,
-        fronte: f.fronte,
-        retro: f.retro,
-        tipo: "concetto",
-        // Inizializza parametri SM-2
-        easeFactor: sm2Initial.easeFactor,
-        intervalloGiorni: sm2Initial.intervalloGiorni,
-        numeroRipetizioni: sm2Initial.numeroRipetizioni,
-        prossimoRipasso: now,
-        prossimRevisione: now, // Retrocompatibilità
-      }));
+      const list = Array.isArray(flashcardsData) ? flashcardsData : [];
+      const flashcardsToInsert = list
+        .map((f: any) => {
+          let fronte = typeof f?.fronte === 'string' ? f.fronte : '';
+          if (!fronte) fronte = typeof f?.question === 'string' ? f.question : '';
+          if (!fronte) fronte = typeof f?.text === 'string' ? f.text : '';
+
+          let retro = typeof f?.retro === 'string' ? f.retro : '';
+          if (!retro && Array.isArray(f?.options)) {
+            const idx = typeof f?.correctAnswer === 'number' ? f.correctAnswer : -1;
+            if (idx >= 0 && idx < f.options.length) retro = f.options[idx];
+          }
+          if (!retro && typeof f?.correctAnswer === 'string') retro = f.correctAnswer;
+          if (!retro && typeof f?.explanation === 'string') retro = f.explanation;
+
+          fronte = (fronte || 'Domanda').toString().trim();
+          retro = (retro || 'Risposta').toString().trim();
+
+          return {
+            userId,
+            concorsoId: material.concorsoId,
+            materialId, // Link corretto al materiale
+            materia: material.materia || 'Generale',
+            fonte: material.nome,
+            fronte,
+            retro,
+            tipo: 'concetto',
+            easeFactor: sm2Initial.easeFactor,
+            intervalloGiorni: sm2Initial.intervalloGiorni,
+            numeroRipetizioni: sm2Initial.numeroRipetizioni,
+            prossimoRipasso: now,
+            prossimRevisione: now,
+          };
+        })
+        .filter((f: any) => f.fronte && f.retro);
 
       const created = await storage.createFlashcards(flashcardsToInsert);
       await storage.updateMaterial(materialId, userId, { 
@@ -903,6 +1111,24 @@ Restituisci SOLO un array JSON di flashcard:
     } catch (error: any) {
       console.error("Error updating flashcard:", error);
       res.status(500).json({ error: "Errore aggiornamento flashcard", details: error.message });
+    }
+  });
+
+  app.delete("/api/flashcards/materia", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { concorsoId, materia } = req.body;
+      
+      if (!concorsoId || !materia) {
+        return res.status(400).json({ error: "concorsoId e materia richiesti" });
+      }
+
+      const count = await storage.deleteFlashcardsByMateria(userId, concorsoId, materia);
+      
+      res.json({ success: true, count, message: `${count} flashcard eliminate` });
+    } catch (error: any) {
+      console.error("Error deleting flashcards by materia:", error);
+      res.status(500).json({ error: "Errore nell'eliminazione delle flashcard", details: error.message });
     }
   });
 

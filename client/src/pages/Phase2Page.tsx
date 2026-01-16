@@ -20,8 +20,19 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   ArrowLeft,
   BookOpen,
@@ -63,6 +74,9 @@ export default function Phase2Page() {
     materia: "",
     contenuto: "",
   });
+  
+  const [deleteMateriaDialogOpen, setDeleteMateriaDialogOpen] = useState(false);
+  const [materiaToDelete, setMateriaToDelete] = useState<string | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -172,9 +186,37 @@ export default function Phase2Page() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/materials", concorsoId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/flashcards", concorsoId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/user-progress"] });
       toast({ title: "Materiale eliminato" });
     },
   });
+  
+  const deleteMateriaFlashcardsMutation = useMutation({
+    mutationFn: async (materia: string) => {
+      return apiRequest("DELETE", "/api/flashcards/materia", {
+        concorsoId,
+        materia,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/flashcards", concorsoId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/materials", concorsoId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/user-progress"] });
+      toast({ title: "Flashcard eliminate", description: "Le flashcard della materia sono state eliminate." });
+      setDeleteMateriaDialogOpen(false);
+      setMateriaToDelete(null);
+    },
+    onError: () => {
+      toast({ title: "Errore", description: "Impossibile eliminare le flashcard", variant: "destructive" });
+    },
+  });
+
+  const confirmDeleteMateria = () => {
+    if (materiaToDelete) {
+      deleteMateriaFlashcardsMutation.mutate(materiaToDelete);
+    }
+  };
 
   const generateFlashcardsMutation = useMutation({
     mutationFn: async (materialId: string) => {
@@ -396,6 +438,9 @@ export default function Phase2Page() {
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Aggiungi Nuovo Materiale</DialogTitle>
+                    <DialogDescription>
+                      Inserisci i dettagli del materiale da aggiungere alla tua libreria di studio.
+                    </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 mt-4">
                     <div>
@@ -653,8 +698,22 @@ export default function Phase2Page() {
                   }, {} as Record<string, number>)
                 ).map(([materia, count]) => (
                   <Card key={materia}>
-                    <CardContent className="p-4">
-                      <p className="text-sm text-muted-foreground truncate">{materia}</p>
+                    <CardContent className="p-4 relative group">
+                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <Button 
+                           variant="ghost" 
+                           size="icon" 
+                           className="h-6 w-6 text-destructive hover:bg-destructive/10"
+                           onClick={(e) => {
+                             e.preventDefault();
+                             setMateriaToDelete(materia);
+                             setDeleteMateriaDialogOpen(true);
+                           }}
+                         >
+                           <Trash2 className="h-3 w-3" />
+                         </Button>
+                      </div>
+                      <p className="text-sm text-muted-foreground truncate pr-6">{materia}</p>
                       <p className="text-2xl font-bold">{count}</p>
                     </CardContent>
                   </Card>
@@ -677,6 +736,26 @@ export default function Phase2Page() {
           )}
         </TabsContent>
       </Tabs>
+      <AlertDialog open={deleteMateriaDialogOpen} onOpenChange={setDeleteMateriaDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminare flashcard di "{materiaToDelete}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Stai per eliminare tutte le flashcard associate alla materia "{materiaToDelete}".
+              Questa azione è irreversibile.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteMateria}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMateriaFlashcardsMutation.isPending ? "Eliminazione..." : "Elimina tutto"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

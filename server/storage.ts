@@ -16,7 +16,7 @@ import {
 } from "@shared/schema";
 import { users, concorsi, userProgress, materials, flashcards, simulazioni, calendarEvents } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, or } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -43,6 +43,7 @@ export interface IStorage {
   getFlashcard(id: string, userId: string): Promise<Flashcard | undefined>;
   updateFlashcard(id: string, userId: string, data: Partial<InsertFlashcard>): Promise<Flashcard | undefined>;
   deleteFlashcard(id: string, userId: string): Promise<boolean>;
+  deleteFlashcardsByMateria(userId: string, concorsoId: string, materia: string): Promise<number>;
 
   // Calendar Events
   getCalendarEvents(userId: string): Promise<CalendarEventItem[]>;
@@ -195,10 +196,43 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteMaterial(id: string, userId: string): Promise<boolean> {
+    // 1. Get material to know concorsoId for progress update
+    const material = await this.getMaterial(id, userId);
+    if (!material) return false;
+
+    // 2. Delete associated flashcards (match by materialId OR fonte name for backward compatibility)
+    await db
+      .delete(flashcards)
+      .where(
+        and(
+          eq(flashcards.userId, userId),
+          or(
+            eq(flashcards.materialId, id),
+            eq(flashcards.fonte, material.nome)
+          )
+        )
+      );
+
+    // 3. Delete the material
     const [deleted] = await db
       .delete(materials)
       .where(and(eq(materials.id, id), eq(materials.userId, userId)))
       .returning();
+      
+    // 4. Update progress stats (recalculate totals for the concorso)
+    if (deleted && material.concorsoId) {
+        // Get remaining flashcards for this concorso
+        const allFlashcards = await this.getFlashcards(userId, material.concorsoId);
+        const flashcardMasterate = allFlashcards.filter(f => f.masterate).length;
+        
+        await this.upsertUserProgress({
+            userId,
+            concorsoId: material.concorsoId,
+            flashcardTotali: allFlashcards.length,
+            flashcardMasterate
+        });
+    }
+
     return !!deleted;
   }
   
@@ -254,6 +288,46 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)))
       .returning();
     return !!deleted;
+  }
+
+  async deleteFlashcardsByMateria(userId: string, concorsoId: string, materia: string): Promise<number> {
+    // 1. Delete flashcards
+    const deleted = await db
+      .delete(flashcards)
+      .where(
+        and(
+          eq(flashcards.userId, userId),
+          eq(flashcards.concorsoId, concorsoId),
+          eq(flashcards.materia, materia)
+        )
+      )
+      .returning();
+      
+    // 2. Update materials stats (reset flashcardGenerate count for materials of this subject)
+    if (deleted.length > 0) {
+      await db.update(materials)
+        .set({ flashcardGenerate: 0 })
+        .where(
+          and(
+             eq(materials.userId, userId),
+             eq(materials.concorsoId, concorsoId),
+             eq(materials.materia, materia)
+          )
+        );
+
+      // 3. Update user progress
+      const allFlashcards = await this.getFlashcards(userId, concorsoId);
+      const flashcardMasterate = allFlashcards.filter(f => f.masterate).length;
+      
+      await this.upsertUserProgress({
+          userId,
+          concorsoId,
+          flashcardTotali: allFlashcards.length,
+          flashcardMasterate
+      });
+    }
+
+    return deleted.length;
   }
 
   // Calendar Events Implementation

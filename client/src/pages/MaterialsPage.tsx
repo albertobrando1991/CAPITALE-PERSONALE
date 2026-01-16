@@ -11,6 +11,8 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { MaterialCard } from "@/components/MaterialCard";
@@ -131,6 +133,12 @@ export default function MaterialsPage() {
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-lg p-0 overflow-hidden">
+            <div className="sr-only">
+              <DialogTitle>Carica Materiale</DialogTitle>
+              <DialogDescription>
+                Modulo per il caricamento di un nuovo materiale di studio (PDF)
+              </DialogDescription>
+            </div>
             <UploadMaterial
               onUpload={handleUpload}
               onCancel={() => setIsUploadOpen(false)}
