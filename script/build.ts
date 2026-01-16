@@ -33,9 +33,12 @@ const allowlist = [
 ];
 
 async function buildAll() {
+  // Clean dist and dist-server
   await rm("dist", { recursive: true, force: true });
+  await rm("dist-server", { recursive: true, force: true });
 
   console.log("building client...");
+  // vite config now outputs to "dist"
   await viteBuild();
 
   console.log("building server...");
@@ -51,7 +54,8 @@ async function buildAll() {
     platform: "node",
     bundle: true,
     format: "cjs",
-    outfile: "dist/index.cjs",
+    // Output server build to separate folder to not mess with Vercel's static serving of "dist"
+    outfile: "dist-server/index.cjs",
     define: {
       "process.env.NODE_ENV": '"production"',
     },

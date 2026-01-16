@@ -158,7 +158,11 @@ export async function initializeApp() {
   });
 
   if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
+    // Only serve static files if NOT in Vercel environment
+    // Vercel handles static files via rewrites/output directory
+    if (!process.env.VERCEL) {
+      serveStatic(app);
+    }
   } else {
     // Only import vite in dev
     try {
