@@ -175,27 +175,28 @@ export default function Phase2Page() {
           contenuto = contenuto.slice(0, maxChars);
 
           if (contenuto.trim().length < 500) {
-            const images: Array<{ base64: string; mimeType: string }> = [];
-            const pagesToOcr = Math.min(pdfDocument.numPages, 2);
+            const ocrPages = async (pageNums: number[]) => {
+              const images: Array<{ base64: string; mimeType: string }> = [];
 
-            for (let pageNum = 1; pageNum <= pagesToOcr; pageNum++) {
-              const page = await pdfDocument.getPage(pageNum);
-              const viewport = page.getViewport({ scale: 1.25 });
-              const canvas = document.createElement("canvas");
-              canvas.width = Math.floor(viewport.width);
-              canvas.height = Math.floor(viewport.height);
-              const ctx = canvas.getContext("2d");
-              if (!ctx) continue;
+              for (const pageNum of pageNums) {
+                const page = await pdfDocument.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1.25 });
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.floor(viewport.width);
+                canvas.height = Math.floor(viewport.height);
+                const ctx = canvas.getContext("2d");
+                if (!ctx) continue;
 
-              await page.render({ canvasContext: ctx, viewport }).promise;
-              const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
-              const base64 = dataUrl.split(",")[1] || "";
-              if (!base64) continue;
+                await page.render({ canvasContext: ctx, viewport }).promise;
+                const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+                const base64 = dataUrl.split(",")[1] || "";
+                if (!base64) continue;
 
-              images.push({ base64, mimeType: "image/jpeg" });
-            }
+                images.push({ base64, mimeType: "image/jpeg" });
+              }
 
-            if (images.length) {
+              if (!images.length) return "";
+
               const ocrRes = await fetch("/api/ocr/images", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -203,11 +204,28 @@ export default function Phase2Page() {
                 body: JSON.stringify({ images }),
               });
 
-              if (ocrRes.ok) {
-                const data = await ocrRes.json();
-                contenuto = String(data?.text || "").slice(0, maxChars);
+              if (!ocrRes.ok) {
+                let msg = `OCR fallito (${ocrRes.status})`;
+                try {
+                  const data = await ocrRes.json();
+                  msg = data?.error || data?.details || msg;
+                } catch {}
+                throw new Error(msg);
               }
+
+              const data = await ocrRes.json();
+              return String(data?.text || "");
+            };
+
+            let ocrText = "";
+            const totalPages = pdfDocument.numPages;
+
+            ocrText += await ocrPages([1, Math.min(2, totalPages)].filter(Boolean));
+            if (ocrText.trim().length < 500 && totalPages >= 4) {
+              ocrText += "\n" + (await ocrPages([3, 4]));
             }
+
+            contenuto = ocrText.slice(0, maxChars);
           }
         } else {
           contenuto = (await file.text()).slice(0, 30000);
@@ -215,7 +233,7 @@ export default function Phase2Page() {
 
         if (contenuto.trim().length < 500) {
           throw new Error(
-            "Testo insufficiente: il PDF sembra scannerizzato. Riprova (OCR automatico sulle prime 2 pagine) oppure incolla il testo negli appunti."
+            "Testo insufficiente. Il PDF sembra scannerizzato. Riprova: OCR automatico sulle prime pagine oppure incolla il testo negli appunti."
           );
         }
 

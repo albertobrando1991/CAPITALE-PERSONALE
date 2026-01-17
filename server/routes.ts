@@ -945,58 +945,102 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         return res.status(403).json({ error: "Concorso non autorizzato" });
       }
 
-      const contentToAnalyze = material.contenuto.substring(0, 30000);
+      const normalizeForMatch = (s: string) =>
+        s
+          .toLowerCase()
+          .replace(/\s+/g, " ")
+          .replace(/[^\p{L}\p{N}\s]/gu, "")
+          .trim();
+
+      const rawText = material.contenuto;
+      const contentToAnalyze = rawText.substring(0, 30000);
 
       
       console.log(`[GEN-FLASHCARDS] Analisi testo (primi 500 caratteri): ${contentToAnalyze.substring(0, 500)}...`);
 
       const systemPrompt = `Sei un esperto creatore di flashcard per concorsi pubblici italiani.
 Il tuo compito è generare flashcard basate ESCLUSIVAMENTE sul testo fornito.
-NON usare conoscenze esterne. Attieniti strettamente al contenuto del documento.
-Genera almeno 30 flashcard (fino a 50 se il testo lo consente) con domande precise e risposte concise.
-Restituisci SOLO un array JSON valido con oggetti { "fronte": "domanda", "retro": "risposta" }.`;
-      
-      const content = await generateWithFallback({ systemPrompt, userPrompt: `Testo da analizzare:\n\n${contentToAnalyze}`, jsonMode: true, temperature: 0.3 });
-      
-      let flashcardsData: any = [];
-      try {
-        const parsed = typeof content === 'string' ? JSON.parse(content) : content;
-        if (Array.isArray(parsed)) {
-          flashcardsData = parsed;
-        } else if (parsed && Array.isArray(parsed.flashcards)) {
-          flashcardsData = parsed.flashcards;
-        } else if (parsed && Array.isArray(parsed.questions)) {
-          // Converti struttura domande in flashcard
-          flashcardsData = parsed.questions.map((q: any) => ({
-            fronte: q.question || q.text,
-            retro: Array.isArray(q.options) ? q.options[(typeof q.correctAnswer === 'number' ? q.correctAnswer : 0)] || q.correctAnswer : (q.correctAnswer || q.explanation || 'Risposta')
-          }));
-        } else if (parsed && Array.isArray(parsed.items)) {
-          flashcardsData = parsed.items;
-        } else if (typeof parsed === 'string') {
-          try {
-            const second = JSON.parse(parsed);
-            flashcardsData = Array.isArray(second) ? second : (second.flashcards || second.items || []);
-          } catch {
-            flashcardsData = [];
-          }
+NON usare conoscenze esterne e NON inventare.
+Ogni flashcard DEVE includere un campo "evidenza" che sia una citazione testuale (5-25 parole) presente nel testo fornito.
+Se non trovi evidenza nel testo, NON generare quella flashcard.
+Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "...", "evidenza": "..." }.`;
+
+      const parseFlashcards = (content: any) => {
+        let items: any[] = [];
+        try {
+          const parsed = typeof content === "string" ? JSON.parse(content) : content;
+          if (Array.isArray(parsed)) items = parsed;
+          else if (parsed && Array.isArray(parsed.flashcards)) items = parsed.flashcards;
+          else if (parsed && Array.isArray(parsed.items)) items = parsed.items;
+          else if (parsed && Array.isArray(parsed.questions)) {
+            items = parsed.questions.map((q: any) => ({
+              fronte: q.question || q.text,
+              retro: q.explanation || q.correctAnswer,
+              evidenza: q.evidence,
+            }));
+          } else items = [];
+        } catch {
+          items = [];
         }
-      } catch (parseError) {
-        console.error("Error parsing flashcards JSON:", parseError);
-        console.error("Content that failed parsing:", String(content).substring(0, 200) + "...");
-        flashcardsData = [];
+        return Array.isArray(items) ? items : [];
+      };
+
+      const splitIntoChunks = (text: string, chunkSize = 12000, overlap = 600) => {
+        const chunks: string[] = [];
+        let i = 0;
+        while (i < text.length) {
+          const end = Math.min(text.length, i + chunkSize);
+          chunks.push(text.slice(i, end));
+          if (end === text.length) break;
+          i = Math.max(0, end - overlap);
+        }
+        return chunks;
+      };
+
+      const chunks = splitIntoChunks(contentToAnalyze);
+      const collected: any[] = [];
+
+      for (let idx = 0; idx < chunks.length && collected.length < 30; idx++) {
+        const chunk = chunks[idx];
+        const userPrompt =
+          `Genera 12 flashcard sul testo seguente (chunk ${idx + 1}/${chunks.length}).\n` +
+          `Requisiti: domande specifiche, risposte concise, niente definizioni generiche.\n` +
+          `TESTO:\n${chunk}`;
+
+        const content = await generateWithFallback({
+          systemPrompt,
+          userPrompt,
+          jsonMode: true,
+          temperature: 0.2,
+        });
+
+        const items = parseFlashcards(content);
+        for (const f of items) {
+          if (collected.length >= 30) break;
+          collected.push(f);
+        }
       }
 
-      if (!Array.isArray(flashcardsData)) {
-        flashcardsData = [];
-      }
+      const normalizedText = normalizeForMatch(contentToAnalyze);
+      const cleaned = collected
+        .map((f: any) => {
+          const fronte = typeof f?.fronte === "string" ? f.fronte.trim() : "";
+          const retro = typeof f?.retro === "string" ? f.retro.trim() : "";
+          const evidenza = typeof f?.evidenza === "string" ? f.evidenza.trim() : "";
+          return { fronte, retro, evidenza };
+        })
+        .filter((f) => f.fronte.length >= 12 && f.retro.length >= 5 && f.evidenza.length >= 20)
+        .filter((f) => normalizedText.includes(normalizeForMatch(f.evidenza)))
+        .filter((f, i, arr) => {
+          const key = `${f.fronte}||${f.retro}`;
+          return arr.findIndex((x) => `${x.fronte}||${x.retro}` === key) === i;
+        });
 
-      // Se l'AI non ha restituito dati validi, lancia un errore invece di generare placeholder inutili
-      if (flashcardsData.length === 0) {
-        console.error("[GEN-FLASHCARDS] Errore: Nessuna flashcard generata dall'AI (tutti i fallback falliti o parsing errato)");
-        return res.status(500).json({ 
-          error: "Impossibile generare flashcard dal documento.", 
-          details: "L'intelligenza artificiale non è riuscita a estrarre domande dal testo. Verifica che il PDF contenga testo selezionabile e non sia una scansione immagine."
+      if (cleaned.length < 12) {
+        return res.status(500).json({
+          error: "Impossibile generare flashcard coerenti dal documento.",
+          details:
+            "Il testo estratto è troppo scarso o non è interpretabile correttamente (spesso PDF scannerizzati o impaginazioni complesse). Prova con appunti incollati o un PDF diverso.",
         });
       }
 
@@ -1004,41 +1048,21 @@ Restituisci SOLO un array JSON valido con oggetti { "fronte": "domanda", "retro"
       const sm2Initial = initializeSM2();
       const now = new Date();
       
-      const list = Array.isArray(flashcardsData) ? flashcardsData : [];
-      const flashcardsToInsert = list
-        .map((f: any) => {
-          let fronte = typeof f?.fronte === 'string' ? f.fronte : '';
-          if (!fronte) fronte = typeof f?.question === 'string' ? f.question : '';
-          if (!fronte) fronte = typeof f?.text === 'string' ? f.text : '';
-
-          let retro = typeof f?.retro === 'string' ? f.retro : '';
-          if (!retro && Array.isArray(f?.options)) {
-            const idx = typeof f?.correctAnswer === 'number' ? f.correctAnswer : -1;
-            if (idx >= 0 && idx < f.options.length) retro = f.options[idx];
-          }
-          if (!retro && typeof f?.correctAnswer === 'string') retro = f.correctAnswer;
-          if (!retro && typeof f?.explanation === 'string') retro = f.explanation;
-
-          fronte = (fronte || 'Domanda').toString().trim();
-          retro = (retro || 'Risposta').toString().trim();
-
-          return {
-            userId,
-            concorsoId: material.concorsoId,
-            materialId, // Link corretto al materiale
-            materia: material.materia || 'Generale',
-            fonte: material.nome,
-            fronte,
-            retro,
-            tipo: 'concetto',
-            easeFactor: sm2Initial.easeFactor,
-            intervalloGiorni: sm2Initial.intervalloGiorni,
-            numeroRipetizioni: sm2Initial.numeroRipetizioni,
-            prossimoRipasso: now,
-            prossimRevisione: now,
-          };
-        })
-        .filter((f: any) => f.fronte && f.retro);
+      const flashcardsToInsert = cleaned.map((f) => ({
+        userId,
+        concorsoId: material.concorsoId,
+        materialId,
+        materia: material.materia || "Generale",
+        fonte: material.nome,
+        fronte: f.fronte,
+        retro: `${f.retro}\n\nEvidenza: "${f.evidenza}"`,
+        tipo: "concetto",
+        easeFactor: sm2Initial.easeFactor,
+        intervalloGiorni: sm2Initial.intervalloGiorni,
+        numeroRipetizioni: sm2Initial.numeroRipetizioni,
+        prossimoRipasso: now,
+        prossimRevisione: now,
+      }));
 
       const created = await storage.createFlashcards(flashcardsToInsert);
       await storage.updateMaterial(materialId, userId, { 
