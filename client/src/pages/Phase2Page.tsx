@@ -173,13 +173,49 @@ export default function Phase2Page() {
           }
 
           contenuto = contenuto.slice(0, maxChars);
+
+          if (contenuto.trim().length < 500) {
+            const images: Array<{ base64: string; mimeType: string }> = [];
+            const pagesToOcr = Math.min(pdfDocument.numPages, 2);
+
+            for (let pageNum = 1; pageNum <= pagesToOcr; pageNum++) {
+              const page = await pdfDocument.getPage(pageNum);
+              const viewport = page.getViewport({ scale: 1.25 });
+              const canvas = document.createElement("canvas");
+              canvas.width = Math.floor(viewport.width);
+              canvas.height = Math.floor(viewport.height);
+              const ctx = canvas.getContext("2d");
+              if (!ctx) continue;
+
+              await page.render({ canvasContext: ctx, viewport }).promise;
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+              const base64 = dataUrl.split(",")[1] || "";
+              if (!base64) continue;
+
+              images.push({ base64, mimeType: "image/jpeg" });
+            }
+
+            if (images.length) {
+              const ocrRes = await fetch("/api/ocr/images", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ images }),
+              });
+
+              if (ocrRes.ok) {
+                const data = await ocrRes.json();
+                contenuto = String(data?.text || "").slice(0, maxChars);
+              }
+            }
+          }
         } else {
           contenuto = (await file.text()).slice(0, 30000);
         }
 
         if (contenuto.trim().length < 500) {
           throw new Error(
-            "Non riesco a leggere testo dal PDF (probabilmente è scannerizzato/immagine). Incolla il testo negli appunti oppure usa un PDF testuale."
+            "Testo insufficiente: il PDF sembra scannerizzato. Riprova (OCR automatico sulle prime 2 pagine) oppure incolla il testo negli appunti."
           );
         }
 

@@ -846,6 +846,77 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
     });
   });
 
+  app.post("/api/ocr/images", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const schema = z.object({
+        images: z
+          .array(
+            z.object({
+              base64: z.string().min(1),
+              mimeType: z.string().min(1),
+            }),
+          )
+          .min(1)
+          .max(2),
+      });
+
+      const { images } = schema.parse(req.body);
+
+      for (const img of images) {
+        if (img.base64.length > 4_000_000) {
+          return res.status(400).json({
+            error: "Immagine troppo grande per OCR. Riduci la risoluzione o il numero di pagine.",
+          });
+        }
+      }
+
+      const prompt =
+        "Estrai fedelmente tutto il testo visibile nell'immagine. Mantieni l'italiano e la punteggiatura. Non aggiungere spiegazioni: restituisci solo testo.";
+
+      const { getGeminiClient, getOpenAIClient } = await import("./services/ai");
+
+      const gemini = getGeminiClient();
+      if (gemini) {
+        const model = gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const parts: any[] = [
+          { text: prompt },
+          ...images.map((img) => ({
+            inlineData: { data: img.base64, mimeType: img.mimeType },
+          })),
+        ];
+        const response = await model.generateContent(parts);
+        const text = response.response.text() || "";
+        return res.json({ text });
+      }
+
+      const openai = getOpenAIClient();
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              ...images.map((img) => ({
+                type: "image_url",
+                image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+              })),
+            ],
+          } as any,
+        ],
+      });
+
+      const text = completion.choices[0]?.message?.content || "";
+      return res.json({ text });
+    } catch (error: any) {
+      return res.status(500).json({
+        error: "Errore OCR",
+        details: error?.message || "Errore sconosciuto",
+      });
+    }
+  });
+
   app.post("/api/generate-flashcards", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
