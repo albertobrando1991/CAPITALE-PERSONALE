@@ -21,9 +21,10 @@ export function registerPodcastRoutes(app: Express) {
     try {
       console.log('📥 GET /api/podcast');
       const { materia } = req.query;
+      const user = req.user as any;
 
       // Verifica se utente è premium
-      const isPremium = await checkPremiumStatus(req.user?.id, req.user?.email);
+      const isPremium = await checkPremiumStatus(user?.id, user?.email);
 
       let query = db.select({
         id: podcastDatabase.id,
@@ -63,11 +64,12 @@ export function registerPodcastRoutes(app: Express) {
   // GET - Dettaglio podcast con audio URL (solo premium)
   app.get('/api/podcast/:id', async (req, res) => {
     try {
-      if (!req.user?.id) {
+      const user = req.user as any;
+      if (!user?.id) {
         return res.status(401).json({ error: 'Non autenticato' });
       }
 
-      const isPremium = await checkPremiumStatus(req.user.id, req.user.email);
+      const isPremium = await checkPremiumStatus(user.id, user.email);
 
       const [podcast] = await db.select()
         .from(podcastDatabase)
@@ -93,7 +95,7 @@ export function registerPodcastRoutes(app: Express) {
       // Log ascolto
       await db.insert(podcastListens).values({
         podcastId: req.params.id,
-        userId: req.user.id,
+        userId: user.id,
         progressoSecondi: 0,
         completato: false,
       });
@@ -108,7 +110,8 @@ export function registerPodcastRoutes(app: Express) {
   // POST - Aggiorna progresso ascolto
   app.post('/api/podcast/:id/progress', async (req, res) => {
     try {
-      if (!req.user?.id) {
+      const user = req.user as any;
+      if (!user?.id) {
         return res.status(401).json({ error: 'Non autenticato' });
       }
 
@@ -121,7 +124,7 @@ export function registerPodcastRoutes(app: Express) {
         })
         .where(and(
           eq(podcastListens.podcastId, req.params.id),
-          eq(podcastListens.userId, req.user.id)
+          eq(podcastListens.userId, user.id)
         ));
 
       res.json({ success: true });
@@ -138,11 +141,12 @@ export function registerPodcastRoutes(app: Express) {
   // POST - Richiedi podcast custom
   app.post('/api/podcast/request', async (req, res) => {
     try {
-      if (!req.user?.id) {
+      const user = req.user as any;
+      if (!user?.id) {
         return res.status(401).json({ error: 'Non autenticato' });
       }
 
-      const isPremium = await checkPremiumStatus(req.user.id, req.user.email);
+      const isPremium = await checkPremiumStatus(user.id, user.email);
       if (!isPremium) {
         return res.status(403).json({ error: 'Funzione disponibile solo per utenti Premium' });
       }
@@ -150,7 +154,7 @@ export function registerPodcastRoutes(app: Express) {
       const { concorsoId, materia, argomento, descrizione } = req.body;
 
       const [richiesta] = await db.insert(podcastRequests).values({
-        userId: req.user.id,
+        userId: user.id,
         concorsoId,
         materia,
         argomento,
@@ -170,13 +174,14 @@ export function registerPodcastRoutes(app: Express) {
   // GET - Lista richieste utente
   app.get('/api/podcast/my-requests', async (req, res) => {
     try {
-      if (!req.user?.id) {
+      const user = req.user as any;
+      if (!user?.id) {
         return res.status(401).json({ error: 'Non autenticato' });
       }
 
       const richieste = await db.select()
         .from(podcastRequests)
-        .where(eq(podcastRequests.userId, req.user.id))
+        .where(eq(podcastRequests.userId, user.id))
         .orderBy(desc(podcastRequests.createdAt));
 
       res.json(richieste);
@@ -193,12 +198,13 @@ export function registerPodcastRoutes(app: Express) {
   // POST - Upload nuovo podcast (staff only)
   app.post('/api/podcast/upload', upload.single('audio'), async (req, res) => {
     try {
-      if (!req.user?.id) {
+      const user = req.user as any;
+      if (!user?.id) {
         return res.status(401).json({ error: 'Non autenticato' });
       }
 
       // TODO: Verifica ruolo staff
-      // if (req.user.ruolo !== 'staff') return res.status(403)...
+      // if (user.ruolo !== 'staff') return res.status(403)...
 
       const { titolo, descrizione, materia, argomento, durata } = req.body;
       const file = req.file;
@@ -220,7 +226,7 @@ export function registerPodcastRoutes(app: Express) {
         audioFileName: file.originalname,
         audioFileSize: file.size,
         durata: parseInt(durata),
-        uploadedBy: req.user.id,
+        uploadedBy: user.id,
         isPublic: true,
         isPremiumOnly: true,
       }).returning();
