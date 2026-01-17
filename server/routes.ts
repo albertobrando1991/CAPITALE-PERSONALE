@@ -100,8 +100,6 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   return fullText;
 }
 
-<<<<<<< HEAD
-=======
 let openai: OpenAI | null = null;
 let genAI: GoogleGenerativeAI | null = null;
 
@@ -240,8 +238,6 @@ async function generateWithFallback(opts: { systemPrompt: string; userPrompt: st
   }
   return "";
 }
-
->>>>>>> 35246ff (Aggiornamento: Fix API Gemini, eliminazione flashcard, menu materie completo)
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
 }
@@ -891,38 +887,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       }
 
       const contentToAnalyze = material.contenuto.substring(0, 30000);
-<<<<<<< HEAD
 
-      let content = "[]";
-      try {
-        const systemPrompt = `Sei un esperto creatore di flashcard per la preparazione ai concorsi pubblici italiani. 
-Genera ALMENO 50 flashcard diverse dal testo fornito. Crea domande precise e risposte concise che coprono tutti i concetti importanti.
-
-ISTRUZIONI:
-- Genera il maggior numero possibile di flashcard (minimo 50, idealmente 60-80)
-- Copri TUTTI i concetti chiave, definizioni, articoli di legge, date, numeri
-- Varia i tipi di domande: definizioni, applicazioni, confronti, casi pratici
-- Ogni flashcard deve essere unica e non ripetitiva
-
-Restituisci SOLO un array JSON di flashcard:
-[
-  {"fronte": "Domanda?", "retro": "Risposta"},
-  ...
-]`;
-        
-        console.log("Invio richiesta generazione flashcard...");
-        content = await generateWithFallback({
-           systemPrompt,
-           userPrompt: contentToAnalyze,
-           jsonMode: true,
-           temperature: 0.4
-        });
-      } catch (err: any) {
-         console.error("Errore generazione flashcards:", err.message);
-         // content rimane "[]"
-      }
-=======
->>>>>>> 35246ff (Aggiornamento: Fix API Gemini, eliminazione flashcard, menu materie completo)
       
       console.log(`[GEN-FLASHCARDS] Analisi testo (primi 500 caratteri): ${contentToAnalyze.substring(0, 500)}...`);
 

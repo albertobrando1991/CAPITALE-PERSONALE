@@ -1,19 +1,16 @@
 {
   "buildCommand": "vite build",
-  "outputDirectory": "dist/public",
+  "outputDirectory": "dist",
   "installCommand": "npm install",
-  "framework": null,
-  "routes": [
+  "framework": "vite",
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "source": "/api/(.*)",
+      "destination": "/api/index"
     },
     {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
