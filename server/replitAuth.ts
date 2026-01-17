@@ -1,5 +1,5 @@
-import * as client from "openid-client";
-import { Strategy, type VerifyFunction } from "openid-client/passport";
+import type * as OpenIDClient from "openid-client";
+import type { Strategy as OIDCStrategy, VerifyFunction } from "openid-client/passport";
 
 import passport from "passport";
 import session from "express-session";
@@ -11,11 +11,30 @@ import { storage } from "./storage";
 
 const MemoryStore = createMemoryStore(session);
 
+let openIdClientModule: typeof OpenIDClient | null = null;
+let PassportStrategyCtor: any = null;
+
+async function getOpenIdClient() {
+  if (!openIdClientModule) {
+    openIdClientModule = (await import("openid-client")) as typeof OpenIDClient;
+  }
+  return openIdClientModule;
+}
+
+async function getPassportStrategyCtor(): Promise<OIDCStrategy> {
+  if (!PassportStrategyCtor) {
+    const mod = await import("openid-client/passport");
+    PassportStrategyCtor = mod;
+  }
+  return (PassportStrategyCtor as any).Strategy as OIDCStrategy;
+}
+
 const getOidcConfig = memoize(
   async () => {
     if (!process.env.REPL_ID) {
       return null;
     }
+    const client = await getOpenIdClient();
     return await client.discovery(
       new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
       process.env.REPL_ID!
@@ -62,7 +81,7 @@ export function getSession() {
 
 function updateUserSession(
   user: any,
-  tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers
+  tokens: any
 ) {
   user.claims = tokens.claims();
   user.access_token = tokens.access_token;
@@ -191,10 +210,10 @@ export async function setupAuth(app: Express) {
 
   // Replit Auth Mode
   const verify: VerifyFunction = async (
-    tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
+    tokens: any,
     verified: passport.AuthenticateCallback
   ) => {
-    const user = {};
+    const user: any = {};
     updateUserSession(user, tokens);
     await upsertUser(tokens.claims());
     verified(null, user);
@@ -202,9 +221,10 @@ export async function setupAuth(app: Express) {
 
   const registeredStrategies = new Set<string>();
 
-  const ensureStrategy = (domain: string) => {
+  const ensureStrategy = async (domain: string) => {
     const strategyName = `replitauth:${domain}`;
     if (!registeredStrategies.has(strategyName)) {
+      const Strategy = await getPassportStrategyCtor();
       const strategy = new Strategy(
         {
           name: strategyName,
@@ -214,28 +234,29 @@ export async function setupAuth(app: Express) {
         },
         verify,
       );
-      passport.use(strategy);
+      passport.use(strategy as any);
       registeredStrategies.add(strategyName);
     }
   };
 
-  app.get("/api/login", (req, res, next) => {
-    ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
+  app.get("/api/login", async (req, res, next) => {
+    await ensureStrategy(req.hostname);
+    return passport.authenticate(`replitauth:${req.hostname}`, {
       prompt: "login consent",
       scope: ["openid", "email", "profile", "offline_access"],
     })(req, res, next);
   });
 
-  app.get("/api/callback", (req, res, next) => {
-    ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
+  app.get("/api/callback", async (req, res, next) => {
+    await ensureStrategy(req.hostname);
+    return passport.authenticate(`replitauth:${req.hostname}`, {
       successReturnToOrRedirect: "/",
       failureRedirect: "/api/login",
     })(req, res, next);
   });
 
-  app.get("/api/logout", (req, res) => {
+  app.get("/api/logout", async (req, res) => {
+    const client = await getOpenIdClient();
     req.logout(() => {
       res.redirect(
         client.buildEndSessionUrl(config!, {
@@ -268,21 +289,5 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     return next();
   }
 
-  const refreshToken = user.refresh_token;
-  if (!refreshToken) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
-
-  try {
-    const config = await getOidcConfig();
-    if (!config) return next(); // Should not happen if REPL_ID is set
-    
-    const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
-    updateUserSession(user, tokenResponse);
-    return next();
-  } catch (error) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+  return res.status(401).json({ message: "Unauthorized" });
 };
