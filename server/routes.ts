@@ -877,82 +877,10 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         return out;
       };
 
-      const forcedFallbackFromTokens = (text: string, minCount: number) => {
-        const normalized = normalizeForMatch(text);
-        const words = normalized.split(" ").filter((w) => w.length >= 6);
-        const stop = new Set([
-          "diritto",
-          "amministrativo",
-          "costituzionale",
-          "internazionale",
-          "sovranazionale",
-          "ordinamento",
-          "pubblica",
-          "amministrazione",
-          "fonti",
-          "norme",
-          "parte",
-          "prima",
-          "seconda",
-          "capitolo",
-          "paragrafo",
-          "articolo",
-          "delle",
-          "della",
-          "degli",
-          "dell",
-          "dello",
-          "dalla",
-          "alla",
-          "nelle",
-          "nella",
-          "sono",
-          "anche",
-          "come",
-          "quale",
-          "quali",
-          "questa",
-          "questo",
-          "quindi",
-          "pertanto",
-        ]);
-
-        const freq = new Map<string, number>();
-        for (const w of words) {
-          if (stop.has(w)) continue;
-          freq.set(w, (freq.get(w) || 0) + 1);
-        }
-
-        const candidates = Array.from(freq.entries())
-          .sort((a, b) => b[1] - a[1])
-          .map(([w]) => w)
-          .slice(0, 30);
-
-        const sentences = text
-          .replace(/\s+/g, " ")
-          .split(/[.!?]\s+/)
-          .map((s) => s.trim())
-          .filter((s) => s.length >= 40 && s.length <= 260);
-
-        const out: Array<{ fronte: string; retro: string; evidenza: string }> = [];
-        const used = new Set<string>();
-        for (const token of candidates) {
-          if (out.length >= minCount) break;
-          const match = sentences.find((s) =>
-            normalizeForMatch(s).split(" ").includes(token),
-          );
-          if (!match) continue;
-          const evidenza = match.slice(0, 220);
-          const key = `${token}||${evidenza}`;
-          if (used.has(key)) continue;
-          used.add(key);
-          out.push({
-            fronte: `Nel testo, cosa si afferma su "${token}"?`,
-            retro: match,
-            evidenza,
-          });
-        }
-        return out;
+      // Logica "Grounded Fallback" RIMOSTA per evitare domande banali (es. "cosa si afferma su 'di'?")
+      // Se l'AI fallisce, preferiamo non generare nulla piuttosto che generare spazzatura.
+      const groundedFallbackFromText = (text: string) => {
+          return [];
       };
 
       const rawText = material.contenuto;
@@ -968,11 +896,23 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       );
 
       const systemPrompt = `Sei un esperto creatore di flashcard per concorsi pubblici italiani.
-Il tuo compito è generare flashcard basate ESCLUSIVAMENTE sul testo fornito.
-NON usare conoscenze esterne e NON inventare.
-Ogni flashcard DEVE includere un campo "evidenza" che sia una citazione testuale (5-25 parole) presente nel testo fornito.
-Se non trovi evidenza nel testo, NON generare quella flashcard.
-Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "...", "evidenza": "..." }.`;
+Il tuo compito è analizzare il testo fornito e creare flashcard di alto livello, pensate per lo studio attivo e la memorizzazione di concetti complessi.
+
+REGOLE FONDAMENTALI:
+1. EVITA domande banali tipo "Cos'è X?". Preferisci: "Quali sono le differenze tra X e Y?", "Quali sono i requisiti per...", "Quali effetti produce...".
+2. Ogni flashcard deve essere COMPLETA e AUTOSUFFICIENTE.
+3. La risposta (retro) deve essere precisa, sintetica (max 3 frasi) e andare dritta al punto.
+4. Includi SEMPRE il campo "evidenza" copiando esattamente la frase del testo che giustifica la risposta.
+5. Se il testo cita articoli di legge, date o elenchi, crea flashcard specifiche su quelli.
+
+Restituisci SOLO un array JSON valido:
+[
+  { 
+    "fronte": "Domanda stimolante...", 
+    "retro": "Risposta precisa...", 
+    "evidenza": "Citazione dal testo..." 
+  }
+]`;
 
       const parseFlashcards = (content: any) => {
         let items: any[] = [];
