@@ -15,9 +15,14 @@ import { readFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 
 // Configura multer per salvare file su disco
-const uploadDir = join(process.cwd(), "uploads", "materials");
-if (!existsSync(uploadDir)) {
-  mkdirSync(uploadDir, { recursive: true });
+const uploadsRoot = process.env.VERCEL ? join("/tmp", "uploads") : join(process.cwd(), "uploads");
+const uploadDir = join(uploadsRoot, "materials");
+try {
+  if (!existsSync(uploadDir)) {
+    mkdirSync(uploadDir, { recursive: true });
+  }
+} catch (e) {
+  console.error("[MULTER] Impossibile creare uploadDir:", uploadDir, e);
 }
 
 const multerStorage = multer.diskStorage({

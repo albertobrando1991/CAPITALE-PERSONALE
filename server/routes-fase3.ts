@@ -17,9 +17,14 @@ import { readFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
 const router = express.Router();
 
 // Configura multer per file upload
-const uploadDir = join(process.cwd(), "uploads", "temp_drill");
-if (!existsSync(uploadDir)) {
-  mkdirSync(uploadDir, { recursive: true });
+const uploadsRoot = process.env.VERCEL ? join("/tmp", "uploads") : join(process.cwd(), "uploads");
+const uploadDir = join(uploadsRoot, "temp_drill");
+try {
+  if (!existsSync(uploadDir)) {
+    mkdirSync(uploadDir, { recursive: true });
+  }
+} catch (e) {
+  console.error("[FASE3][MULTER] Impossibile creare uploadDir:", uploadDir, e);
 }
 
 const storage = multer.diskStorage({
