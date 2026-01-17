@@ -999,22 +999,30 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
 
       const chunks = splitIntoChunks(contentToAnalyze);
       const collected: any[] = [];
+      const aiErrors: string[] = [];
 
       for (let idx = 0; idx < chunks.length && collected.length < 30; idx++) {
         const chunk = chunks[idx];
         const userPrompt =
           `Genera 12 flashcard sul testo seguente (chunk ${idx + 1}/${chunks.length}).\n` +
           `Requisiti: domande specifiche, risposte concise, niente definizioni generiche.\n` +
+          `Restituisci SOLO JSON.\n` +
           `TESTO:\n${chunk}`;
 
-        const content = await generateWithFallback({
-          systemPrompt,
-          userPrompt,
-          jsonMode: true,
-          temperature: 0.2,
-        });
+        let content: string;
+        try {
+          content = await generateWithFallback({
+            systemPrompt,
+            userPrompt,
+            jsonMode: false,
+            temperature: 0.2,
+          });
+        } catch (e: any) {
+          aiErrors.push(e?.message || "Errore AI sconosciuto");
+          continue;
+        }
 
-        const items = parseFlashcards(content);
+        const items = parseFlashcards(cleanJson(content || ""));
         for (const f of items) {
           if (collected.length >= 30) break;
           collected.push(f);
@@ -1039,8 +1047,9 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
       if (cleaned.length < 12) {
         return res.status(500).json({
           error: "Impossibile generare flashcard coerenti dal documento.",
-          details:
-            "Il testo estratto è troppo scarso o non è interpretabile correttamente (spesso PDF scannerizzati o impaginazioni complesse). Prova con appunti incollati o un PDF diverso.",
+          details: aiErrors.length
+            ? `Errore AI: ${aiErrors[0]}`
+            : "Il testo estratto è troppo scarso o non è interpretabile correttamente (spesso PDF scannerizzati o impaginazioni complesse). Prova con appunti incollati o un PDF diverso.",
         });
       }
 
@@ -1072,7 +1081,16 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
       res.json({ count: created.length, flashcards: created });
     } catch (error) {
       console.error("Error generating flashcards:", error);
-      res.status(500).json({ error: "Errore nella generazione flashcards" });
+      const message = (error as any)?.message || "Errore sconosciuto";
+      const looksLikeMissingKey =
+        /api key not configured|api key|key not configured/i.test(message);
+
+      res.status(500).json({
+        error: "Errore nella generazione flashcards",
+        details: looksLikeMissingKey
+          ? "Funzioni AI non configurate su Vercel (mancano le API key)."
+          : message,
+      });
     }
   });
 

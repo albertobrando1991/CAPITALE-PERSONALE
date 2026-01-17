@@ -347,9 +347,22 @@ export default function Phase2Page() {
       const res = await fetch("/api/generate-flashcards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ materialId, concorsoId }),
       });
-      if (!res.ok) throw new Error("Failed to generate flashcards");
+      if (!res.ok) {
+        let message = `Impossibile generare flashcard (${res.status})`;
+        try {
+          const data = await res.json();
+          message = data?.error || data?.details || message;
+        } catch {
+          try {
+            const text = await res.text();
+            if (text) message = text;
+          } catch {}
+        }
+        throw new Error(message);
+      }
       return res.json();
     },
     onSuccess: (data) => {
@@ -361,8 +374,12 @@ export default function Phase2Page() {
       });
       setIsGenerating(null);
     },
-    onError: () => {
-      toast({ title: "Errore", description: "Impossibile generare flashcard", variant: "destructive" });
+    onError: (error: any) => {
+      toast({
+        title: "Errore",
+        description: error?.message || "Impossibile generare flashcard",
+        variant: "destructive",
+      });
       setIsGenerating(null);
     },
   });
