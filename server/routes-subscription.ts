@@ -11,15 +11,16 @@ export function registerSubscriptionRoutes(app: Express) {
   // GET - Status abbonamento utente corrente
   app.get('/api/subscription/status', async (req, res) => {
     try {
-      if (!req.user?.id) {
+      const user = req.user as any;
+      if (!user?.id) {
         return res.json({ tier: 'free', status: 'none' });
       }
 
       // 🔥 ADMIN SEMPRE PREMIUM
-      if (isAlwaysPremium(req.user.email)) {
-        console.log(`👑 Admin ${req.user.email} → Force Premium`);
+      if (isAlwaysPremium(user.email)) {
+        console.log(`👑 Admin ${user.email} → Force Premium`);
         return res.json({
-          userId: req.user.id,
+          userId: user.id,
           tier: 'premium',
           status: 'active',
           isAdmin: true,
@@ -32,12 +33,12 @@ export function registerSubscriptionRoutes(app: Express) {
 
       let [subscription] = await db.select()
         .from(userSubscriptions)
-        .where(eq(userSubscriptions.userId, req.user.id));
+        .where(eq(userSubscriptions.userId, user.id));
 
       // Crea subscription free di default se non esiste
       if (!subscription) {
         [subscription] = await db.insert(userSubscriptions).values({
-          userId: req.user.id,
+          userId: user.id,
           tier: 'free',
           status: 'active',
           sintesiLimite: 5,
@@ -55,19 +56,20 @@ export function registerSubscriptionRoutes(app: Express) {
   // POST - Incrementa utilizzo sintesi
   app.post('/api/subscription/increment-usage', async (req, res) => {
     try {
-      if (!req.user?.id) {
+      const user = req.user as any;
+      if (!user?.id) {
         return res.status(401).json({ error: 'Non autenticato' });
       }
 
       // 🔥 ADMIN SINTESI ILLIMITATE
-      if (isAlwaysPremium(req.user.email)) {
-        console.log(`👑 Admin ${req.user.email} → Sintesi illimitate`);
+      if (isAlwaysPremium(user.email)) {
+        console.log(`👑 Admin ${user.email} → Sintesi illimitate`);
         return res.json({ success: true, unlimited: true, isAdmin: true });
       }
 
       const [subscription] = await db.select()
         .from(userSubscriptions)
-        .where(eq(userSubscriptions.userId, req.user.id));
+        .where(eq(userSubscriptions.userId, user.id));
 
       if (!subscription) {
         return res.status(404).json({ error: 'Subscription non trovata' });
@@ -81,7 +83,7 @@ export function registerSubscriptionRoutes(app: Express) {
       // Incrementa
       await db.update(userSubscriptions)
         .set({ sintesiUsate: (subscription.sintesiUsate || 0) + 1 })
-        .where(eq(userSubscriptions.userId, req.user.id));
+        .where(eq(userSubscriptions.userId, user.id));
 
       res.json({ success: true, usage: (subscription.sintesiUsate || 0) + 1 });
     } catch (error) {

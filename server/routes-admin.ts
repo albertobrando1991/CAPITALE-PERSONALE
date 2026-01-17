@@ -10,11 +10,12 @@ const router = Router();
 
 // Middleware per verificare admin
 function requireAdmin(req: any, res: any, next: any) {
-  if (!req.user) {
+  const user = req.user as any;
+  if (!user) {
     return res.status(401).json({ error: 'Non autenticato' });
   }
 
-  const userEmail = req.user.email || 'dev@trae-ai.com';
+  const userEmail = user.email || 'dev@trae-ai.com';
 
   if (!isAdmin(userEmail)) {
     console.log(`🚫 Accesso negato per ${userEmail} (richiede ADMIN)`);
@@ -30,11 +31,12 @@ function requireAdmin(req: any, res: any, next: any) {
 
 // Middleware per verificare staff
 function requireStaff(req: any, res: any, next: any) {
-  if (!req.user) {
+  const user = req.user as any;
+  if (!user) {
     return res.status(401).json({ error: 'Non autenticato' });
   }
 
-  const userEmail = req.user.email || 'dev@trae-ai.com';
+  const userEmail = user.email || 'dev@trae-ai.com';
 
   if (!isStaff(userEmail) && !isAdmin(userEmail)) {
     console.log(`🚫 Accesso negato per ${userEmail} (richiede STAFF o ADMIN)`);
@@ -117,6 +119,7 @@ router.get('/podcast', requireStaff, async (req, res) => {
 // Upload nuovo podcast
 router.post('/podcast/upload', requireStaff, upload.single('audio'), async (req, res) => {
   try {
+    const user = req.user as any;
     const audioFile = req.file;
     const { 
       titolo, 
@@ -152,7 +155,7 @@ router.post('/podcast/upload', requireStaff, upload.single('audio'), async (req,
       audioFileSize: audioFile.size,
       durata: parseInt(durata) || 0,
       trascrizione: trascrizione || '',
-      uploadedBy: req.user!.id,
+      uploadedBy: user!.id,
       isPublic: true,
       isPremiumOnly: isPremiumOnly === 'true' || isPremiumOnly === true,
     }).returning();
