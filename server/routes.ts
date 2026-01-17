@@ -977,13 +977,8 @@ Restituisci SOLO un array JSON valido:
 
       if (cleaned.length < Math.min(12, desiredCount)) {
         const fallback = groundedFallbackFromText(contentToAnalyze);
-        const forced =
-          fallback.length >= desiredCount
-            ? fallback
-            : [...fallback, ...forcedFallbackFromTokens(contentToAnalyze, desiredCount - fallback.length)];
-
-        if (forced.length) {
-          cleaned.splice(0, cleaned.length, ...forced);
+        if (fallback.length) {
+          cleaned.splice(0, cleaned.length, ...fallback);
         } else {
           return res.status(200).json({
             count: 0,
