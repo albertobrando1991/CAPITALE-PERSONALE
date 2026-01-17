@@ -862,6 +862,12 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       if (!material.contenuto) {
         return res.status(400).json({ error: "Materiale senza contenuto" });
       }
+      if (material.contenuto.trim().length < 500) {
+        return res.status(400).json({
+          error:
+            "Contenuto insufficiente per generare flashcard. Usa un PDF testuale (non scannerizzato) oppure incolla il testo negli appunti.",
+        });
+      }
 
       const concorso = await storage.getConcorso(material.concorsoId, userId);
       if (!concorso) {

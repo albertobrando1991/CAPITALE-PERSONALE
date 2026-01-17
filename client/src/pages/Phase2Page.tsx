@@ -177,6 +177,12 @@ export default function Phase2Page() {
           contenuto = (await file.text()).slice(0, 30000);
         }
 
+        if (contenuto.trim().length < 500) {
+          throw new Error(
+            "Non riesco a leggere testo dal PDF (probabilmente è scannerizzato/immagine). Incolla il testo negli appunti oppure usa un PDF testuale."
+          );
+        }
+
         const res = await apiRequest("POST", "/api/materials", {
           concorsoId,
           nome: newMaterial.nome || file.name,
