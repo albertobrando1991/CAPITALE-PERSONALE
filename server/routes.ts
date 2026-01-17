@@ -251,6 +251,26 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
     }
   });
 
+  // Endpoint pubblico per debug deploy (senza auth, non espone segreti)
+  app.get("/api/public-status", (req: Request, res: Response) => {
+    res.json({
+      ok: true,
+      env: {
+        NODE_ENV: process.env.NODE_ENV || null,
+        VERCEL: !!process.env.VERCEL,
+      },
+      build: {
+        vercelCommitSha: process.env.VERCEL_GIT_COMMIT_SHA || null,
+        vercelCommitRef: process.env.VERCEL_GIT_COMMIT_REF || null,
+      },
+      config: {
+        OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ? "present" : "missing",
+        DATABASE_URL: process.env.DATABASE_URL ? "present" : "missing",
+        SESSION_SECRET: process.env.SESSION_SECRET ? "present" : "missing",
+      },
+    });
+  });
+
   // Test endpoint per verificare la configurazione e i componenti
   app.get("/api/test-config", isAuthenticated, async (req: Request, res: Response) => {
     try {
