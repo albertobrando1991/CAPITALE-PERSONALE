@@ -1274,7 +1274,11 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
                  // --- INTEGRAZIONE AI PER DISTRATTORI ---
                  // Se abbiamo configurato l'AI, usiamola per generare distrattori coerenti
                  // Se non è configurata, usiamo la logica locale migliorata
-                 const shouldUseAI = !!process.env.OPENROUTER_API_KEY;
+                 const shouldUseAI = !!(
+                     process.env.OPENROUTER_API_KEY ||
+                     process.env.OPEN_ROUTER_API_KEY ||
+                     process.env.OPEN_ROUTER
+                 );
                  
                  if (shouldUseAI) { 
                      try {

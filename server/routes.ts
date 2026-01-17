@@ -253,6 +253,11 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
 
   // Endpoint pubblico per debug deploy (senza auth, non espone segreti)
   app.get("/api/public-status", (req: Request, res: Response) => {
+    const hasOpenRouterKey = !!(
+      process.env.OPENROUTER_API_KEY ||
+      process.env.OPEN_ROUTER_API_KEY ||
+      process.env.OPEN_ROUTER
+    );
     res.json({
       ok: true,
       env: {
@@ -264,7 +269,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         vercelCommitRef: process.env.VERCEL_GIT_COMMIT_REF || null,
       },
       config: {
-        OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ? "present" : "missing",
+        OPENROUTER_API_KEY: hasOpenRouterKey ? "present" : "missing",
         DATABASE_URL: process.env.DATABASE_URL ? "present" : "missing",
         SESSION_SECRET: process.env.SESSION_SECRET ? "present" : "missing",
       },
@@ -274,7 +279,11 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
   // Test endpoint per verificare la configurazione e i componenti
   app.get("/api/test-config", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
+      const hasOpenRouterKey = !!(
+        process.env.OPENROUTER_API_KEY ||
+        process.env.OPEN_ROUTER_API_KEY ||
+        process.env.OPEN_ROUTER
+      );
       const hasDatabaseUrl = !!process.env.DATABASE_URL;
       
       // Test OpenRouter client creation
@@ -309,7 +318,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         pdfLibraryLoaded: pdfTest,
         pdfError,
         envVars: {
-          OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ? "present" : "missing",
+          OPENROUTER_API_KEY: hasOpenRouterKey ? "present" : "missing",
           DATABASE_URL: process.env.DATABASE_URL ? "present" : "missing",
         }
       });
@@ -832,10 +841,94 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
           .trim();
 
 
-      // Logica "Grounded Fallback" RIMOSTA per evitare domande banali (es. "cosa si afferma su 'di'?")
-      // Se l'AI fallisce, preferiamo non generare nulla piuttosto che generare spazzatura.
+      // Logica "Fallback Intelligente": Estrae frasi chiave con regex se l'AI fallisce
+      // Evita domande banali su singole parole, cercando invece frasi complete.
+      const smartRegexFallback = (text: string, count: number) => {
+        const out: Array<{ fronte: string; retro: string; evidenza: string }> = [];
+        const seen = new Set<string>();
+
+        const pushIfNew = (fronte: string, retro: string, evidenza: string) => {
+          if (out.length >= count) return;
+          const key = normalizeForMatch(fronte);
+          if (!key || seen.has(key)) return;
+          seen.add(key);
+          out.push({ fronte, retro, evidenza });
+        };
+        
+        // 1. Cerca definizioni esplicite: "X è Y", "X sono Y", "X consiste in Y"
+        // Regex cattura: (Soggetto) (verbo) (Definizione)
+        // Limita lunghezza soggetto (10-100 chars) e definizione (20-300 chars)
+        const flatText = text.replace(/\s*\n+\s*/g, " ").replace(/\s+/g, " ").trim();
+        const definitionRegex = /([A-Z][^.?!:]{10,100}?)\s+(?:è|sono|consiste|rappresenta|costituisce)\s+([^.?!:]{20,300}?)[.?!]/g;
+        const intendePerRegex = /Si\s+intende\s+per\s+([A-Z][^,:\n]{5,80}?)\s+([^.?!:\n]{20,300}?)[.?!]/g;
+        const perIntendeRegex = /(?:Per|Ai\s+fini(?:\s+della\s+presente\s+[^,]{0,50})?,?\s+per)\s+([A-Z][^,:\n]{5,80}?)\s+si\s+intende\s+([^.?!:\n]{20,300}?)[.?!]/g;
+
+        let match;
+        const runDefinitionRegex = (re: RegExp, kind: "def" | "intende") => {
+          re.lastIndex = 0;
+          while ((match = re.exec(flatText)) !== null) {
+            if (out.length >= count) break;
+            const subject = (match[1] || "").trim();
+            const def = (match[2] || "").trim();
+            const fullSentence = (match[0] || "").trim();
+            if (!subject || !def) continue;
+            if (subject.split(" ").length < 2 && subject.length < 15) continue;
+            const q =
+              kind === "intende"
+                ? `Nel testo, cosa si intende per "${subject}"?`
+                : `Nel testo, come viene definito "${subject}"?`;
+            pushIfNew(q, def, fullSentence);
+          }
+        };
+
+        runDefinitionRegex(definitionRegex, "def");
+        runDefinitionRegex(intendePerRegex, "intende");
+        runDefinitionRegex(perIntendeRegex, "intende");
+        
+        // 2. Cerca elenchi o punti chiave se servono ancora card
+        if (out.length < count) {
+          const lines = text.split(/\r?\n/);
+          const bulletLineRegex = /^\s*(?:[-•*]|\d+[.)])\s+(.+?)\s*$/;
+          const isIntroLine = (s: string) =>
+            s.length >= 20 &&
+            s.length <= 220 &&
+            (/:$/.test(s) || /\b(?:come\s+segue|i\s+seguenti|tra\s+cui)\b/i.test(s));
+
+          for (let i = 0; i < lines.length && out.length < count; i++) {
+            const line = (lines[i] || "").trim();
+            if (!line) continue;
+            if (!isIntroLine(line)) continue;
+
+            const intro = line.replace(/[:\s]+$/g, "").trim();
+            if (!intro) continue;
+
+            const items: string[] = [];
+            for (let j = i + 1; j < lines.length && items.length < 10; j++) {
+              const m = (lines[j] || "").match(bulletLineRegex);
+              if (!m) break;
+              const item = (m[1] || "").trim();
+              if (item.length < 4) continue;
+              items.push(item);
+            }
+
+            if (items.length < 2) continue;
+            for (const item of items) {
+              if (out.length >= count) break;
+              pushIfNew(
+                `Nel testo, quale elemento è elencato in relazione a "${intro}"?`,
+                item,
+                `${intro}: ${item}`
+              );
+            }
+          }
+        }
+
+        return out;
+      };
+
+      // Se l'AI fallisce, usa il fallback intelligente
       const groundedFallbackFromText = (text: string) => {
-          return [];
+          return smartRegexFallback(text, 15); // Tenta di estrarne fino a 15
       };
 
       const rawText = material.contenuto;
@@ -850,24 +943,58 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         `[GEN-FLASHCARDS] Analisi testo (chars=${contentToAnalyze.length}, primi 500): ${contentToAnalyze.substring(0, 500)}...`
       );
 
-      const systemPrompt = `Sei un esperto creatore di flashcard per concorsi pubblici italiani.
-Il tuo compito è analizzare il testo fornito e creare flashcard di alto livello, pensate per lo studio attivo e la memorizzazione di concetti complessi.
+      const systemPrompt = `Sei un esperto creatore di flashcard per la preparazione ai concorsi pubblici italiani (diritto, economia, informatica, lingue, materie tecniche, cultura generale, logica, ecc.).
 
-REGOLE FONDAMENTALI:
-1. EVITA domande banali tipo "Cos'è X?". Preferisci: "Quali sono le differenze tra X e Y?", "Quali sono i requisiti per...", "Quali effetti produce...".
-2. Ogni flashcard deve essere COMPLETA e AUTOSUFFICIENTE.
-3. La risposta (retro) deve essere precisa, sintetica (max 3 frasi) e andare dritta al punto.
-4. Includi SEMPRE il campo "evidenza" copiando esattamente la frase del testo che giustifica la risposta.
-5. Se il testo cita articoli di legge, date o elenchi, crea flashcard specifiche su quelli.
+OBIETTIVO
+Analizza il testo fornito (da PDF o testo incollato) e genera flashcard che stimolano studio attivo e comprensione profonda, non semplice memorizzazione. Usa SOLO informazioni presenti nel materiale: non inventare contenuti.
 
-Restituisci SOLO un array JSON valido:
-[
-  { 
-    "fronte": "Domanda stimolante...", 
-    "retro": "Risposta precisa...", 
-    "evidenza": "Citazione dal testo..." 
-  }
-]`;
+COPERTURA E DENSITÀ
+- Estrai tutti i concetti significativi.
+- Genera il numero di flashcard richiesto sfruttando al massimo il contenuto.
+- Ogni flashcard deve essere unica: niente duplicati o domande quasi identiche.
+- Varia la tipologia di domanda per coprire diversi aspetti dello stesso argomento.
+
+TIPI DI DOMANDA (ALTERNALI SPESSO)
+1. Differenze e confronti: "Qual è la differenza tra X e Y?"
+2. Requisiti e condizioni: "Quali sono i requisiti/caratteristiche di...?"
+3. Cause ed effetti: "Cosa succede se/quando...?"
+4. Applicazioni pratiche: "In quale caso/contesto si usa...?"
+5. Eccezioni e limiti: "Quando NON si applica/funziona...?"
+6. Procedure e processi: "Qual è la sequenza/procedura per...?"
+7. Relazioni: "Come si collega X con Y?"
+8. Classificazioni: "In quale categoria rientra...?"
+9. Finalità e scopi: "Qual è lo scopo/obiettivo di...?"
+10. Soggetti e competenze: "Chi è competente per...?"
+
+EVITA
+- Domande generiche tipo "Cos'è X?" o "Definisci Y", salvo casi eccezionali in cui il testo insiste sulla definizione.
+- Domande sì/no.
+- Domande troppo vaghe o troppo simili tra loro.
+- Copiare letteralmente una frase del testo come domanda senza trasformarla in domanda.
+
+STRUTTURA DI OGNI FLASHCARD
+- "fronte": una domanda specifica e mirata, formulata in italiano corretto.
+- "retro": una risposta accurata e sintetica (massimo 3 frasi) che riassume le informazioni chiave.
+- "evidenza": una citazione o riferimento dal testo che giustifica la risposta.
+  - Per materie giuridiche: includi, quando possibile, riferimenti del tipo "Art. X, comma Y, Legge n. Z del GG/MM/AAAA".
+  - Per altre materie: copia il passaggio chiave, la formula o il dato numerico esatto (percentuali, soglie, limiti, valori).
+
+CASI SPECIALI: CREA FLASHCARD DEDICATE PER OGNI OCCORRENZA DI
+- Norme (articoli di legge, regolamenti, direttive).
+- Date rilevanti (entrata in vigore, scadenze, eventi storici).
+- Elenchi strutturati (classificazioni, tipologie, componenti, fasi di un processo).
+- Numeri importanti (soglie, percentuali, formule, statistiche).
+- Acronimi e sigle (significato e contesto).
+- Nomi propri importanti (autori, enti, istituzioni, teorie).
+- Termini tecnici (con definizione e contesto).
+- Esempi pratici (casi reali o applicazioni nel testo).
+
+FORMATTO DI OUTPUT
+Devi restituire SOLO un ARRAY JSON valido. Ogni elemento dell'array deve essere un oggetto con le chiavi esatte:
+- "fronte": string
+- "retro": string
+- "evidenza": string
+Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
 
       const parseFlashcards = (content: any) => {
         let items: any[] = [];
@@ -905,7 +1032,11 @@ Restituisci SOLO un array JSON valido:
       const collected: any[] = [];
       const aiErrors: string[] = [];
 
-      const hasAnyAI = !!process.env.OPENROUTER_API_KEY;
+      const hasAnyAI = !!(
+        process.env.OPENROUTER_API_KEY ||
+        process.env.OPEN_ROUTER_API_KEY ||
+        process.env.OPEN_ROUTER
+      );
 
       const maxChunksToProcess = 10;
       const chunkIndices =
@@ -965,17 +1096,57 @@ Restituisci SOLO un array JSON valido:
 
       const normalizedText = normalizeForMatch(contentToAnalyze);
       const textTokens = new Set(normalizedText.split(" ").filter(Boolean));
-      const cleaned: any[] = collected
+      const preEvidence: any[] = collected
         .map((f: any) => {
-          const fronte = typeof f?.fronte === "string" ? f.fronte.trim() : "";
-          const retro = typeof f?.retro === "string" ? f.retro.trim() : "";
-          const evidenza = typeof f?.evidenza === "string" ? f.evidenza.trim() : "";
+          const fronteRaw =
+            typeof f?.fronte === "string"
+              ? f.fronte
+              : typeof f?.domanda === "string"
+                ? f.domanda
+                : typeof f?.question === "string"
+                  ? f.question
+                  : typeof f?.q === "string"
+                    ? f.q
+                    : "";
+          const retroRaw =
+            typeof f?.retro === "string"
+              ? f.retro
+              : typeof f?.risposta === "string"
+                ? f.risposta
+                : typeof f?.answer === "string"
+                  ? f.answer
+                  : typeof f?.a === "string"
+                    ? f.a
+                    : "";
+          const evidenzaRaw =
+            typeof f?.evidenza === "string"
+              ? f.evidenza
+              : typeof f?.fonte === "string"
+                ? f.fonte
+                : typeof f?.source === "string"
+                  ? f.source
+                  : typeof f?.citazione === "string"
+                    ? f.citazione
+                    : typeof f?.reference === "string"
+                      ? f.reference
+                      : typeof f?.evidence === "string"
+                        ? f.evidence
+                        : "";
+
+          const fronte = fronteRaw.trim();
+          const retro = retroRaw.trim();
+          const evidenza = evidenzaRaw.trim();
           const chunkNormalized = typeof f?.__chunkNormalized === "string" ? f.__chunkNormalized : "";
           const chunkTokens = f?.__chunkTokens instanceof Set ? f.__chunkTokens : null;
           return { fronte, retro, evidenza, chunkNormalized, chunkTokens };
         })
-        .filter((f) => f.fronte.length >= 12 && f.retro.length >= 5 && f.evidenza.length >= 20)
-        .filter((f) => {
+        .filter((f) => f.fronte.length >= 12 && f.retro.length >= 5 && f.evidenza.length >= 12)
+        .filter((f, i, arr) => {
+          const key = normalizeForMatch(f.fronte);
+          return arr.findIndex((x) => normalizeForMatch(x.fronte) === key) === i;
+        });
+
+      const evidenceVerified: any[] = preEvidence.filter((f) => {
           const ev = normalizeForMatch(f.evidenza);
           if (f.chunkNormalized && f.chunkNormalized.includes(ev)) return true;
           if (normalizedText.includes(ev)) return true;
@@ -987,13 +1158,19 @@ Restituisci SOLO un array JSON valido:
           for (const t of evTokens) {
             if (f.chunkTokens?.has(t) || textTokens.has(t)) found++;
           }
-          const required = Math.max(4, Math.ceil(evTokens.length * 0.7));
+          const required = Math.max(3, Math.ceil(evTokens.length * 0.55));
           return found >= required;
-        })
-        .filter((f, i, arr) => {
-          const key = normalizeForMatch(f.fronte);
-          return arr.findIndex((x) => normalizeForMatch(x.fronte) === key) === i;
         });
+      
+      const cleaned = evidenceVerified;
+      const canUseLoose = preEvidence.length > 0 && cleaned.length < Math.min(12, desiredCount);
+      const looseWarning = canUseLoose
+        ? "Alcune evidenze non risultano verificabili come citazioni letterali del testo (PDF spezzato/impaginazione). Flashcard generate in modalità tollerante."
+        : undefined;
+
+      if (canUseLoose) {
+        cleaned.splice(0, cleaned.length, ...preEvidence.slice(0, desiredCount));
+      }
 
       if (cleaned.length < Math.min(12, desiredCount)) {
         const fallback = groundedFallbackFromText(contentToAnalyze);
@@ -1005,6 +1182,8 @@ Restituisci SOLO un array JSON valido:
             flashcards: [],
             warning:
               "Testo non abbastanza strutturato per creare flashcard automaticamente. Prova con appunti incollati o un PDF diverso.",
+            aiConfigured: hasAnyAI,
+            aiErrors: aiErrors.slice(0, 5),
           });
         }
       }
@@ -1036,7 +1215,7 @@ Restituisci SOLO un array JSON valido:
         flashcardGenerate: created.length 
       });
 
-      res.json({ count: created.length, flashcards: created });
+      res.json({ count: created.length, flashcards: created, warning: looseWarning });
     } catch (error) {
       console.error("Error generating flashcards:", error);
       const message = (error as any)?.message || "Errore sconosciuto";

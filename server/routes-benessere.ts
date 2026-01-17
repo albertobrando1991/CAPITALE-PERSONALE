@@ -162,7 +162,7 @@ router.post('/reframing/generate', requireAuth, async (req: Request, res: Respon
       return res.status(400).json({ error: 'Campo obbligatorio: anxiousThought' });
     }
 
-    if (!process.env.OPENROUTER_API_KEY) {
+    if (!(process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER_API_KEY || process.env.OPEN_ROUTER)) {
       return res.status(503).json({ error: 'Servizio AI non configurato' });
     }
 
