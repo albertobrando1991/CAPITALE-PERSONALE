@@ -948,8 +948,9 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       const normalizeForMatch = (s: string) =>
         s
           .toLowerCase()
+          .replace(/(\p{L})-\s+(\p{L})/gu, "$1$2")
+          .replace(/[^\p{L}\p{N}\s]/gu, " ")
           .replace(/\s+/g, " ")
-          .replace(/[^\p{L}\p{N}\s]/gu, "")
           .trim();
 
       const rawText = material.contenuto;
@@ -1030,6 +1031,7 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
       }
 
       const normalizedText = normalizeForMatch(contentToAnalyze);
+      const textTokens = new Set(normalizedText.split(" ").filter(Boolean));
       const cleaned = collected
         .map((f: any) => {
           const fronte = typeof f?.fronte === "string" ? f.fronte.trim() : "";
@@ -1038,7 +1040,20 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
           return { fronte, retro, evidenza };
         })
         .filter((f) => f.fronte.length >= 12 && f.retro.length >= 5 && f.evidenza.length >= 20)
-        .filter((f) => normalizedText.includes(normalizeForMatch(f.evidenza)))
+        .filter((f) => {
+          const ev = normalizeForMatch(f.evidenza);
+          if (normalizedText.includes(ev)) return true;
+
+          const evTokens = ev.split(" ").filter((t) => t.length >= 3);
+          if (evTokens.length < 6) return false;
+
+          let found = 0;
+          for (const t of evTokens) {
+            if (textTokens.has(t)) found++;
+          }
+          const required = Math.max(4, Math.ceil(evTokens.length * 0.7));
+          return found >= required;
+        })
         .filter((f, i, arr) => {
           const key = `${f.fronte}||${f.retro}`;
           return arr.findIndex((x) => `${x.fronte}||${x.retro}` === key) === i;
