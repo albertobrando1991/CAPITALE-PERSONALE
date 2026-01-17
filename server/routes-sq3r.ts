@@ -3,61 +3,7 @@ import { db } from './db';
 import { capitoliSQ3R, materieSQ3R } from '../shared/schema-sq3r';
 import { eq, and } from 'drizzle-orm';
 import multer from 'multer';
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import OpenAI from "openai";
-
-// AI Clients
-let openai: OpenAI | null = null;
-let genAI: GoogleGenerativeAI | null = null;
-
-function getOpenAIClient() {
-  if (!openai) {
-    const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-    if (apiKey) {
-      openai = new OpenAI({
-        apiKey: apiKey,
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-      });
-    }
-  }
-  return openai;
-}
-
-function getGeminiClient() {
-  if (!genAI) {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (apiKey) {
-      genAI = new GoogleGenerativeAI(apiKey);
-    }
-  }
-  return genAI;
-}
-
-function cleanJson(text: string): string {
-  if (!text) return "{}";
-  let cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-  const firstBrace = cleaned.indexOf("[");
-  const lastBrace = cleaned.lastIndexOf("]");
-  if (firstBrace !== -1 && lastBrace !== -1) {
-    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
-  }
-  return cleaned;
-}
-
-// Helper to use Gemini for analysis
-async function analyzeWithGemini(prompt: string, content: string): Promise<string> {
-  const client = getGeminiClient();
-  if (!client) throw new Error("Gemini API key not configured");
-  
-  const model = client.getGenerativeModel({ model: "gemini-2.0-flash" });
-  
-  const result = await model.generateContent([
-    prompt,
-    content
-  ]);
-  
-  return result.response.text();
-}
+import { cleanJson, generateWithFallback } from "./services/ai";
 
 // Multer per upload PDF
 const upload = multer({
@@ -919,47 +865,16 @@ Rispondi SOLO con un array JSON valido, senza testo aggiuntivo prima o dopo.
       // GENERAZIONE CON AI
       // ============================================
 
-      let generatedJson = "[]";
-      let aiProvider = "none";
-
-      // Tentativo 1: Gemini (più veloce ed economico)
-      try {
-        if (getGeminiClient()) {
-          console.log("🤖 Uso Gemini 2.0 Flash...");
-          aiProvider = "Gemini";
-          generatedJson = await analyzeWithGemini(systemPrompt, contentToAnalyze);
-          console.log("✅ Gemini ha risposto");
-        } else {
-          throw new Error("Gemini non configurato");
-        }
-      } catch (geminiError) {
-        console.warn("⚠️  Gemini fallito, fallback a OpenAI...");
-        
-        // Tentativo 2: OpenAI (fallback)
-        try {
-          const openai = getOpenAIClient();
-          if (!openai) throw new Error("Nessun provider AI configurato");
-          
-          console.log("🤖 Uso OpenAI GPT-4o-mini...");
-          aiProvider = "OpenAI";
-          
-          const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: contentToAnalyze }
-            ],
-            temperature: 0.7,
-            max_tokens: 3000,
-          });
-          
-          generatedJson = completion.choices[0].message.content || "[]";
-          console.log("✅ OpenAI ha risposto");
-        } catch (openaiError) {
-          console.error("❌ OpenAI fallito:", openaiError);
-          throw new Error("Impossibile generare il quiz. Verifica le chiavi API.");
-        }
-      }
+      const aiProvider = "OpenRouter";
+      const generatedJson = await generateWithFallback({
+        task: "sq3r_generate",
+        systemPrompt,
+        userPrompt: contentToAnalyze,
+        temperature: 0.7,
+        maxOutputTokens: 3000,
+        responseMode: "json",
+        jsonRoot: "array",
+      });
 
       // ============================================
       // PARSING E VALIDAZIONE

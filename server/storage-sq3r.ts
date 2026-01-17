@@ -5,6 +5,7 @@ import { eq, and, desc } from 'drizzle-orm';
 import type { FonteStudio, InsertFonteStudio, MateriaSQ3R, InsertMateriaSQ3R, CapitoloSQ3R, InsertCapitoloSQ3R, NotebookLmSession, InsertNotebookLmSession } from '../shared/schema-sq3r';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { cleanJson, generateWithFallback } from './services/ai';
 
 export class StorageSQ3R {
   
@@ -295,33 +296,9 @@ export class StorageSQ3R {
 
   private async estraiCapitoliConAI(testo: string, materia: string): Promise<any[]> {
     try {
-      console.log('🤖 Configurazione client OpenAI...');
-      
-      const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-      
-      if (!apiKey) {
-        console.error('❌ OpenAI API Key mancante nelle variabili d\'ambiente');
-        throw new Error("OpenAI API Key mancante. Configura AI_INTEGRATIONS_OPENAI_API_KEY o OPENAI_API_KEY.");
-      }
-      
-      // Dynamic import to avoid initialization issues
-      let OpenAI;
-      try {
-        const module = await import("openai");
-        OpenAI = module.default || module;
-      } catch (importErr) {
-        console.error('❌ Errore importazione modulo openai:', importErr);
-        throw new Error("Errore interno: impossibile caricare client OpenAI");
-      }
-      
-      const openai = new OpenAI({ 
-        apiKey, 
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL 
-      });
-
       // Tronca testo se troppo lungo (max ~100k caratteri)
       const testoTroncato = testo.slice(0, 100000);
-      console.log(`🤖 Invio prompt a OpenAI (${testoTroncato.length} caratteri)...`);
+      console.log(`🤖 Invio prompt a AI (${testoTroncato.length} caratteri)...`);
 
       const prompt = `Sei un esperto di ${materia}. Analizza il seguente testo estratto da un PDF e identifica i capitoli principali.
 
@@ -340,30 +317,18 @@ Restituisci SOLO un JSON array senza altro testo:
 TESTO:
 ${testoTroncato}`;
 
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: 'Sei un assistente che estrae la struttura di documenti accademici.' },
-          { role: 'user', content: prompt },
-        ],
+      const content = await generateWithFallback({
+        task: "sq3r_chapters_extract",
+        systemPrompt: 'Sei un assistente che estrae la struttura di documenti accademici.',
+        userPrompt: prompt,
         temperature: 0.3,
-        max_tokens: 2000,
-        response_format: { type: 'json_object' },
+        maxOutputTokens: 2000,
+        responseMode: "json",
+        jsonRoot: "array",
       });
 
-      const content = completion.choices[0].message.content || '{}';
-      const result = JSON.parse(content);
-      
-      // OpenAI può restituire { capitoli: [...] } o direttamente [...] o { "capitoli": [...] }
-      // Gestiamo vari casi
-      let capitoli = [];
-      if (Array.isArray(result)) capitoli = result;
-      else if (result.capitoli && Array.isArray(result.capitoli)) capitoli = result.capitoli;
-      else if (Object.keys(result).length > 0) {
-         // Fallback: cerca la prima chiave che è un array
-         const firstArrayKey = Object.keys(result).find(k => Array.isArray(result[k]));
-         if (firstArrayKey) capitoli = result[firstArrayKey];
-      }
+      const result = JSON.parse(cleanJson(content));
+      const capitoli = Array.isArray(result) ? result : [];
 
       console.log(`🤖 AI ha identificato ${capitoli.length} capitoli`);
       return capitoli;

@@ -84,7 +84,7 @@ export default function Phase2Page() {
   const { data: concorso, isLoading: loadingConcorso } = useQuery<Concorso>({
     queryKey: ["/api/concorsi", concorsoId],
     queryFn: async () => {
-      const res = await fetch(`/api/concorsi/${concorsoId}`);
+      const res = await fetch(`/api/concorsi/${concorsoId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch concorso");
       return res.json();
     },
@@ -94,7 +94,7 @@ export default function Phase2Page() {
   const { data: materials = [], isLoading: loadingMaterials } = useQuery<Material[]>({
     queryKey: ["/api/materials", concorsoId],
     queryFn: async () => {
-      const res = await fetch(`/api/materials?concorsoId=${concorsoId}`);
+      const res = await fetch(`/api/materials?concorsoId=${concorsoId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch materials");
       return res.json();
     },
@@ -104,7 +104,7 @@ export default function Phase2Page() {
   const { data: flashcards = [] } = useQuery<Flashcard[]>({
     queryKey: ["/api/flashcards", concorsoId],
     queryFn: async () => {
-      const res = await fetch(`/api/flashcards?concorsoId=${concorsoId}`);
+      const res = await fetch(`/api/flashcards?concorsoId=${concorsoId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch flashcards");
       return res.json();
     },

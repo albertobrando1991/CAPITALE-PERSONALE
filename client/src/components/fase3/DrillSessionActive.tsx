@@ -99,7 +99,9 @@ export default function DrillSessionActive({
 
       try {
         setLoading(true);
-        const response = await fetch(`/api/fase3/${concorsoId}/drill-sessions/${sessionId}/questions`);
+        const response = await fetch(`/api/fase3/${concorsoId}/drill-sessions/${sessionId}/questions`, {
+          credentials: "include",
+        });
         
         if (!response.ok) throw new Error('Errore fetch domande');
         
@@ -167,6 +169,7 @@ export default function DrillSessionActive({
 
         const errorResponse = await fetch(`/api/fase3/${concorsoId}/errors`, {
           method: 'POST',
+          credentials: "include",
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             source_type: 'drill',

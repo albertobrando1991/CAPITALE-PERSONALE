@@ -57,7 +57,9 @@ export default function Fase3Dashboard() {
 
   const fetchDrillSessions = async () => {
     try {
-      const response = await fetch(`/api/fase3/${concorsoId}/drill-sessions?limit=10`);
+      const response = await fetch(`/api/fase3/${concorsoId}/drill-sessions?limit=10`, {
+        credentials: "include",
+      });
       if (response.ok) {
         const data = await response.json();
         setDrillSessions(data);
@@ -76,6 +78,7 @@ export default function Fase3Dashboard() {
     try {
         const response = await fetch(`/api/fase3/${concorsoId}/drill-sessions/${sessionId}`, {
             method: 'DELETE',
+            credentials: "include",
         });
 
         if (response.ok) {

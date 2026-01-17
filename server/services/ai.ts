@@ -1,68 +1,53 @@
 
 import OpenAI from "openai";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { createOpenAI } from '@ai-sdk/openai';
-import { generateText } from 'ai';
 
-// Types
-export interface AIConfig {
-  openaiApiKey?: string;
-  openaiBaseUrl?: string;
-  geminiApiKey?: string;
-  vercelApiKey?: string;
+export type AITask =
+  | "flashcards_generate"
+  | "flashcard_explain"
+  | "distractors_generate"
+  | "quiz_generate"
+  | "fase3_drill_generate"
+  | "concept_explain"
+  | "sq3r_generate"
+  | "sq3r_chapters_extract"
+  | "recovery_plan"
+  | "reframing_generate"
+  | "ocr_images"
+  | "generic";
+
+export type AIResponseMode = "text" | "json";
+
+export type AIJsonRoot = "any" | "object" | "array";
+
+export interface AIImageInput {
+  mimeType: string;
+  base64: string;
 }
 
-// Singleton instances
-let openaiClient: OpenAI | null = null;
-let geminiClient: GoogleGenerativeAI | null = null;
+let openRouterClient: OpenAI | null = null;
 
-/**
- * Initializes and returns the OpenAI client.
- * Priority: AI_INTEGRATIONS_OPENAI_API_KEY > OPENAI_API_KEY
- */
-export function getOpenAIClient(): OpenAI {
-  if (openaiClient) return openaiClient;
+export function getOpenRouterClient(): OpenAI {
+  if (openRouterClient) return openRouterClient;
 
-  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    throw new Error("OpenAI API key not configured");
+    throw new Error("OPENROUTER_API_KEY non configurata");
   }
 
-  openaiClient = new OpenAI({
+  const baseURL = process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
+  const referer = process.env.OPENROUTER_SITE_URL;
+  const title = process.env.OPENROUTER_APP_NAME;
+
+  openRouterClient = new OpenAI({
     apiKey,
-    baseURL: baseURL || undefined, // undefined uses default
+    baseURL,
+    defaultHeaders: {
+      ...(referer ? { "HTTP-Referer": referer } : {}),
+      ...(title ? { "X-Title": title } : {}),
+    },
   });
 
-  return openaiClient;
-}
-
-/**
- * Initializes and returns the Gemini client.
- * Priority: GEMINI_API_KEY > GOOGLE_API_KEY
- */
-export function getGeminiClient(): GoogleGenerativeAI | null {
-  if (geminiClient) return geminiClient;
-
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey) return null;
-
-  geminiClient = new GoogleGenerativeAI(apiKey);
-  return geminiClient;
-}
-
-/**
- * Initializes and returns the Vercel AI Gateway client.
- */
-export function getVercelGateway() {
-  const apiKey = process.env.AI_GATEWAY_API_KEY;
-  if (!apiKey) return null;
-  
-  return createOpenAI({
-    apiKey: apiKey,
-    name: 'vercel-gateway',
-  });
+  return openRouterClient;
 }
 
 /**
@@ -97,91 +82,220 @@ export function cleanJson(text: string): string {
   return cleaned;
 }
 
-export interface GenerationOptions {
-  systemPrompt: string;
-  userPrompt: string;
-  model?: string; // For OpenAI
-  jsonMode?: boolean; // If true, tries to enforce JSON output
+export interface GenerateWithFallbackOptions {
+  task: AITask;
+  systemPrompt?: string;
+  userPrompt?: string;
+  messages?: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
   temperature?: number;
+  maxOutputTokens?: number;
+  responseMode?: AIResponseMode;
+  jsonRoot?: AIJsonRoot;
 }
 
-/**
- * Generates text using a fallback strategy: Gemini -> Vercel -> OpenAI.
- */
-export async function generateWithFallback(options: GenerationOptions): Promise<string> {
-  const { systemPrompt, userPrompt, jsonMode = false, temperature = 0.7 } = options;
-  let result: string | null = null;
-  let errors: string[] = [];
+function getModelChain(task: AITask): string[] {
+  switch (task) {
+    case "flashcards_generate":
+      return ["google/gemini-2.0-flash", "openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet"];
+    case "flashcard_explain":
+      return ["anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+    case "distractors_generate":
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+    case "quiz_generate":
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash", "anthropic/claude-3.5-sonnet"];
+    case "fase3_drill_generate":
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash", "anthropic/claude-3.5-sonnet"];
+    case "concept_explain":
+      return ["anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+    case "sq3r_generate":
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+    case "sq3r_chapters_extract":
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+    case "recovery_plan":
+      return ["anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+    case "reframing_generate":
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+    case "ocr_images":
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+    default:
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash", "anthropic/claude-3.5-sonnet"];
+  }
+}
 
-  // 1. Try Gemini
-  const gemini = getGeminiClient();
-  if (gemini) {
-    try {
-      console.log("[AI] Trying Gemini...");
-      const model = gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
-      const prompt = `${systemPrompt}\n\n${userPrompt}${jsonMode ? "\nReturn ONLY valid JSON." : ""}`;
-      
-      const response = await model.generateContent(prompt);
-      result = response.response.text();
-      
-      if (result) {
-        if (jsonMode) result = cleanJson(result);
-        return result;
-      }
-    } catch (err: any) {
-      console.error("[AI] Gemini failed:", err.message);
-      errors.push(`Gemini: ${err.message}`);
+function getDefaultMaxOutputTokens(task: AITask): number {
+  switch (task) {
+    case "flashcards_generate":
+      return 2500;
+    case "quiz_generate":
+      return 2500;
+    case "fase3_drill_generate":
+      return 3000;
+    case "sq3r_generate":
+      return 3000;
+    case "sq3r_chapters_extract":
+      return 2000;
+    case "recovery_plan":
+      return 1200;
+    case "flashcard_explain":
+    case "concept_explain":
+      return 900;
+    case "reframing_generate":
+      return 400;
+    case "distractors_generate":
+      return 250;
+    case "ocr_images":
+      return 1200;
+    default:
+      return 1200;
+  }
+}
+
+function modelSupportsResponseFormat(model: string): boolean {
+  return model.startsWith("openai/");
+}
+
+function buildMessagesFromPrompts(opts: GenerateWithFallbackOptions): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+  if (opts.messages?.length) return opts.messages;
+  const systemPrompt = opts.systemPrompt || "";
+  const userPrompt = opts.userPrompt || "";
+  const msgs: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+  if (systemPrompt) msgs.push({ role: "system", content: systemPrompt });
+  msgs.push({ role: "user", content: userPrompt });
+  return msgs;
+}
+
+function ensureJsonInstructionOnLastUserMessage(
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+  jsonRoot: AIJsonRoot
+): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+  const instruction =
+    jsonRoot === "array"
+      ? "\n\nRispondi SOLO con un ARRAY JSON valido, senza markdown né testo extra."
+      : jsonRoot === "object"
+        ? "\n\nRispondi SOLO con un OGGETTO JSON valido, senza markdown né testo extra."
+        : "\n\nRispondi SOLO con JSON valido, senza markdown né testo extra.";
+
+  const cloned = [...messages];
+  for (let i = cloned.length - 1; i >= 0; i--) {
+    const m = cloned[i];
+    if (m.role !== "user") continue;
+    if (typeof m.content === "string") {
+      cloned[i] = { ...m, content: m.content + instruction };
+      return cloned;
+    }
+    if (Array.isArray(m.content)) {
+      cloned[i] = {
+        ...m,
+        content: [...m.content, { type: "text", text: instruction }],
+      } as any;
+      return cloned;
     }
   }
+  cloned.push({ role: "user", content: instruction });
+  return cloned;
+}
 
-  // 2. Try Vercel AI Gateway
-  const vercel = getVercelGateway();
-  if (vercel && !result) {
-    try {
-      console.log("[AI] Trying Vercel AI Gateway...");
-      const { text } = await generateText({
-        model: vercel('gpt-4o'),
-        system: systemPrompt,
-        prompt: userPrompt + (jsonMode ? "\nReturn ONLY valid JSON." : ""),
-        temperature,
-      });
-      
-      if (text) {
-        result = text;
-        if (jsonMode) result = cleanJson(result);
-        return result;
-      }
-    } catch (err: any) {
-      console.error("[AI] Vercel Gateway failed:", err.message);
-      errors.push(`Vercel: ${err.message}`);
-    }
-  }
-
-  // 3. Try OpenAI
+function parseAndValidateJson(text: string, jsonRoot: AIJsonRoot): { ok: true; value: any; raw: string } | { ok: false; error: string; raw: string } {
+  const cleaned = cleanJson(text || "");
   try {
-    const openai = getOpenAIClient();
-    console.log("[AI] Trying OpenAI...");
-    
-    const completion = await openai.chat.completions.create({
-      model: options.model || "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-      response_format: jsonMode ? { type: "json_object" } : undefined,
-      temperature,
-    });
-
-    result = completion.choices[0]?.message?.content;
-    
-    if (result) {
-      if (jsonMode) result = cleanJson(result);
-      return result;
+    const value = JSON.parse(cleaned);
+    if (jsonRoot === "array" && !Array.isArray(value)) {
+      return { ok: false, error: "JSON non è un array", raw: cleaned };
     }
-  } catch (err: any) {
-    console.error("[AI] OpenAI failed:", err.message);
-    errors.push(`OpenAI: ${err.message}`);
+    if (jsonRoot === "object" && (value === null || Array.isArray(value) || typeof value !== "object")) {
+      return { ok: false, error: "JSON non è un oggetto", raw: cleaned };
+    }
+    return { ok: true, value, raw: cleaned };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "JSON parse error", raw: cleaned };
+  }
+}
+
+export async function generateWithFallback(options: GenerateWithFallbackOptions): Promise<string> {
+  const client = getOpenRouterClient();
+  const temperature = options.temperature ?? 0.7;
+  const responseMode: AIResponseMode = options.responseMode ?? "text";
+  const jsonRoot: AIJsonRoot = options.jsonRoot ?? "any";
+  const maxOutputTokens = options.maxOutputTokens ?? getDefaultMaxOutputTokens(options.task);
+
+  const baseMessages = buildMessagesFromPrompts(options);
+  const messages = responseMode === "json" ? ensureJsonInstructionOnLastUserMessage(baseMessages, jsonRoot) : baseMessages;
+  const chain = getModelChain(options.task);
+
+  const errors: string[] = [];
+  for (const model of chain) {
+    try {
+      const completion = await client.chat.completions.create({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxOutputTokens,
+        response_format:
+          responseMode === "json" && jsonRoot === "object" && modelSupportsResponseFormat(model)
+            ? { type: "json_object" }
+            : undefined,
+      });
+
+      const text = completion.choices[0]?.message?.content || "";
+      if (!text) {
+        errors.push(`${model}: risposta vuota`);
+        continue;
+      }
+
+      if (responseMode === "json") {
+        const parsed = parseAndValidateJson(text, jsonRoot);
+        if (!parsed.ok) {
+          errors.push(`${model}: JSON non valido (${parsed.error})`);
+
+          const repairMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            ...messages,
+            {
+              role: "user",
+              content:
+                "Il JSON precedente non era valido. Restituisci SOLO JSON valido, senza markdown né testo extra.",
+            },
+          ];
+
+          try {
+            const repaired = await client.chat.completions.create({
+              model,
+              messages: repairMessages,
+              temperature: 0.2,
+              max_tokens: maxOutputTokens,
+              response_format: modelSupportsResponseFormat(model) ? { type: "json_object" } : undefined,
+            });
+            const repairedText = repaired.choices[0]?.message?.content || "";
+            const repairedParsed = parseAndValidateJson(repairedText, jsonRoot);
+            if (repairedParsed.ok) return repairedParsed.raw;
+            errors.push(`${model}: JSON repair fallito (${repairedParsed.ok ? "" : repairedParsed.error})`);
+            continue;
+          } catch (e: any) {
+            errors.push(`${model}: JSON repair errore (${e?.message || "errore sconosciuto"})`);
+            continue;
+          }
+        }
+        return parsed.raw;
+      }
+
+      return text;
+    } catch (e: any) {
+      errors.push(`${model}: ${e?.message || "errore sconosciuto"}`);
+      continue;
+    }
   }
 
-  throw new Error(`AI Generation failed with all providers. Errors: ${errors.join("; ")}`);
+  throw new Error(`AI fallita su tutti i modelli. Dettagli: ${errors.join(" | ")}`);
+}
+
+export function makeVisionUserMessage(prompt: string, images: AIImageInput[]): OpenAI.Chat.Completions.ChatCompletionMessageParam {
+  return {
+    role: "user",
+    content: [
+      { type: "text", text: prompt },
+      ...images.map((img) => ({
+        type: "image_url",
+        image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+      })),
+    ],
+  } as any;
 }

@@ -63,7 +63,7 @@ export default function DrillSessionSetup({ concorsoId, onStart }: DrillSessionS
         setLoadingMaterie(true);
         // MODIFICA: Fetch argomenti (topics) dalle flashcards invece che materie SQ3R
         // Questo assicura che il menu mostri i materiali caricati nella Fase 2
-        const response = await fetch(`/api/fase3/${concorsoId}/topics`);
+        const response = await fetch(`/api/fase3/${concorsoId}/topics`, { credentials: "include" });
         if (response.ok) {
           const data = await response.json();
           // Filtra "Generale" se presente, come richiesto dall'utente
@@ -98,6 +98,7 @@ export default function DrillSessionSetup({ concorsoId, onStart }: DrillSessionS
         const response = await fetch(`/api/fase3/${concorsoId}/generate-questions`, {
             method: 'POST',
             body: formData, // Fetch handles Content-Type for FormData
+            credentials: "include",
         });
 
         if (!response.ok) throw new Error("Errore generazione");

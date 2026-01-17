@@ -41,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const res = await fetch("/api/login", {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
         });
@@ -76,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch("/api/logout", { method: "POST" });
+      await fetch("/api/logout", { method: "POST", credentials: "include" });
       await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       window.location.href = "/";
     } catch (e) {

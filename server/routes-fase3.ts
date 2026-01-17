@@ -5,13 +5,10 @@
 
 import express, { Request, Response } from 'express';
 import { pool as db } from './db';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import multer from 'multer';
-import OpenAI from 'openai';
-import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
 import { join } from 'path';
 import { readFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
+import { generateWithFallback } from './services/ai';
 
 const router = express.Router();
 
@@ -59,67 +56,6 @@ function cleanJson(text: string): string {
   }
   return cleaned;
 }
-
-let openai: OpenAI | null = null;
-function getOpenAIClient() {
-  if (!openai) {
-    const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-    if (apiKey) {
-      openai = new OpenAI({ apiKey, baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL });
-    }
-  }
-  return openai;
-}
-
-// Remove duplicate genAI initialization later in the file
-// Middleware autenticazione (da adattare al tuo sistema auth)
-
-// Initialize Gemini Client Global
-const genAI = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) 
-  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "") 
-  : null;
-
-function getGeminiClient() {
-  return genAI;
-}
-
-// Vercel AI Gateway Helper (Duplicated)
-function getVercelGateway() {
-  const apiKey = process.env.AI_GATEWAY_API_KEY;
-  if (!apiKey) return null;
-  return createOpenAI({
-    apiKey: apiKey,
-    name: 'vercel-gateway',
-  });
-}
-
-async function analyzeWithVercelGateway(systemPrompt: string, userPrompt: string): Promise<string> {
-  const vercel = getVercelGateway();
-  if (!vercel) throw new Error("Vercel Gateway not configured");
-
-  console.log("🤖 Using Vercel AI Gateway...");
-  const { text } = await generateText({
-    model: vercel('gpt-4o'),
-    system: systemPrompt,
-    prompt: userPrompt,
-  });
-  return text;
-}
-
-async function analyzeWithGemini(prompt: string, content: string): Promise<string> {
-  if (!genAI) throw new Error("Gemini API key not configured");
-  
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-  
-  const result = await model.generateContent([
-    prompt,
-    content
-  ]);
-  
-  return result.response.text();
-}
-
-
 // Remove duplicate genAI initialization later in the file
 // Middleware autenticazione (da adattare al tuo sistema auth)
 const requireAuth = (req: Request, res: Response, next: Function) => {
@@ -677,65 +613,17 @@ Genera un **Piano di Recupero** strutturato in 3 step:
 Formato risposta: Markdown, massimo 300 parole, tono motivante ma diretto.
     `;
 
-    // Inizializza Gemini
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    // Rinomina variabile locale per evitare conflitti con eventuali variabili globali
-    const geminiClient = geminiKey ? new GoogleGenerativeAI(geminiKey) : null;
-
-    if (!geminiClient) {
-       console.log("Gemini client initialization failed: API KEY missing");
-    }
-
-    // Genera Recovery Plan con AI (Fallback: Gemini -> Vercel -> OpenAI)
     let recoveryPlan = "";
-    
-    // Prova Gemini
-    if (geminiClient) {
-      try {
-        console.log("Attempting generation with Gemini...");
-        const model = geminiClient.getGenerativeModel({ model: 'gemini-2.0-flash' });
-        const result = await model.generateContent(prompt);
-        recoveryPlan = result.response.text();
-        console.log("Gemini generation successful");
-      } catch (geminiError) {
-        console.error("Gemini failed, trying Vercel/OpenAI fallback...", geminiError);
-      }
-    } else {
-        console.log("Skipping Gemini (not initialized)");
-    }
-
-    // Prova Vercel AI Gateway
-    if (!recoveryPlan && process.env.AI_GATEWAY_API_KEY) {
-        try {
-            console.log("Attempting generation with Vercel AI Gateway...");
-            recoveryPlan = await analyzeWithVercelGateway("Sei un tutor esperto di concorsi pubblici.", prompt);
-            console.log("Vercel Gateway generation successful");
-        } catch (vercelError) {
-            console.error("Vercel Gateway failed, trying OpenAI fallback...", vercelError);
-        }
-    }
-
-    // Se Gemini/Vercel fallisce o non è configurato, prova OpenAI
-    if (!recoveryPlan) {
-        console.log("Attempting generation with OpenAI...");
-        try {
-            const openaiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-            if (!openaiKey) {
-                console.log("OpenAI API Key missing, skipping OpenAI");
-            } else {
-                const openai = new OpenAI({ apiKey: openaiKey });
-                
-                const completion = await openai.chat.completions.create({
-                    model: "gpt-4o-mini",
-                    messages: [{ role: "user", content: prompt }],
-                    max_tokens: 500
-                });
-                recoveryPlan = completion.choices[0].message.content || "";
-                console.log("OpenAI generation successful");
-            }
-        } catch (openaiError) {
-            console.error("OpenAI also failed for Recovery Plan:", openaiError);
-        }
+    try {
+      recoveryPlan = await generateWithFallback({
+        task: "recovery_plan",
+        userPrompt: prompt,
+        temperature: 0.6,
+        maxOutputTokens: 1200,
+        responseMode: "text",
+      });
+    } catch (e: any) {
+      console.error("Errore generazione Recovery Plan (OpenRouter):", e?.message || e);
     }
     
     // FALLBACK ESTREMO (Se entrambe le AI falliscono, per evitare crash 500)
@@ -908,45 +796,15 @@ router.post('/:concorsoId/generate-questions', requireAuth, upload.single('file'
 
     const userPrompt = `Testo da analizzare:\n${textToAnalyze.substring(0, 30000)}`; // Limit context
 
-    let questionsJson = "[]";
-    const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-    const shouldUseVercel = !!process.env.AI_GATEWAY_API_KEY;
-
-    if (shouldUseGemini && genAI) {
-        try {
-            const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-            const result = await model.generateContent([systemPrompt, userPrompt]);
-            questionsJson = cleanJson(result.response.text());
-        } catch (e) {
-            console.error("Gemini error", e);
-        }
-    }
-
-    if ((questionsJson === "[]" || !questionsJson) && shouldUseVercel) {
-        try {
-            console.log("[GenerateQuestions] Using Vercel AI Gateway...");
-            const vercelPrompt = `${userPrompt}\n\nRestituisci SOLO un array JSON valido come specificato.`;
-            questionsJson = await analyzeWithVercelGateway(systemPrompt, vercelPrompt);
-            questionsJson = cleanJson(questionsJson);
-        } catch (e) {
-            console.error("Vercel Gateway error", e);
-        }
-    }
-
-    if (questionsJson === "[]" || !questionsJson) {
-        const openai = getOpenAIClient();
-        if (openai) {
-            const completion = await openai.chat.completions.create({
-                model: "gpt-4o",
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    { role: "user", content: userPrompt }
-                ],
-                response_format: { type: "json_object" }
-            });
-            questionsJson = cleanJson(completion.choices[0].message.content || "[]");
-        }
-    }
+    const questionsJson = await generateWithFallback({
+      task: "fase3_drill_generate",
+      systemPrompt,
+      userPrompt,
+      temperature: 0.4,
+      maxOutputTokens: 3000,
+      responseMode: "json",
+      jsonRoot: "array",
+    });
 
     let questions = [];
     try {
@@ -1416,7 +1274,7 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
                  // --- INTEGRAZIONE AI PER DISTRATTORI ---
                  // Se abbiamo configurato l'AI, usiamola per generare distrattori coerenti
                  // Se non è configurata, usiamo la logica locale migliorata
-                 const shouldUseAI = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.OPENAI_API_KEY);
+                 const shouldUseAI = !!process.env.OPENROUTER_API_KEY;
                  
                  if (shouldUseAI) { 
                      try {
@@ -1431,24 +1289,15 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
     2. NON restituire numeri a caso se la risposta non è un numero.
     3. NON restituire frasi a caso se la risposta è un numero.
     4. Restituisci SOLO un array JSON di stringhe: ["Distrattore 1", "Distrattore 2", "Distrattore 3"]`;
+                         const aiResponse = await generateWithFallback({
+                           task: "distractors_generate",
+                           userPrompt: prompt,
+                           temperature: 0.5,
+                           maxOutputTokens: 250,
+                           responseMode: "json",
+                           jsonRoot: "array",
+                         });
 
-                         let aiResponse = "[]";
-                         
-                         // Usa SEMPRE OpenAI se disponibile (più affidabile per JSON strict)
-                         // o Gemini come fallback
-                         const openai = getOpenAIClient();
-                         if (openai) {
-                             const completion = await openai.chat.completions.create({
-                                 model: "gpt-4o-mini", // Veloce e affidabile
-                                 messages: [{ role: "user", content: prompt }],
-                                 max_tokens: 250,
-                                 temperature: 0.5
-                             });
-                             aiResponse = completion.choices[0].message.content || "[]";
-                         } else if (getGeminiClient()) {
-                             aiResponse = await analyzeWithGemini(prompt, "");
-                         }
-                         
                          const generatedDistractors = JSON.parse(cleanJson(aiResponse));
                          if (Array.isArray(generatedDistractors) && generatedDistractors.length === 3) {
                              distractors = generatedDistractors;
@@ -1602,37 +1451,15 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
 
                     const userPrompt = `Testo da analizzare:\n${fullText.substring(0, 30000)}`;
                     
-                    let questionsJson = "[]";
-                    // Reuse existing clients
-                    const shouldUseGemini = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-                    const shouldUseVercel = !!process.env.AI_GATEWAY_API_KEY;
-
-                    if (shouldUseGemini && getGeminiClient()) {
-                        try {
-                            const model = getGeminiClient()!.getGenerativeModel({ model: "gemini-2.0-flash" });
-                            const result = await model.generateContent([systemPrompt, userPrompt]);
-                            questionsJson = cleanJson(result.response.text());
-                        } catch (e) { console.error("Gemini error", e); }
-                    }
-                    
-                    if ((questionsJson === "[]" || !questionsJson) && shouldUseVercel) {
-                        try {
-                            questionsJson = await analyzeWithVercelGateway(systemPrompt, userPrompt);
-                            questionsJson = cleanJson(questionsJson);
-                        } catch (e) { console.error("Vercel error", e); }
-                    }
-
-                    if (questionsJson === "[]" || !questionsJson) {
-                        const openai = getOpenAIClient();
-                        if (openai) {
-                            const completion = await openai.chat.completions.create({
-                                model: "gpt-4o",
-                                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-                                response_format: { type: "json_object" }
-                            });
-                            questionsJson = cleanJson(completion.choices[0].message.content || "[]");
-                        }
-                    }
+                    const questionsJson = await generateWithFallback({
+                      task: "fase3_drill_generate",
+                      systemPrompt,
+                      userPrompt,
+                      temperature: 0.4,
+                      maxOutputTokens: 3000,
+                      responseMode: "json",
+                      jsonRoot: "array",
+                    });
 
                     try {
                         const parsed = JSON.parse(questionsJson);

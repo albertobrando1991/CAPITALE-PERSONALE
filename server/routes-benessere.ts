@@ -1,18 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { db } from './db';
 import { eq, and, desc, sql, gte, lte } from 'drizzle-orm';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { breathingSessions, hydrationLogs, nutritionLogs, reframingLogs, sleepLogs } from '../shared/schema';
+import { cleanJson, generateWithFallback } from './services/ai';
 
 console.log('✅ Benessere Routes module loaded');
 
 const router = Router();
-
-// Inizializza Gemini per Reframing Coach
-const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-const genAI = geminiKey
-  ? new GoogleGenerativeAI(geminiKey)
-  : null;
 
 // =====================================================
 // MIDDLEWARE: Verifica autenticazione
@@ -168,11 +162,9 @@ router.post('/reframing/generate', requireAuth, async (req: Request, res: Respon
       return res.status(400).json({ error: 'Campo obbligatorio: anxiousThought' });
     }
 
-    if (!genAI) {
+    if (!process.env.OPENROUTER_API_KEY) {
       return res.status(503).json({ error: 'Servizio AI non configurato' });
     }
-
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
 
     const prompt = `Sei un coach di psicologia cognitiva specializzato in ristrutturazione cognitiva (Cognitive Reframing) per studenti di concorsi pubblici.
 
@@ -195,16 +187,16 @@ router.post('/reframing/generate', requireAuth, async (req: Request, res: Respon
 
 Rispondi SOLO con JSON valido, senza markdown.`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-    
-    // Parse JSON dalla risposta
-    const cleanJson = responseText
-      .replace(/```json\n?/g, '')
-      .replace(/```\n?/g, '')
-      .trim();
+    const responseText = await generateWithFallback({
+      task: "reframing_generate",
+      userPrompt: prompt,
+      temperature: 0.2,
+      maxOutputTokens: 400,
+      responseMode: "json",
+      jsonRoot: "object",
+    });
 
-    const aiResponse = JSON.parse(cleanJson);
+    const aiResponse = JSON.parse(cleanJson(responseText));
 
     // Mappa le chiavi da snake_case a camelCase per coerenza con il frontend e DB
     const formattedResponse = {
@@ -217,7 +209,7 @@ Rispondi SOLO con JSON valido, senza markdown.`;
     res.json({
       originalThought: anxiousThought,
       ...formattedResponse,
-      aiModel: 'gemini-2.0-flash-exp'
+      aiModel: 'openrouter'
     });
 
   } catch (error) {

@@ -8,7 +8,7 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertConcorsoSchema, insertMaterialSchema, insertCalendarEventSchema, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "../shared/schema";
 import { calculateSM2, initializeSM2 } from "./sm2-algorithm";
 import { z } from "zod";
-import { generateWithFallback, getOpenAIClient, getGeminiClient, cleanJson } from "./services/ai";
+import { generateWithFallback, getOpenRouterClient, cleanJson, makeVisionUserMessage } from "./services/ai";
 import multer from "multer";
 import { readFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
@@ -81,152 +81,13 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   const pdfData = await pdfParse.default(buffer);
   return pdfData.text || "";
 }
-
-let openai: OpenAI | null = null;
-let genAI: GoogleGenerativeAI | null = null;
-
-function getOpenAIClient() {
-  if (!openai) {
-    console.log("[getOpenAIClient] Controllo chiave API...");
-    const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-    
-    if (!apiKey) {
-      console.error("[getOpenAIClient] ERRORE: OPENAI_API_KEY non configurata!");
-      throw new Error("OPENAI_API_KEY non configurata. Aggiungi OPENAI_API_KEY nel file .env");
-    }
-    
-    console.log("[getOpenAIClient] Creazione client OpenAI...");
-    openai = new OpenAI({
-      apiKey: apiKey,
-      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-    });
-    console.log("[getOpenAIClient] Client creato con successo");
-  }
-  return openai;
-}
-
-function getGeminiClient() {
-  if (!genAI) {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (apiKey) {
-      genAI = new GoogleGenerativeAI(apiKey);
-    }
-  }
-  return genAI;
-}
-
-function cleanJson(text: string): string {
-  if (!text) return "{}";
-  console.log("[cleanJson] Input text length:", text.length);
-  
-  // Rimuovi blocchi markdown json
-  let cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-  
-  // Cerca la prima parentesi quadra o graffa
-  const firstOpenBrace = cleaned.indexOf("{");
-  const firstOpenBracket = cleaned.indexOf("[");
-  
-  let startIndex = -1;
-  let endIndex = -1;
-  
-  // Determina se inizia prima un oggetto o un array
-  if (firstOpenBrace !== -1 && (firstOpenBracket === -1 || firstOpenBrace < firstOpenBracket)) {
-    // È un oggetto
-    startIndex = firstOpenBrace;
-    endIndex = cleaned.lastIndexOf("}");
-  } else if (firstOpenBracket !== -1) {
-    // È un array
-    startIndex = firstOpenBracket;
-    endIndex = cleaned.lastIndexOf("]");
-  }
-  
-  if (startIndex !== -1 && endIndex !== -1) {
-    cleaned = cleaned.substring(startIndex, endIndex + 1);
-    console.log("[cleanJson] Extracted JSON substring length:", cleaned.length);
-  } else {
-    console.log("[cleanJson] WARNING: Could not find valid JSON start/end indices");
-  }
-  
-  return cleaned;
-}
-
-// Helper to use Gemini for analysis
-async function analyzeWithGemini(prompt: string, content: string): Promise<string> {
-  const client = getGeminiClient();
-  if (!client) throw new Error("Gemini API key not configured");
-  
-  const model = client.getGenerativeModel({ model: "gemini-2.0-flash" });
-  
-  const result = await model.generateContent([
-    prompt,
-    content
-  ]);
-  
-  return result.response.text();
-}
-
-function getVercelClient() {
-  const apiKey = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_AI_API_KEY;
-  const baseURL = process.env.AI_GATEWAY_BASE_URL || process.env.VERCEL_AI_BASE_URL;
-  if (!apiKey || !baseURL) return null;
-  return new OpenAI({ apiKey, baseURL });
-}
-
-async function generateWithFallback(opts: { systemPrompt: string; userPrompt: string; jsonMode?: boolean; temperature?: number; }): Promise<string> {
-  const { systemPrompt, userPrompt, jsonMode = false, temperature = 0.7 } = opts;
-  let out: string | null = null;
-  try {
-    out = await analyzeWithGemini(`${systemPrompt}${jsonMode ? "\nRestituisci SOLO JSON valido." : ""}`, userPrompt);
-    if (jsonMode && out) out = cleanJson(out);
-  } catch {}
-  if (out && out.trim().length > 0) return out;
-  try {
-    const c = getOpenAIClient();
-    const r = await c.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-      response_format: jsonMode ? { type: "json_object" } : undefined,
-      temperature
-    });
-    out = r.choices[0]?.message?.content || null;
-    if (jsonMode && out) out = cleanJson(out);
-  } catch {}
-  if (out && out.trim().length > 0) return out;
-  try {
-    const vc = getVercelClient();
-    if (vc) {
-      const r = await vc.chat.completions.create({
-        model: "openai/gpt-4o",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
-        temperature
-      });
-      out = r.choices[0]?.message?.content || null;
-      if (jsonMode && out) out = cleanJson(out);
-    }
-  } catch {}
-  if (out && out.trim().length > 0) return out || "";
-  if (jsonMode) {
-    const tokens = userPrompt.replace(/[^\p{L}\p{N} ]+/gu, " ").split(/\s+/).filter(Boolean);
-    const base = Array.from(new Set(tokens)).filter(t => t.length > 4).slice(0, 10);
-    const items = (base.length ? base : ["Concetto","Definizione","Principio","Procedura","Norma"]).slice(0, 10)
-      .map(k => ({ fronte: `Che cos'è ${k}?`, retro: `${k}: spiegazione sintetica.` }));
-    return JSON.stringify(items);
-  }
-  return "";
-}
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
 }
 
 function getUserId(req: Request): string {
   const user = req.user as any;
-  return user?.claims?.sub;
+  return user?.id || user?.claims?.sub;
 }
 
 import { registerEdisesRoutes } from "./routes-edises";
@@ -322,9 +183,11 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       try {
         const systemPrompt = "Sei un tutor esperto e paziente per concorsi pubblici italiani. Spiega concetti complessi in modo semplice e memorabile.";
         spiegazione = await generateWithFallback({
+          task: "flashcard_explain",
           systemPrompt,
           userPrompt: prompt,
-          temperature: 0.7
+          temperature: 0.7,
+          responseMode: "text",
         });
       } catch (err: any) {
         console.error("Errore generazione spiegazione:", err.message);
@@ -361,20 +224,47 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
   });
 
   // Test endpoint per verificare la configurazione e i componenti
+  app.post("/api/test-ai-connection", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      console.log("[TEST-AI] Ricevuta richiesta test connessione AI");
+      const { task = "flashcard" } = req.body;
+      
+      const result = await generateWithFallback({
+        task: task as any,
+        userPrompt: "Dimmi 'Ciao, la connessione funziona!' se mi senti.",
+        temperature: 0.7
+      });
+      
+      res.json({ 
+        success: true, 
+        message: "Connessione AI funzionante", 
+        response: result,
+        provider: "OpenRouter" 
+      });
+    } catch (error: any) {
+      console.error("[TEST-AI] Errore:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message,
+        details: "Verifica che OPENROUTER_API_KEY sia impostata correttamente."
+      });
+    }
+  });
+
+  // Test endpoint per verificare la configurazione e i componenti
   app.get("/api/test-config", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const hasOpenAIKey = !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY);
-      const hasGeminiKey = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+      const hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
       const hasDatabaseUrl = !!process.env.DATABASE_URL;
       
-      // Test OpenAI client creation
-      let openaiTest = false;
-      let openaiError = null;
+      // Test OpenRouter client creation
+      let openrouterTest = false;
+      let openrouterError = null;
       try {
-        const client = getOpenAIClient();
-        openaiTest = true;
+        getOpenRouterClient();
+        openrouterTest = true;
       } catch (error: any) {
-        openaiError = error.message;
+        openrouterError = error.message;
       }
       
       // Test PDF extraction (with a dummy buffer)
@@ -392,16 +282,14 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       }
       
       res.json({
-        hasOpenAIKey,
-        hasGeminiKey,
+        hasOpenRouterKey,
         hasDatabaseUrl,
-        openaiClientCreated: openaiTest,
-        openaiError,
+        openrouterClientCreated: openrouterTest,
+        openrouterError,
         pdfLibraryLoaded: pdfTest,
         pdfError,
         envVars: {
-          OPENAI_API_KEY: process.env.OPENAI_API_KEY ? "present" : "missing",
-          GEMINI_API_KEY: process.env.GEMINI_API_KEY ? "present" : "missing",
+          OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ? "present" : "missing",
           DATABASE_URL: process.env.DATABASE_URL ? "present" : "missing",
         }
       });
@@ -421,16 +309,16 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       
       console.log("1. File ricevuto:", req.file.originalname, req.file.size, "bytes");
       
-      // Test OpenAI client
-      console.log("2. Test creazione client OpenAI...");
-      let openai;
+      // Test OpenRouter client
+      console.log("2. Test creazione client OpenRouter...");
+      let openrouter;
       try {
-        openai = getOpenAIClient();
-        console.log("   ✓ Client OpenAI creato");
+        openrouter = getOpenRouterClient();
+        console.log("   ✓ Client OpenRouter creato");
       } catch (error: any) {
         console.error("   ✗ Errore creazione client:", error.message);
         return res.status(500).json({ 
-          step: "openai_client",
+          step: "openrouter_client",
           error: error.message 
         });
       }
@@ -462,33 +350,33 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         });
       }
       
-      // Test OpenAI API call (with minimal content)
-      console.log("4. Test chiamata API OpenAI...");
+      // Test OpenRouter API call (with minimal content)
+      console.log("4. Test chiamata API OpenRouter...");
       const testContent = fileContent.substring(0, 1000);
       try {
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o",
+        await openrouter.chat.completions.create({
+          model: "openai/gpt-4o-mini",
           messages: [
             { role: "system", content: "You are a helpful assistant." },
             { role: "user", content: `Test: extract the first 10 words from this text: ${testContent}` }
           ],
           max_tokens: 50,
         });
-        console.log("   ✓ API OpenAI risponde correttamente");
+        console.log("   ✓ API OpenRouter risponde correttamente");
         res.json({ 
           success: true,
           message: "Tutti i test passati",
           steps: {
             fileReceived: true,
-            openaiClient: true,
+            openrouterClient: true,
             pdfExtraction: true,
-            openaiApi: true
+            openrouterApi: true
           }
         });
       } catch (error: any) {
         console.error("   ✗ Errore chiamata API:", error.message);
         return res.status(500).json({ 
-          step: "openai_api",
+          step: "openrouter_api",
           error: error.message,
           details: error.response?.data || "Nessun dettaglio disponibile"
         });
@@ -872,43 +760,13 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
 
       const prompt =
         "Estrai fedelmente tutto il testo visibile nell'immagine. Mantieni l'italiano e la punteggiatura. Non aggiungere spiegazioni: restituisci solo testo.";
-
-      const { getGeminiClient, getOpenAIClient } = await import("./services/ai");
-
-      const gemini = getGeminiClient();
-      if (gemini) {
-        const model = gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const parts: any[] = [
-          { text: prompt },
-          ...images.map((img) => ({
-            inlineData: { data: img.base64, mimeType: img.mimeType },
-          })),
-        ];
-        const response = await model.generateContent(parts);
-        const text = response.response.text() || "";
-        return res.json({ text });
-      }
-
-      const openai = getOpenAIClient();
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+      const text = await generateWithFallback({
+        task: "ocr_images",
+        messages: [makeVisionUserMessage(prompt, images)],
         temperature: 0,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: prompt },
-              ...images.map((img) => ({
-                type: "image_url",
-                image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
-              })),
-            ],
-          } as any,
-        ],
+        responseMode: "text",
       });
-
-      const text = completion.choices[0]?.message?.content || "";
-      return res.json({ text });
+      return res.json({ text: text || "" });
     } catch (error: any) {
       return res.status(500).json({
         error: "Errore OCR",
@@ -1098,13 +956,16 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       };
 
       const rawText = material.contenuto;
-      const contentToAnalyze = rawText.substring(0, 30000);
+      const maxCharsToAnalyze = Math.min(rawText.length, 180_000);
+      const contentToAnalyze = rawText.slice(0, maxCharsToAnalyze);
 
       const totalWords = normalizeForMatch(contentToAnalyze).split(" ").filter(Boolean).length;
-      const desiredCount = Math.max(20, Math.min(60, Math.round(totalWords / 140)));
+      const desiredCount = Math.max(20, Math.min(100, Math.round(totalWords / 120)));
 
       
-      console.log(`[GEN-FLASHCARDS] Analisi testo (primi 500 caratteri): ${contentToAnalyze.substring(0, 500)}...`);
+      console.log(
+        `[GEN-FLASHCARDS] Analisi testo (chars=${contentToAnalyze.length}, primi 500): ${contentToAnalyze.substring(0, 500)}...`
+      );
 
       const systemPrompt = `Sei un esperto creatore di flashcard per concorsi pubblici italiani.
 Il tuo compito è generare flashcard basate ESCLUSIVAMENTE sul testo fornito.
@@ -1149,48 +1010,67 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
       const collected: any[] = [];
       const aiErrors: string[] = [];
 
-      const perChunkTarget = Math.max(10, Math.min(18, Math.ceil(desiredCount / Math.max(1, chunks.length))));
+      const hasAnyAI = !!process.env.OPENROUTER_API_KEY;
 
-      for (let idx = 0; idx < chunks.length && collected.length < desiredCount; idx++) {
-        const chunk = chunks[idx];
-        const chunkNormalized = normalizeForMatch(chunk);
-        const chunkTokens = new Set(chunkNormalized.split(" ").filter(Boolean));
-        const userPrompt =
-          `Genera ${perChunkTarget} flashcard sul testo seguente (chunk ${idx + 1}/${chunks.length}).\n` +
-          `Requisiti: analizza il contenuto, domande specifiche e diverse tra loro, risposte 1-3 frasi.\n` +
-          `Non fare domande generiche tipo "Che cos'è X?" se X è una parola isolata.\n` +
-          `Per "evidenza": copia e incolla dal TESTO una frase/porzione (5-25 parole) che supporta la risposta.\n` +
-          `Restituisci SOLO JSON.\n` +
-          `TESTO:\n${chunk}`;
+      const maxChunksToProcess = 10;
+      const chunkIndices =
+        chunks.length <= maxChunksToProcess
+          ? chunks.map((_, i) => i)
+          : Array.from({ length: maxChunksToProcess }, (_, i) =>
+              Math.floor((i * (chunks.length - 1)) / (maxChunksToProcess - 1))
+            ).filter((v, i, arr) => arr.indexOf(v) === i);
 
-        let content: string;
-        try {
-          content = await generateWithFallback({
-            systemPrompt,
-            userPrompt,
-            jsonMode: false,
-            temperature: 0.2,
-          });
-        } catch (e: any) {
-          aiErrors.push(e?.message || "Errore AI sconosciuto");
-          continue;
-        }
+      const perChunkTarget = Math.max(
+        12,
+        Math.min(20, Math.ceil(desiredCount / Math.max(1, chunkIndices.length)))
+      );
 
-        const items = parseFlashcards(cleanJson(content || "")).map((f: any) => ({
-          ...f,
-          __chunkIndex: idx,
-          __chunkNormalized: chunkNormalized,
-          __chunkTokens: chunkTokens,
-        }));
-        for (const f of items) {
-          if (collected.length >= desiredCount) break;
-          collected.push(f);
+      if (hasAnyAI) {
+        for (let listIdx = 0; listIdx < chunkIndices.length && collected.length < desiredCount; listIdx++) {
+          const idx = chunkIndices[listIdx];
+          const chunk = chunks[idx];
+          const chunkNormalized = normalizeForMatch(chunk);
+          const chunkTokens = new Set(chunkNormalized.split(" ").filter(Boolean));
+          const userPrompt =
+            `Genera ${perChunkTarget} flashcard sul testo seguente (chunk ${listIdx + 1}/${chunkIndices.length}).\n` +
+            `Requisiti: analizza il contenuto; domande specifiche, difficili, diverse tra loro; risposte 1-3 frasi.\n` +
+            `Preferisci domande del tipo: "quali sono", "in quali casi", "che effetti produce", "qual è la differenza tra", "perché".\n` +
+            `Evita domande generiche tipo "Che cos'è X?" se X è una parola isolata.\n` +
+            `Per "evidenza": copia e incolla dal TESTO una frase/porzione (5-25 parole) che supporta la risposta.\n` +
+            `Restituisci SOLO JSON.\n` +
+            `TESTO:\n${chunk}`;
+
+          let content: string;
+          try {
+            content = await generateWithFallback({
+              task: "flashcards_generate",
+              systemPrompt,
+              userPrompt,
+              responseMode: "json",
+              jsonRoot: "array",
+              temperature: 0.2,
+            });
+          } catch (e: any) {
+            aiErrors.push(e?.message || "Errore AI sconosciuto");
+            continue;
+          }
+
+          const items = parseFlashcards(cleanJson(content || "")).map((f: any) => ({
+            ...f,
+            __chunkIndex: idx,
+            __chunkNormalized: chunkNormalized,
+            __chunkTokens: chunkTokens,
+          }));
+          for (const f of items) {
+            if (collected.length >= desiredCount) break;
+            collected.push(f);
+          }
         }
       }
 
       const normalizedText = normalizeForMatch(contentToAnalyze);
       const textTokens = new Set(normalizedText.split(" ").filter(Boolean));
-      const cleaned = collected
+      const cleaned: any[] = collected
         .map((f: any) => {
           const fronte = typeof f?.fronte === "string" ? f.fronte.trim() : "";
           const retro = typeof f?.retro === "string" ? f.retro.trim() : "";
@@ -1273,7 +1153,7 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
       const looksLikeMissingKey =
         /api key not configured|api key|key not configured/i.test(message);
 
-      res.status(500).json({
+      res.status(looksLikeMissingKey ? 503 : 500).json({
         error: "Errore nella generazione flashcards",
         details: looksLikeMissingKey
           ? "Funzioni AI non configurate su Vercel (mancano le API key)."
@@ -1552,16 +1432,18 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
 
       const contentToSend = fileContent.substring(0, 100000);
       const userPrompt = `Analizza questo bando di concorso pubblico italiano ed estrai tutte le informazioni richieste:\n\n${contentToSend}`;
-      console.log(`[BANDO] Invio ${contentToSend.length} caratteri a OpenAI`);
+      console.log(`[BANDO] Invio ${contentToSend.length} caratteri a AI`);
 
       let content: string | null = null;
       try {
         console.log("Invio richiesta AI per analisi bando...");
         content = await generateWithFallback({
+           task: "generic",
            systemPrompt,
            userPrompt,
-           jsonMode: true,
-           temperature: 0.2
+           responseMode: "json",
+           jsonRoot: "object",
+           temperature: 0.2,
         });
         console.log("Risposta AI ricevuta");
       } catch (err: any) {
@@ -1760,10 +1642,12 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
       try {
         console.log("[QUIZ-GEN] Invio richiesta AI...");
         questionsJson = await generateWithFallback({
+           task: "quiz_generate",
            systemPrompt,
            userPrompt,
-           jsonMode: true,
-           temperature: 0.3
+           responseMode: "json",
+           jsonRoot: "array",
+           temperature: 0.3,
         });
       } catch (err: any) {
         console.error("[QUIZ-GEN] ERRORE AI:", err.message);
@@ -2295,9 +2179,11 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
       try {
         const userPrompt = `Spiega questo concetto: ${concetto}`;
         spiegazione = await generateWithFallback({
+          task: "concept_explain",
           systemPrompt,
           userPrompt,
-          temperature: 0.7
+          temperature: 0.7,
+          responseMode: "text",
         });
       } catch (err: any) {
         console.error("Errore generazione spiegazione:", err.message);
