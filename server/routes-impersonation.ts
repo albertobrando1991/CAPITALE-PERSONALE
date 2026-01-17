@@ -3,7 +3,7 @@ import { requireSuperAdmin, requireAdminRole } from './middleware/adminAuth';
 import { isAuthenticated } from './replitAuth';
 import { auditLogService } from './services/auditLogService';
 import { db } from './db';
-import { users, userRoles } from '@shared/schema';
+import { users, userRoles } from '../shared/schema';
 import { eq } from 'drizzle-orm';
 import jwt from 'jsonwebtoken';
 

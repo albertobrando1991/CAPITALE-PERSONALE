@@ -1,7 +1,7 @@
 import { db } from '../db';
 import { sql } from 'drizzle-orm';
 import { sendAdminNotification } from './notificationService';
-import { securityAlerts } from '@shared/schema';
+import { securityAlerts } from '../../shared/schema';
 
 interface SecurityRule {
   name: string;

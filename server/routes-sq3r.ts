@@ -1,6 +1,6 @@
 import { Express, Request, Response } from 'express';
 import { db } from './db';
-import { capitoliSQ3R, materieSQ3R } from '@shared/schema-sq3r';
+import { capitoliSQ3R, materieSQ3R } from '../shared/schema-sq3r';
 import { eq, and } from 'drizzle-orm';
 import multer from 'multer';
 import { GoogleGenerativeAI } from "@google/generative-ai";

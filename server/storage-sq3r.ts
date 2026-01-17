@@ -1,8 +1,8 @@
 import { db } from './db';
-import { fontiStudio, materieSQ3R, capitoliSQ3R, notebookLmSessions, quizzes, questions, answers } from '@shared/schema-sq3r';
-import { documentiPubblici } from '@shared/schema-libreria';
+import { fontiStudio, materieSQ3R, capitoliSQ3R, notebookLmSessions, quizzes, questions, answers } from '../shared/schema-sq3r';
+import { documentiPubblici } from '../shared/schema-libreria';
 import { eq, and, desc } from 'drizzle-orm';
-import type { FonteStudio, InsertFonteStudio, MateriaSQ3R, InsertMateriaSQ3R, CapitoloSQ3R, InsertCapitoloSQ3R, NotebookLmSession, InsertNotebookLmSession } from '@shared/schema-sq3r';
+import type { FonteStudio, InsertFonteStudio, MateriaSQ3R, InsertMateriaSQ3R, CapitoloSQ3R, InsertCapitoloSQ3R, NotebookLmSession, InsertNotebookLmSession } from '../shared/schema-sq3r';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 

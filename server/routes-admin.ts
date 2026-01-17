@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from './db';
-import { podcastDatabase, podcastRequests, staffMembers } from '@shared/schema-sq3r';
-import { userSubscriptions } from '@shared/schema';
+import { podcastDatabase, podcastRequests, staffMembers } from '../shared/schema-sq3r';
+import { userSubscriptions } from '../shared/schema';
 import { eq, desc, sql } from 'drizzle-orm';
 import { isAdmin, isStaff } from './utils/auth-helpers';
 import multer from 'multer';

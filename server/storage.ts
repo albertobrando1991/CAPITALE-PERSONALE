@@ -13,8 +13,8 @@ import {
   type InsertSimulazione,
   type CalendarEventItem,
   type InsertCalendarEvent
-} from "@shared/schema";
-import { users, concorsi, userProgress, materials, flashcards, simulazioni, calendarEvents } from "@shared/schema";
+} from "../shared/schema";
+import { users, concorsi, userProgress, materials, flashcards, simulazioni, calendarEvents } from "../shared/schema";
 import { db } from "./db";
 import { eq, and, desc, or } from "drizzle-orm";
 

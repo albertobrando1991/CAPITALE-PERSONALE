@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { db } from './db';
 import { eq, and, desc, sql, gte, lte } from 'drizzle-orm';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { breathingSessions, hydrationLogs, nutritionLogs, reframingLogs, sleepLogs } from '@shared/schema';
+import { breathingSessions, hydrationLogs, nutritionLogs, reframingLogs, sleepLogs } from '../shared/schema';
 
 console.log('✅ Benessere Routes module loaded');
 

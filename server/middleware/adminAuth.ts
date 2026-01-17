@@ -1,7 +1,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { db } from '../db';
-import { userRoles } from '@shared/schema';
+import { userRoles } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 
 // Estendiamo l'interfaccia Request per includere l'utente

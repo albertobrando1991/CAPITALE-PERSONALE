@@ -1,5 +1,5 @@
 import { db } from './db';
-import { documentiPubblici, downloadLog } from '@shared/schema-libreria';
+import { documentiPubblici, downloadLog } from '../shared/schema-libreria';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
 export class StorageLibreria {

@@ -5,7 +5,7 @@ import { storage, simulazioniStorage } from "./storage";
 import { registerSQ3RRoutes } from './routes-sq3r';
 import { registerLibreriaRoutes } from './routes-libreria';
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertConcorsoSchema, insertMaterialSchema, insertCalendarEventSchema, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "@shared/schema";
+import { insertConcorsoSchema, insertMaterialSchema, insertCalendarEventSchema, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "../shared/schema";
 import { calculateSM2, initializeSM2 } from "./sm2-algorithm";
 import { z } from "zod";
 import { generateWithFallback, getOpenAIClient, getGeminiClient, cleanJson } from "./services/ai";

@@ -2,7 +2,7 @@ import {
   type Simulazione,
   type InsertSimulazione,
   simulazioni,
-} from "@shared/schema-simulazioni";
+} from "../shared/schema-simulazioni";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 

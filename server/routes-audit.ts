@@ -1,7 +1,7 @@
 import { Express, Request, Response } from 'express';
 import { requireAdminRole, requireSuperAdmin } from './middleware/adminAuth';
 import { db } from './db';
-import { auditLogs } from '@shared/schema';
+import { auditLogs } from '../shared/schema';
 import { eq, and, desc, gte, lte, like, or, sql } from 'drizzle-orm';
 import { isAuthenticated } from './replitAuth';
 

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'; 
 import { db } from './db'; 
 import { eq, and, desc, sql } from 'drizzle-orm'; 
-import { mnemonicheNumeri, palazziMemoria, filmMentali } from '@shared/schema';
+import { mnemonicheNumeri, palazziMemoria, filmMentali } from '../shared/schema';
 
 const router = Router(); 
 
