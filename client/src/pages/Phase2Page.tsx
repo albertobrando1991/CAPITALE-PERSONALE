@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useSearch, useLocation, useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { pdfjs } from "react-pdf";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -145,6 +146,56 @@ export default function Phase2Page() {
 
   const uploadMaterialMutation = useMutation({
     mutationFn: async (file: File) => {
+      const isPdf =
+        file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      const isText =
+        file.type.startsWith("text/") || file.name.toLowerCase().endsWith(".txt");
+
+      if (isPdf || isText) {
+        let contenuto = "";
+
+        if (isPdf) {
+          const arrayBuffer = await file.arrayBuffer();
+          const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+          const pdfDocument = await loadingTask.promise;
+
+          const maxChars = 30000;
+          const maxPages = Math.min(pdfDocument.numPages, 30);
+
+          for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+            const page = await pdfDocument.getPage(pageNum);
+            const textContent = await page.getTextContent();
+            const pageText = (textContent.items as any[])
+              .map((item: any) => item?.str ?? "")
+              .join(" ");
+            contenuto += pageText + "\n";
+            if (contenuto.length >= maxChars) break;
+          }
+
+          contenuto = contenuto.slice(0, maxChars);
+        } else {
+          contenuto = (await file.text()).slice(0, 30000);
+        }
+
+        const res = await apiRequest("POST", "/api/materials", {
+          concorsoId,
+          nome: newMaterial.nome || file.name,
+          tipo: newMaterial.tipo,
+          materia: newMaterial.materia,
+          contenuto,
+          estratto: true,
+        });
+
+        return res.json();
+      }
+
+      const maxUploadBytes = 4 * 1024 * 1024;
+      if (file.size > maxUploadBytes) {
+        throw new Error(
+          "File troppo grande per l'upload su Vercel. Usa un PDF/TXT più piccolo oppure incolla il testo come appunti."
+        );
+      }
+
       const formData = new FormData();
       formData.append("file", file);
       formData.append("concorsoId", concorsoId || "");
@@ -155,9 +206,17 @@ export default function Phase2Page() {
       const res = await fetch("/api/upload-material", {
         method: "POST",
         body: formData,
+        credentials: "include",
       });
 
-      if (!res.ok) throw new Error("Failed to upload material");
+      if (!res.ok) {
+        if (res.status === 413) {
+          throw new Error(
+            "File troppo grande per l'upload su Vercel. Usa un PDF/TXT più piccolo oppure incolla il testo come appunti."
+          );
+        }
+        throw new Error("Impossibile caricare il file");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -167,8 +226,12 @@ export default function Phase2Page() {
       setNewMaterial({ nome: "", tipo: "appunti", materia: "", contenuto: "" });
       setSelectedFile(null);
     },
-    onError: () => {
-      toast({ title: "Errore", description: "Impossibile caricare il file", variant: "destructive" });
+    onError: (error: any) => {
+      toast({
+        title: "Errore",
+        description: error?.message || "Impossibile caricare il file",
+        variant: "destructive",
+      });
     },
   });
 
