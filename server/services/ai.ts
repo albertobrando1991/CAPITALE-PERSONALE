@@ -51,6 +51,21 @@ export function getOpenRouterClient(): OpenAI {
 }
 
 /**
+ * @deprecated Use getOpenRouterClient() instead. Maintained for backward compatibility.
+ */
+export function getOpenAIClient(): OpenAI {
+  return getOpenRouterClient();
+}
+
+/**
+ * @deprecated Use getOpenRouterClient() or generateWithFallback instead.
+ * Returns null as we moved to OpenAI-compatible interface via OpenRouter.
+ */
+export function getGeminiClient(): any | null {
+  return null;
+}
+
+/**
  * Cleans JSON output from AI models (removes markdown code blocks).
  */
 export function cleanJson(text: string): string {
