@@ -300,11 +300,12 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       let pdfTest = false;
       let pdfError = null;
       try {
-        // Just test if getDocument is available
-        if (typeof getDocument === 'function') {
+        // Just test if pdf-parse is importable
+        const pdfParse = await import("pdf-parse");
+        if (pdfParse && (pdfParse.default || typeof pdfParse === 'function')) {
           pdfTest = true;
         } else {
-          pdfError = "getDocument is not a function";
+          pdfError = "pdf-parse library not loaded correctly";
         }
       } catch (error: any) {
         pdfError = error.message;
@@ -835,8 +836,14 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       const normalizeForMatch = (s: string) =>
         s
           .toLowerCase()
-          .replace(/(\p{L})-\s+(\p{L})/gu, "$1$2")
-          .replace(/[^\p{L}\p{N}\s]/gu, " ")
+          // Rimuovi flag 'u' per compatibilità ES5/ES2015 se necessario, 
+          // oppure usa regex più semplice [a-zA-Z] se \p{L} non è supportato.
+          // Ma Vercel Node 18+ supporta \p{L} con flag u. 
+          // Se tsc si lamenta (target ES5), usiamo [a-zA-Z\u00C0-\u00FF] approssimato.
+          // .replace(/(\p{L})-\s+(\p{L})/gu, "$1$2") 
+          .replace(/([a-zA-Z\u00C0-\u024F])-\s+([a-zA-Z\u00C0-\u024F])/g, "$1$2")
+          // .replace(/[^\p{L}\p{N}\s]/gu, " ")
+          .replace(/[^a-zA-Z0-9\u00C0-\u024F\s]/g, " ")
           .replace(/\s+/g, " ")
           .trim();
 
