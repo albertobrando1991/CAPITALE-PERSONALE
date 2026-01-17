@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface BenessereStats {
   breathing: {
@@ -42,19 +43,26 @@ interface BenessereContextType {
 const BenessereContext = createContext<BenessereContextType | undefined>(undefined);
 
 export function BenessereProvider({ children }: { children: ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
   const [stats, setStats] = useState<BenessereStats | null>(null);
   const [isWidgetMinimized, setIsWidgetMinimized] = useState(true);
   const [isWidgetVisible, setIsWidgetVisible] = useState(true);
 
   // Fetch stats al mount e ogni 5 minuti
   useEffect(() => {
+    if (isLoading) return;
+    if (!isAuthenticated) {
+      setStats(null);
+      return;
+    }
     refreshStats();
     const interval = setInterval(refreshStats, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAuthenticated, isLoading]);
 
   const refreshStats = async () => {
     try {
+      if (!isAuthenticated) return;
       // Ottieni data locale YYYY-MM-DD per evitare problemi di fuso orario
       const d = new Date();
       const offset = d.getTimezoneOffset() * 60000;
@@ -63,6 +71,10 @@ export function BenessereProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`/api/benessere/dashboard?date=${localISOTime}&t=${Date.now()}`, {
         credentials: 'include'
       });
+      if (res.status === 401) {
+        setStats(null);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setStats(data);

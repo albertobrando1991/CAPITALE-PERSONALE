@@ -1100,6 +1100,9 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       const rawText = material.contenuto;
       const contentToAnalyze = rawText.substring(0, 30000);
 
+      const totalWords = normalizeForMatch(contentToAnalyze).split(" ").filter(Boolean).length;
+      const desiredCount = Math.max(20, Math.min(60, Math.round(totalWords / 140)));
+
       
       console.log(`[GEN-FLASHCARDS] Analisi testo (primi 500 caratteri): ${contentToAnalyze.substring(0, 500)}...`);
 
@@ -1146,11 +1149,17 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
       const collected: any[] = [];
       const aiErrors: string[] = [];
 
-      for (let idx = 0; idx < chunks.length && collected.length < 30; idx++) {
+      const perChunkTarget = Math.max(10, Math.min(18, Math.ceil(desiredCount / Math.max(1, chunks.length))));
+
+      for (let idx = 0; idx < chunks.length && collected.length < desiredCount; idx++) {
         const chunk = chunks[idx];
+        const chunkNormalized = normalizeForMatch(chunk);
+        const chunkTokens = new Set(chunkNormalized.split(" ").filter(Boolean));
         const userPrompt =
-          `Genera 12 flashcard sul testo seguente (chunk ${idx + 1}/${chunks.length}).\n` +
-          `Requisiti: domande specifiche, risposte concise, niente definizioni generiche.\n` +
+          `Genera ${perChunkTarget} flashcard sul testo seguente (chunk ${idx + 1}/${chunks.length}).\n` +
+          `Requisiti: analizza il contenuto, domande specifiche e diverse tra loro, risposte 1-3 frasi.\n` +
+          `Non fare domande generiche tipo "Che cos'è X?" se X è una parola isolata.\n` +
+          `Per "evidenza": copia e incolla dal TESTO una frase/porzione (5-25 parole) che supporta la risposta.\n` +
           `Restituisci SOLO JSON.\n` +
           `TESTO:\n${chunk}`;
 
@@ -1167,9 +1176,14 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
           continue;
         }
 
-        const items = parseFlashcards(cleanJson(content || ""));
+        const items = parseFlashcards(cleanJson(content || "")).map((f: any) => ({
+          ...f,
+          __chunkIndex: idx,
+          __chunkNormalized: chunkNormalized,
+          __chunkTokens: chunkTokens,
+        }));
         for (const f of items) {
-          if (collected.length >= 30) break;
+          if (collected.length >= desiredCount) break;
           collected.push(f);
         }
       }
@@ -1181,11 +1195,14 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
           const fronte = typeof f?.fronte === "string" ? f.fronte.trim() : "";
           const retro = typeof f?.retro === "string" ? f.retro.trim() : "";
           const evidenza = typeof f?.evidenza === "string" ? f.evidenza.trim() : "";
-          return { fronte, retro, evidenza };
+          const chunkNormalized = typeof f?.__chunkNormalized === "string" ? f.__chunkNormalized : "";
+          const chunkTokens = f?.__chunkTokens instanceof Set ? f.__chunkTokens : null;
+          return { fronte, retro, evidenza, chunkNormalized, chunkTokens };
         })
         .filter((f) => f.fronte.length >= 12 && f.retro.length >= 5 && f.evidenza.length >= 20)
         .filter((f) => {
           const ev = normalizeForMatch(f.evidenza);
+          if (f.chunkNormalized && f.chunkNormalized.includes(ev)) return true;
           if (normalizedText.includes(ev)) return true;
 
           const evTokens = ev.split(" ").filter((t) => t.length >= 3);
@@ -1193,22 +1210,22 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
 
           let found = 0;
           for (const t of evTokens) {
-            if (textTokens.has(t)) found++;
+            if (f.chunkTokens?.has(t) || textTokens.has(t)) found++;
           }
           const required = Math.max(4, Math.ceil(evTokens.length * 0.7));
           return found >= required;
         })
         .filter((f, i, arr) => {
-          const key = `${f.fronte}||${f.retro}`;
-          return arr.findIndex((x) => `${x.fronte}||${x.retro}` === key) === i;
+          const key = normalizeForMatch(f.fronte);
+          return arr.findIndex((x) => normalizeForMatch(x.fronte) === key) === i;
         });
 
-      if (cleaned.length < 12) {
+      if (cleaned.length < Math.min(12, desiredCount)) {
         const fallback = groundedFallbackFromText(contentToAnalyze);
         const forced =
-          fallback.length >= 8
+          fallback.length >= desiredCount
             ? fallback
-            : [...fallback, ...forcedFallbackFromTokens(contentToAnalyze, 8 - fallback.length)];
+            : [...fallback, ...forcedFallbackFromTokens(contentToAnalyze, desiredCount - fallback.length)];
 
         if (forced.length) {
           cleaned.splice(0, cleaned.length, ...forced);
