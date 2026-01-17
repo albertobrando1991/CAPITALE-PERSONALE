@@ -1019,6 +1019,84 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         return out;
       };
 
+      const forcedFallbackFromTokens = (text: string, minCount: number) => {
+        const normalized = normalizeForMatch(text);
+        const words = normalized.split(" ").filter((w) => w.length >= 6);
+        const stop = new Set([
+          "diritto",
+          "amministrativo",
+          "costituzionale",
+          "internazionale",
+          "sovranazionale",
+          "ordinamento",
+          "pubblica",
+          "amministrazione",
+          "fonti",
+          "norme",
+          "parte",
+          "prima",
+          "seconda",
+          "capitolo",
+          "paragrafo",
+          "articolo",
+          "delle",
+          "della",
+          "degli",
+          "dell",
+          "dello",
+          "dalla",
+          "alla",
+          "nelle",
+          "nella",
+          "sono",
+          "anche",
+          "come",
+          "quale",
+          "quali",
+          "questa",
+          "questo",
+          "quindi",
+          "pertanto",
+        ]);
+
+        const freq = new Map<string, number>();
+        for (const w of words) {
+          if (stop.has(w)) continue;
+          freq.set(w, (freq.get(w) || 0) + 1);
+        }
+
+        const candidates = Array.from(freq.entries())
+          .sort((a, b) => b[1] - a[1])
+          .map(([w]) => w)
+          .slice(0, 30);
+
+        const sentences = text
+          .replace(/\s+/g, " ")
+          .split(/[.!?]\s+/)
+          .map((s) => s.trim())
+          .filter((s) => s.length >= 40 && s.length <= 260);
+
+        const out: Array<{ fronte: string; retro: string; evidenza: string }> = [];
+        const used = new Set<string>();
+        for (const token of candidates) {
+          if (out.length >= minCount) break;
+          const match = sentences.find((s) =>
+            normalizeForMatch(s).split(" ").includes(token),
+          );
+          if (!match) continue;
+          const evidenza = match.slice(0, 220);
+          const key = `${token}||${evidenza}`;
+          if (used.has(key)) continue;
+          used.add(key);
+          out.push({
+            fronte: `Nel testo, cosa si afferma su "${token}"?`,
+            retro: match,
+            evidenza,
+          });
+        }
+        return out;
+      };
+
       const rawText = material.contenuto;
       const contentToAnalyze = rawText.substring(0, 30000);
 
@@ -1127,15 +1205,21 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
 
       if (cleaned.length < 12) {
         const fallback = groundedFallbackFromText(contentToAnalyze);
-        if (fallback.length < 8) {
-          return res.status(500).json({
-            error: "Impossibile generare flashcard coerenti dal documento.",
-            details: aiErrors.length
-              ? `Errore AI: ${aiErrors[0]}`
-              : "Il testo estratto è troppo scarso o non è interpretabile correttamente (spesso PDF scannerizzati o impaginazioni complesse). Prova con appunti incollati o un PDF diverso.",
+        const forced =
+          fallback.length >= 8
+            ? fallback
+            : [...fallback, ...forcedFallbackFromTokens(contentToAnalyze, 8 - fallback.length)];
+
+        if (forced.length) {
+          cleaned.splice(0, cleaned.length, ...forced);
+        } else {
+          return res.status(200).json({
+            count: 0,
+            flashcards: [],
+            warning:
+              "Testo non abbastanza strutturato per creare flashcard automaticamente. Prova con appunti incollati o un PDF diverso.",
           });
         }
-        cleaned.splice(0, cleaned.length, ...fallback);
       }
 
       // Inizializza parametri SM-2 per nuove flashcard
