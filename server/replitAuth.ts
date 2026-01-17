@@ -7,6 +7,7 @@ import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import createMemoryStore from "memorystore";
+import { Pool } from "pg";
 import { storage } from "./storage";
 
 const MemoryStore = createMemoryStore(session);
@@ -49,8 +50,15 @@ export function getSession() {
   let store: session.Store;
   if (process.env.DATABASE_URL) {
     const PgStore = connectPg(session);
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl:
+        process.env.NODE_ENV === "production"
+          ? { rejectUnauthorized: false }
+          : undefined,
+    });
     store = new PgStore({
-      conString: process.env.DATABASE_URL,
+      pool,
       createTableIfMissing: true,
       ttl: sessionTtl,
       tableName: "sessions",
