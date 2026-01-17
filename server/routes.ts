@@ -10,7 +10,6 @@ import { calculateSM2, initializeSM2 } from "./sm2-algorithm";
 import { z } from "zod";
 import { generateWithFallback, getOpenAIClient, getGeminiClient, cleanJson } from "./services/ai";
 import multer from "multer";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { readFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 
@@ -78,32 +77,9 @@ const upload = multer({
 });
 
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  console.log("[extractTextFromPDF] Inizio estrazione PDF");
-  const data = new Uint8Array(buffer);
-  console.log("[extractTextFromPDF] Buffer convertito, dimensione:", data.length);
-  
-  const loadingTask = getDocument({ data });
-  const pdfDocument = await loadingTask.promise;
-  console.log("[extractTextFromPDF] PDF caricato, pagine:", pdfDocument.numPages);
-  
-  let fullText = "";
-  
-  for (let i = 1; i <= pdfDocument.numPages; i++) {
-    try {
-      const page = await pdfDocument.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(" ");
-      fullText += pageText + "\n";
-      console.log(`[extractTextFromPDF] Pagina ${i} estratta: ${pageText.length} caratteri`);
-    } catch (pageError) {
-      console.error(`[extractTextFromPDF] Errore pagina ${i}:`, pageError);
-    }
-  }
-  
-  console.log("[extractTextFromPDF] Testo totale estratto: " + fullText.length + " caratteri");
-  return fullText;
+  const pdfParse = await import("pdf-parse");
+  const pdfData = await pdfParse.default(buffer);
+  return pdfData.text || "";
 }
 
 let openai: OpenAI | null = null;

@@ -214,42 +214,19 @@ export class StorageSQ3R {
       const pdfBuffer = Buffer.from(base64Data, 'base64');
 
       // 3. Estrai testo con pdfjs-dist
-      console.log(`📄 Avvio estrazione testo con pdfjs-dist (Buffer size: ${pdfBuffer.length} bytes)`);
+      console.log(`📄 Avvio estrazione testo con pdf-parse (Buffer size: ${pdfBuffer.length} bytes)`);
       let testoCompleto = "";
       let numPagine = 0;
       
       try {
-        // Use legacy build for Node.js support
-        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-        
-        // Convert Buffer to Uint8Array which pdfjs expects
-        const uint8Array = new Uint8Array(pdfBuffer);
-        
-        const loadingTask = pdfjsLib.getDocument({ 
-          data: uint8Array,
-          // Disable worker to run in main thread (simpler for node)
-          disableFontFace: true,
-        });
-        
-        const pdfDocument = await loadingTask.promise;
-        numPagine = pdfDocument.numPages;
+        const pdfParse = await import("pdf-parse");
+        const pdfData = await pdfParse.default(pdfBuffer);
+        numPagine = pdfData.numpages || 0;
+        testoCompleto = pdfData.text || "";
         console.log(`📄 PDF caricato. Pagine totali: ${numPagine}`);
-        
-        const testiPagine = [];
-        for (let i = 1; i <= numPagine; i++) {
-          const page = await pdfDocument.getPage(i);
-          const textContent = await page.getTextContent();
-          const pageText = textContent.items
-            .map((item: any) => item.str)
-            .join(' ');
-          testiPagine.push(pageText);
-        }
-        
-        testoCompleto = testiPagine.join('\n\n');
         console.log(`📄 Testo estratto: ${testoCompleto.length} caratteri`);
-        
       } catch (pdfError: any) {
-        console.error('❌ Errore durante parsing PDF con pdfjs:', pdfError);
+        console.error('❌ Errore durante parsing PDF con pdf-parse:', pdfError);
         throw new Error(`Impossibile leggere il PDF: ${pdfError.message}`);
       }
 

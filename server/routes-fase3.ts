@@ -7,7 +7,6 @@ import express, { Request, Response } from 'express';
 import { pool as db } from './db';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import multer from 'multer';
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import OpenAI from 'openai';
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
@@ -45,17 +44,9 @@ const upload = multer({
 
 // Helper functions (duplicated from routes.ts for isolation)
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  const data = new Uint8Array(buffer);
-  const loadingTask = getDocument({ data });
-  const pdfDocument = await loadingTask.promise;
-  let fullText = "";
-  for (let i = 1; i <= pdfDocument.numPages; i++) {
-    const page = await pdfDocument.getPage(i);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items.map((item: any) => item.str).join(" ");
-    fullText += pageText + "\n";
-  }
-  return fullText;
+  const pdfParse = await import("pdf-parse");
+  const pdfData = await pdfParse.default(buffer);
+  return pdfData.text || "";
 }
 
 function cleanJson(text: string): string {
