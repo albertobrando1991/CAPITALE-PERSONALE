@@ -1003,7 +1003,7 @@ Rispondi SOLO con un array JSON valido, senza testo aggiuntivo prima o dopo.
       await db
         .update(capitoliSQ3R)
         .set({
-          reviewData: JSON.stringify({ domande: domandeGenerate }),
+          reviewData: JSON.stringify({ domande: domandeGenerate }) as any,
           updatedAt: new Date(),
         })
         .where(

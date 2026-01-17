@@ -172,7 +172,6 @@ router.post('/podcast/upload', requireStaff, upload.single('audio'), async (req,
             podcastId: podcast.id,
             noteStaff: `Podcast caricato: ${podcast.titolo}`,
             completedAt: new Date(),
-            // updatedAt removed as it is not in schema
           })
           .where(eq(podcastRequests.id, requestId))
           .returning();
@@ -253,7 +252,6 @@ router.patch('/requests/:id', requireStaff, async (req, res) => {
         priorita: priorita || undefined,
         podcastId: podcastId || undefined,
         completedAt: status === 'completed' ? new Date() : undefined,
-        updatedAt: new Date(),
       })
       .where(eq(podcastRequests.id, id))
       .returning();

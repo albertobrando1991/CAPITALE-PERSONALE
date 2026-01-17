@@ -38,7 +38,7 @@ export function registerPodcastRoutes(app: Express) {
         ascoltiTotali: podcastDatabase.ascoltiTotali,
         isPremiumOnly: podcastDatabase.isPremiumOnly,
         createdAt: podcastDatabase.createdAt,
-      }).from(podcastDatabase);
+      }).from(podcastDatabase).$dynamic();
 
       if (materia) {
         console.log(`  🔍 Filtro materia: ${materia}`);

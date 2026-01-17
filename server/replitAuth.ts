@@ -113,12 +113,10 @@ export async function setupAuth(app: Express) {
         const existingUser = await storage.getUserByEmail(email);
         console.log(`[LOGIN] Utente trovato: ${existingUser ? 'Sì' : 'No'}`);
 
-        let userId = existingUser?.id;
-        
-        if (!userId) {
+        const userId = existingUser?.id ?? email.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+
+        if (!existingUser) {
            console.log("[LOGIN] Creazione nuovo utente mock...");
-           // Generate new ID only if user doesn't exist
-           userId = email.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
            
            const mockUser = {
               id: userId,
@@ -134,17 +132,20 @@ export async function setupAuth(app: Express) {
         
         // Re-fetch user to get all fields
         const user = await storage.getUser(userId);
+        if (!user) {
+          return res.status(500).json({ error: "User not found after login" });
+        }
         
         const sessionUser = {
           claims: {
-            sub: user?.id,
-            email: user?.email,
-            first_name: user?.firstName,
-            last_name: user?.lastName,
-            profile_image_url: user?.profileImageUrl
+            sub: user.id,
+            email: user.email,
+            first_name: user.firstName,
+            last_name: user.lastName,
+            profile_image_url: user.profileImageUrl
           },
-          id: user?.id,
-          email: user?.email,
+          id: user.id,
+          email: user.email,
           expires_at: Math.floor(Date.now() / 1000) + 86400 * 7 // 7 days
         };
         

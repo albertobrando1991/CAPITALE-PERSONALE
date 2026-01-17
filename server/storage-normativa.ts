@@ -10,9 +10,9 @@ export class StorageNormativa {
     anno?: number;
     limit?: number;
   }) {
-    let queryBuilder = db.select().from(norme);
+    let queryBuilder = db.select().from(norme).$dynamic();
     
-    const conditions = [];
+    const conditions: any[] = [];
     
     // Ricerca full-text su titolo e keywords
     if (filters.query) {

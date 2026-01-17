@@ -276,7 +276,7 @@ export class DatabaseStorage implements IStorage {
   async updateFlashcard(id: string, userId: string, data: Partial<InsertFlashcard>): Promise<Flashcard | undefined> {
     const [updated] = await db
       .update(flashcards)
-      .set({ ...data }) // updatedAt removed as it's not in schema or managed manually
+      .set({ ...data })
       .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)))
       .returning();
     return updated;
