@@ -42,7 +42,7 @@ export function registerPodcastRoutes(app: Express) {
 
       if (materia) {
         console.log(`  🔍 Filtro materia: ${materia}`);
-        query = query.where(eq(podcastDatabase.materia, materia as string));
+        query = query.where(eq(podcastDatabase.materia, materia as any));
       }
 
       let podcasts = await query.orderBy(desc(podcastDatabase.ascoltiTotali));
@@ -50,6 +50,7 @@ export function registerPodcastRoutes(app: Express) {
       // Nascondi URL audio se non premium
       podcasts = podcasts.map(p => ({
         ...p,
+        ascoltiTotali: p.ascoltiTotali || 0,
         locked: p.isPremiumOnly && !isPremium,
       }));
 
@@ -89,7 +90,7 @@ export function registerPodcastRoutes(app: Express) {
 
       // Incrementa ascolti
       await db.update(podcastDatabase)
-        .set({ ascoltiTotali: podcast.ascoltiTotali + 1 })
+        .set({ ascoltiTotali: (podcast.ascoltiTotali || 0) + 1 })
         .where(eq(podcastDatabase.id, req.params.id));
 
       // Log ascolto

@@ -172,7 +172,7 @@ router.post('/podcast/upload', requireStaff, upload.single('audio'), async (req,
             podcastId: podcast.id,
             noteStaff: `Podcast caricato: ${podcast.titolo}`,
             completedAt: new Date(),
-            updatedAt: new Date(),
+            // updatedAt removed as it is not in schema
           })
           .where(eq(podcastRequests.id, requestId))
           .returning();
