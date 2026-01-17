@@ -46,7 +46,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         
         if (!res.ok) {
-          throw new Error("Login failed");
+          let message = `Login failed (${res.status})`;
+          try {
+            const data = await res.json();
+            message = data?.error || data?.message || message;
+          } catch {
+            try {
+              const text = await res.text();
+              if (text) message = text;
+            } catch {}
+          }
+          throw new Error(message);
         }
         
         // Invalidate query to refetch user

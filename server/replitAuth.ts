@@ -27,22 +27,20 @@ const getOidcConfig = memoize(
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
   
-  let store;
-  // FORCE MEMORY STORE FOR STABILITY
-  // The connect-pg-simple store is causing crashes.
-  // if (process.env.DATABASE_URL) {
-  //   const pgStore = connectPg(session);
-  //   store = new pgStore({
-  //     conString: process.env.DATABASE_URL,
-  //     createTableIfMissing: true, // changed to true for local convenience
-  //     ttl: sessionTtl,
-  //     tableName: "sessions",
-  //   });
-  // } else {
-    store = new MemoryStore({
-      checkPeriod: 86400000 // prune expired entries every 24h
+  let store: session.Store;
+  if (process.env.DATABASE_URL) {
+    const PgStore = connectPg(session);
+    store = new PgStore({
+      conString: process.env.DATABASE_URL,
+      createTableIfMissing: true,
+      ttl: sessionTtl,
+      tableName: "sessions",
     });
-  // }
+  } else {
+    store = new MemoryStore({
+      checkPeriod: 86400000,
+    });
+  }
 
   if (!process.env.SESSION_SECRET && process.env.NODE_ENV === 'production') {
     console.warn("⚠️ WARNING: SESSION_SECRET is not set. Using default insecure secret. This is dangerous for production!");
@@ -55,7 +53,8 @@ export function getSession() {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // false for local dev usually
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
       maxAge: sessionTtl,
     },
   });
