@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+// Force Vercel rebuild
 import { createServer, type Server } from "http";
 import { storage, simulazioniStorage } from "./storage";
 import { registerSQ3RRoutes } from './routes-sq3r';
