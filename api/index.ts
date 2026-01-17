@@ -1,6 +1,6 @@
 export default async function handler(req: any, res: any) {
   try {
-    const { app, initializeApp } = await import("../dist-server/app.cjs");
+    const { app, initializeApp } = await import("../dist-server/app.mjs");
     await initializeApp();
     return app(req, res);
   } catch (err: any) {
