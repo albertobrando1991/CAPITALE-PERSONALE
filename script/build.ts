@@ -35,7 +35,7 @@ async function buildAll() {
   // Clean dist-server only, as dist is handled by vite build
   await rm("dist-server", { recursive: true, force: true });
 
-  console.log("building server...");
+  console.log("building server bundle...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
   const allDeps = [
     ...Object.keys(pkg.dependencies || {}),
@@ -50,6 +50,21 @@ async function buildAll() {
     format: "cjs",
     // Output server build to separate folder to not mess with Vercel's static serving of "dist"
     outfile: "dist-server/index.cjs",
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
+    minify: true,
+    external: externals,
+    logLevel: "info",
+  });
+
+  console.log("building serverless app bundle...");
+  await esbuild({
+    entryPoints: ["server/app.ts"],
+    platform: "node",
+    bundle: true,
+    format: "cjs",
+    outfile: "dist-server/app.cjs",
     define: {
       "process.env.NODE_ENV": '"production"',
     },

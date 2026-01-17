@@ -1,8 +1,13 @@
 {
-  "buildCommand": "vite build",
+  "buildCommand": "npm run build:full",
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "framework": "vite",
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "dist-server/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
