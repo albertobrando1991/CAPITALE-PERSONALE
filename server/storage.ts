@@ -64,16 +64,34 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertUser(user: UpsertUser): Promise<User> {
-    const [existingUser] = await db.select().from(users).where(eq(users.id, user.id));
-    if (existingUser) {
-      const [updatedUser] = await db
-        .update(users)
-        .set(user)
-        .where(eq(users.id, user.id))
-        .returning();
-      return updatedUser;
+    if (user.id) {
+      const [existingUser] = await db.select().from(users).where(eq(users.id, user.id));
+      if (existingUser) {
+        const [updatedUser] = await db
+          .update(users)
+          .set(user)
+          .where(eq(users.id, user.id))
+          .returning();
+        return updatedUser;
+      }
+      const [newUser] = await db.insert(users).values(user).returning();
+      return newUser;
     }
-    const [newUser] = await db.insert(users).values(user).returning();
+
+    if (user.email) {
+      const [existingUser] = await db.select().from(users).where(eq(users.email, user.email));
+      if (existingUser) {
+        const [updatedUser] = await db
+          .update(users)
+          .set(user)
+          .where(eq(users.id, existingUser.id))
+          .returning();
+        return updatedUser;
+      }
+    }
+
+    const { id: _id, ...userWithoutId } = user;
+    const [newUser] = await db.insert(users).values(userWithoutId).returning();
     return newUser;
   }
 
@@ -239,7 +257,7 @@ export class DatabaseStorage implements IStorage {
   async updateMaterial(id: string, userId: string, data: Partial<InsertMaterial>): Promise<Material | undefined> {
     const [updated] = await db
       .update(materials)
-      .set({ ...data, updatedAt: new Date() })
+      .set({ ...data })
       .where(and(eq(materials.id, id), eq(materials.userId, userId)))
       .returning();
     return updated;

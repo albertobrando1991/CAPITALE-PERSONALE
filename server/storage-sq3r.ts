@@ -566,7 +566,7 @@ ${testoTroncato}`;
       surveyChecklist: capitoliSQ3R.surveyChecklist,
       domande: capitoliSQ3R.domande,
       domandeAI: capitoliSQ3R.domandeAI,
-      highlights: capitoliSQ3R.highlights,
+      highlights: capitoliSQ3R.readHighlights,
       reciteData: capitoliSQ3R.reciteData,
       reviewData: capitoliSQ3R.reviewData,
       pdfFileName: capitoliSQ3R.pdfFileName,
@@ -601,10 +601,8 @@ ${testoTroncato}`;
 
       // Parse JSON fields
       return capitoli.map(c => {
-         // Sicurezza extra: rimuovi pdfUrl se presente
-         const { pdfUrl, ...rest } = c;
          return {
-           ...rest,
+           ...c,
            reciteData: c.reciteData && typeof c.reciteData === 'string' ? JSON.parse(c.reciteData) : c.reciteData,
            reviewData: c.reviewData && typeof c.reviewData === 'string' ? JSON.parse(c.reviewData) : c.reviewData
          };
@@ -639,7 +637,7 @@ ${testoTroncato}`;
           surveyChecklist: capitoliSQ3R.surveyChecklist,
           domande: capitoliSQ3R.domande,
           domandeAI: capitoliSQ3R.domandeAI,
-          highlights: capitoliSQ3R.highlights,
+          highlights: capitoliSQ3R.readHighlights,
           reciteData: capitoliSQ3R.reciteData,
           reviewData: capitoliSQ3R.reviewData,
           pdfFileName: capitoliSQ3R.pdfFileName,
@@ -672,11 +670,9 @@ ${testoTroncato}`;
             console.error('Error parsing reviewData', e);
           }
         }
+        return capitolo as any;
       }
-
-      // 🆕 Rimuovi pdfUrl dall'oggetto ritornato per evitare payload giganti
-      const { pdfUrl, ...capitoloLight } = capitolo;
-      return capitoloLight as CapitoloSQ3R;
+      return undefined;
     } catch (error) {
       console.error('❌ Error in getCapitolo query:', error);
       throw error;

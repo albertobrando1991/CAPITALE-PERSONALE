@@ -52,6 +52,19 @@ app.use("/api", limiter);
 // Apply stricter limiter to AI routes
 app.use("/api/ai", aiLimiter);
 
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    env: {
+      nodeEnv: process.env.NODE_ENV,
+      vercel: !!process.env.VERCEL,
+      hasDatabaseUrl: !!process.env.DATABASE_URL,
+      hasSessionSecret: !!process.env.SESSION_SECRET,
+      hasReplId: !!process.env.REPL_ID,
+    },
+  });
+});
+
 // 🔧 MOCK AUTH per development (RIMUOVERE IN PRODUCTION)
 if (process.env.NODE_ENV !== 'production') {
   app.use(async (req, res, next) => {
@@ -154,7 +167,7 @@ export async function initializeApp() {
     const message = err.message || "Internal Server Error";
 
     res.status(status).json({ message });
-    throw err;
+    return;
   });
 
   if (process.env.NODE_ENV === "production") {
