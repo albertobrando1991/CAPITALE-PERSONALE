@@ -100,17 +100,23 @@ export async function setupAuth(app: Express) {
       try {
         const { email, password } = req.body;
         
+        console.log(`[LOGIN] Tentativo di login per: ${email}`);
+        
         if (!email) {
+          console.log("[LOGIN] ERRORE: Email mancante");
           return res.status(400).json({ error: "Email required" });
         }
 
         // Check if user exists by email to reuse ID
         // This prevents unique constraint violation on email
+        console.log("[LOGIN] Ricerca utente per email...");
         const existingUser = await storage.getUserByEmail(email);
+        console.log(`[LOGIN] Utente trovato: ${existingUser ? 'Sì' : 'No'}`);
 
         let userId = existingUser?.id;
         
         if (!userId) {
+           console.log("[LOGIN] Creazione nuovo utente mock...");
            // Generate new ID only if user doesn't exist
            userId = email.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
            
@@ -123,6 +129,7 @@ export async function setupAuth(app: Express) {
            };
            
            await storage.upsertUser(mockUser);
+           console.log("[LOGIN] Utente creato");
         }
         
         // Re-fetch user to get all fields
@@ -141,16 +148,22 @@ export async function setupAuth(app: Express) {
           expires_at: Math.floor(Date.now() / 1000) + 86400 * 7 // 7 days
         };
         
+        console.log("[LOGIN] Inizio creazione sessione...");
         req.login(sessionUser, (err) => {
           if (err) {
             console.error("Login Error:", err);
             return res.status(500).json({ error: "Login failed" });
           }
+          console.log("[LOGIN] Successo!");
           return res.json({ success: true, user: sessionUser });
         });
-      } catch (err) {
+      } catch (err: any) {
         console.error("Login exception:", err);
-        return res.status(500).json({ error: "Internal login error" });
+        return res.status(500).json({ 
+            error: "Internal login error",
+            details: err.message,
+            stack: err.stack 
+        });
       }
     });
 
