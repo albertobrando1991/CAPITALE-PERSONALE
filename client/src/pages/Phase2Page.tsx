@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/contexts/AuthContext";
 import type { Concorso, Material, Flashcard } from "@shared/schema";
 
 interface BandoData {
@@ -58,6 +59,7 @@ interface BandoData {
 
 export default function Phase2Page() {
   const { toast } = useToast();
+  const { isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
   
   // Support both new route param and old query param
@@ -344,6 +346,9 @@ export default function Phase2Page() {
   const generateFlashcardsMutation = useMutation({
     mutationFn: async (materialId: string) => {
       setIsGenerating(materialId);
+      if (!isAuthenticated) {
+        throw new Error("Non autenticato. Effettua il login e riprova.");
+      }
       const res = await fetch("/api/generate-flashcards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -351,6 +356,9 @@ export default function Phase2Page() {
         body: JSON.stringify({ materialId, concorsoId }),
       });
       if (!res.ok) {
+        if (res.status === 401) {
+          throw new Error("Sessione scaduta o non valida. Effettua di nuovo il login.");
+        }
         let message = `Impossibile generare flashcard (${res.status})`;
         try {
           const data = await res.json();
