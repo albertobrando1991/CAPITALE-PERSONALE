@@ -953,6 +953,72 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
           .replace(/\s+/g, " ")
           .trim();
 
+      const groundedFallbackFromText = (text: string) => {
+        const out: Array<{ fronte: string; retro: string; evidenza: string }> = [];
+        const seen = new Set<string>();
+
+        const push = (fronte: string, retro: string, evidenza: string) => {
+          const f = fronte.trim();
+          const r = retro.trim();
+          const e = evidenza.trim();
+          if (f.length < 12 || r.length < 8 || e.length < 20) return;
+          const key = `${f}||${r}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          out.push({ fronte: f, retro: r, evidenza: e });
+        };
+
+        const lines = text
+          .split(/\n+/)
+          .map((l) => l.replace(/\s+/g, " ").trim())
+          .filter((l) => l.length >= 30);
+
+        let currentIntro: string | null = null;
+        for (const line of lines) {
+          if (out.length >= 20) break;
+
+          if (line.endsWith(":") && line.length <= 120) {
+            currentIntro = line.slice(0, -1);
+            continue;
+          }
+
+          const numMatch = line.match(/^(\d{1,2})[.)]\s+(.{20,})$/);
+          if (numMatch && currentIntro) {
+            const item = numMatch[2].trim();
+            push(
+              `Secondo il testo, cosa include ${currentIntro}?`,
+              item,
+              `${currentIntro}: ${item}`.slice(0, 220)
+            );
+            continue;
+          }
+
+          const colonIdx = line.indexOf(":");
+          if (colonIdx > 10 && colonIdx < 80) {
+            const left = line.slice(0, colonIdx).trim();
+            const right = line.slice(colonIdx + 1).trim();
+            if (right.length >= 20) {
+              push(`Che cosa indica "${left}" nel testo?`, right, line.slice(0, 240));
+              continue;
+            }
+          }
+
+          const defMatch = line.match(/^(.{15,80})\s+(è|sono)\s+(.{25,})$/i);
+          if (defMatch) {
+            const subject = defMatch[1].trim();
+            const verb = defMatch[2].toLowerCase();
+            const rest = defMatch[3].trim();
+            push(
+              `Secondo il testo, ${subject} ${verb}... ?`,
+              rest,
+              line.slice(0, 240)
+            );
+          }
+        }
+
+        return out;
+      };
+
       const rawText = material.contenuto;
       const contentToAnalyze = rawText.substring(0, 30000);
 
@@ -1060,18 +1126,24 @@ Restituisci SOLO un array JSON valido di oggetti { "fronte": "...", "retro": "..
         });
 
       if (cleaned.length < 12) {
-        return res.status(500).json({
-          error: "Impossibile generare flashcard coerenti dal documento.",
-          details: aiErrors.length
-            ? `Errore AI: ${aiErrors[0]}`
-            : "Il testo estratto è troppo scarso o non è interpretabile correttamente (spesso PDF scannerizzati o impaginazioni complesse). Prova con appunti incollati o un PDF diverso.",
-        });
+        const fallback = groundedFallbackFromText(contentToAnalyze);
+        if (fallback.length < 8) {
+          return res.status(500).json({
+            error: "Impossibile generare flashcard coerenti dal documento.",
+            details: aiErrors.length
+              ? `Errore AI: ${aiErrors[0]}`
+              : "Il testo estratto è troppo scarso o non è interpretabile correttamente (spesso PDF scannerizzati o impaginazioni complesse). Prova con appunti incollati o un PDF diverso.",
+          });
+        }
+        cleaned.splice(0, cleaned.length, ...fallback);
       }
 
       // Inizializza parametri SM-2 per nuove flashcard
       const sm2Initial = initializeSM2();
       const now = new Date();
       
+      await storage.deleteFlashcardsByMaterialId(userId, materialId);
+
       const flashcardsToInsert = cleaned.map((f) => ({
         userId,
         concorsoId: material.concorsoId,

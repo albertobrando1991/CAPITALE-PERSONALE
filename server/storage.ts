@@ -268,6 +268,14 @@ export class DatabaseStorage implements IStorage {
     return await db.insert(flashcards).values(newFlashcards).returning();
   }
 
+  async deleteFlashcardsByMaterialId(userId: string, materialId: string): Promise<number> {
+    const deleted = await db
+      .delete(flashcards)
+      .where(and(eq(flashcards.userId, userId), eq(flashcards.materialId, materialId)))
+      .returning();
+    return deleted.length;
+  }
+
   async getFlashcards(userId: string, concorsoId?: string): Promise<Flashcard[]> {
     if (concorsoId) {
       return await db

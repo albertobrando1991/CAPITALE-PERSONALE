@@ -18,9 +18,13 @@ const genAI = geminiKey
 // MIDDLEWARE: Verifica autenticazione
 // =====================================================
 function requireAuth(req: Request, res: Response, next: Function) {
-  const userId = req.user?.id;
+  const userAny = req.user as any;
+  const userId = userAny?.id || userAny?.claims?.sub;
   if (!userId) {
     return res.status(401).json({ error: 'Non autenticato' });
+  }
+  if (userAny && !userAny.id) {
+    userAny.id = userId;
   }
   next();
 }
