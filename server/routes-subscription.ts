@@ -16,29 +16,51 @@ export function registerSubscriptionRoutes(app: Express) {
       const userEmail = user?.email || user?.claims?.email;
       const userId = user?.id || user?.claims?.sub;
 
-      console.log('[SUBSCRIPTION] Checking status for user:', { userId, userEmail, fullUser: JSON.stringify(user) });
+      console.log('[SUBSCRIPTION] Checking status for user:', { userId, userEmail });
 
       if (!userId) {
         console.log('[SUBSCRIPTION] No user ID, returning free tier');
         return res.json({ tier: 'free', status: 'none' });
       }
 
-      // Check DB role
-      const [userRole] = await db
-        .select()
-        .from(userRoles)
-        .where(eq(userRoles.userId, userId));
-
-      console.log('[SUBSCRIPTION] DB role for user:', userRole);
-
-      const isDbAdmin = userRole?.role === 'admin' || userRole?.role === 'super_admin' || userRole?.role === 'staff';
+      // 🔥 CHECK EMAIL-BASED ADMIN FIRST (before DB query)
       const isPremiumByEmail = isAlwaysPremium(userEmail);
+      console.log('[SUBSCRIPTION] isPremiumByEmail:', isPremiumByEmail, 'for email:', userEmail);
 
-      console.log('[SUBSCRIPTION] isDbAdmin:', isDbAdmin, 'isPremiumByEmail:', isPremiumByEmail, 'email used:', userEmail);
+      if (isPremiumByEmail) {
+        console.log(`👑 Admin by email ${userEmail} → Force Premium`);
+        return res.json({
+          userId: userId,
+          tier: 'premium',
+          status: 'active',
+          isAdmin: true,
+          role: 'admin',
+          sintesiUsate: 0,
+          sintesiLimite: null, // Illimitato
+          startDate: new Date(),
+          endDate: null,
+        });
+      }
 
-      // 🔥 ADMIN SEMPRE PREMIUM (Env var OR DB role)
-      if (isPremiumByEmail || isDbAdmin) {
-        console.log(`👑 Admin/Staff ${userEmail} → Force Premium`);
+      // Check DB role (with graceful fallback if table doesn't exist)
+      let userRole = null;
+      let isDbAdmin = false;
+      try {
+        const [role] = await db
+          .select()
+          .from(userRoles)
+          .where(eq(userRoles.userId, userId));
+        userRole = role;
+        isDbAdmin = userRole?.role === 'admin' || userRole?.role === 'super_admin' || userRole?.role === 'staff';
+        console.log('[SUBSCRIPTION] DB role for user:', userRole);
+      } catch (dbError: any) {
+        // Table might not exist yet - that's OK, we'll use email-based check only
+        console.log('[SUBSCRIPTION] DB role check failed (table may not exist):', dbError.message);
+      }
+
+      // 🔥 ADMIN BY DB ROLE
+      if (isDbAdmin) {
+        console.log(`👑 Admin/Staff by DB role ${userEmail} → Force Premium`);
         return res.json({
           userId: userId,
           tier: 'premium',
