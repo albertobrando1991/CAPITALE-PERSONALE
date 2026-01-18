@@ -188,12 +188,7 @@ export default function FlashcardsPage() {
       return apiRequest("PATCH", `/api/flashcards/${id}`, { livelloSRS });
     },
     onSuccess: () => {
-      // Invalida tutte le query relative alle flashcard per aggiornare i widget
-      queryClient.invalidateQueries({ queryKey: ["/api/flashcards"] });
-      if (concorsoId) {
-        queryClient.invalidateQueries({ queryKey: ["/api/flashcards", concorsoId] });
-      }
-      queryClient.invalidateQueries({ queryKey: ["flashcards"] }); // Per il widget ProssimeRevisioniWidget
+      queryClient.invalidateQueries({ queryKey: ["flashcards"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user-progress"] });
     },
   });
