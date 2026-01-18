@@ -779,10 +779,18 @@ router.post('/:concorsoId/generate-questions', requireAuth, upload.single('file'
     }
 
     // 2. Genera domande con AI
-    const systemPrompt = `Sei un esperto creatore di quiz per concorsi pubblici. 
+    const systemPrompt = `Sei un esperto creatore di quiz per concorsi pubblici.
     Analizza il testo fornito e genera ${num_questions} domande a risposta multipla.
     Le domande devono essere pertinenti, non inventate, e basate SOLO sul testo.
-    
+
+    ⚠️ REGOLE TASSATIVE PER I DISTRATTORI (OPZIONI ERRATE):
+    1. I distrattori devono essere PLAUSIBILI e COERENTI con il contesto della domanda.
+    2. Se la domanda chiede un numero (es. anni, importi, articoli), i distrattori devono essere numeri dello stesso tipo.
+    3. Se la domanda chiede un principio giuridico, i distrattori devono essere altri principi giuridici (anche se errati nel contesto).
+    4. I distrattori devono avere LUNGHEZZA SIMILE alla risposta corretta (+/- 50%).
+    5. MAI inserire distrattori completamente fuori tema (es. date per domande su concetti).
+    6. I distrattori devono essere grammaticalmente consistenti con la domanda.
+
     Restituisci un ARRAY JSON puro:
     [
       {
@@ -1262,48 +1270,116 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
           if (!usedCache) {
             // Trova distrattori (altre flashcards della stessa materia o concorso)
             const otherFlashcards = flashcards.filter(f => f.id !== fc.id);
+            const correctAnswer = fc.retro;
+            const correctLen = correctAnswer.length;
+            const isNumber = !isNaN(Number(correctAnswer));
+            const isDate = /^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(correctAnswer) ||
+                           /^\d{4}$/.test(correctAnswer) || // anno
+                           /^(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{4}$/i.test(correctAnswer);
+
+            // SMART DISTRACTOR SELECTION: Filtra per tipo e lunghezza simile
+            let candidateDistractors: string[] = [];
 
             if (otherFlashcards.length >= 3) {
-              distractors = otherFlashcards
-                .sort(() => 0.5 - Math.random())
-                .slice(0, 3)
-                .map(f => f.retro);
-            } else {
-              const correctAnswer = fc.retro;
-              const isNumber = !isNaN(Number(correctAnswer));
-              const candidateDistractors: string[] = otherFlashcards.map(f => f.retro);
+              // Filtra distrattori per coerenza con la risposta corretta
+              const filteredCandidates = otherFlashcards.filter(f => {
+                const answer = f.retro;
+                const answerLen = answer.length;
+                const answerIsNumber = !isNaN(Number(answer));
 
+                // Regola 1: Se la risposta corretta è un numero, prendi solo numeri
+                if (isNumber && !answerIsNumber) return false;
+                if (!isNumber && answerIsNumber && correctLen > 10) return false;
+
+                // Regola 2: Lunghezza simile (+/- 50%)
+                const lenRatio = answerLen / correctLen;
+                if (lenRatio < 0.5 || lenRatio > 1.5) return false;
+
+                return true;
+              });
+
+              if (filteredCandidates.length >= 3) {
+                // Abbastanza candidati filtrati
+                distractors = filteredCandidates
+                  .sort(() => 0.5 - Math.random())
+                  .slice(0, 3)
+                  .map(f => f.retro);
+              } else {
+                // Non abbastanza candidati filtrati, usa tutti ma priorizza i più simili
+                const scoredCandidates = otherFlashcards.map(f => {
+                  const answer = f.retro;
+                  const lenDiff = Math.abs(answer.length - correctLen) / Math.max(correctLen, 1);
+                  const typeMatch = (isNumber === !isNaN(Number(answer))) ? 0 : 1;
+                  return { answer, score: lenDiff + typeMatch };
+                }).sort((a, b) => a.score - b.score);
+
+                distractors = scoredCandidates.slice(0, 3).map(c => c.answer);
+              }
+            }
+
+            // Se ancora non abbiamo abbastanza distrattori, genera fallback intelligenti
+            if (distractors.length < 3) {
               if (isNumber) {
                 const num = Number(correctAnswer);
-                candidateDistractors.push(
+                const numFallbacks = [
                   (num + Math.floor(Math.random() * 20) + 1).toString(),
                   (Math.max(0, num - Math.floor(Math.random() * 20) - 1)).toString(),
-                  (num + Math.floor(Math.random() * 50) + 20).toString()
-                );
-              } else if (correctAnswer.length < 15) {
+                  (num * 2 + Math.floor(Math.random() * 10)).toString()
+                ];
+                candidateDistractors.push(...numFallbacks);
+              } else if (isDate) {
+                // Per date, genera date plausibili vicine
+                const yearMatch = correctAnswer.match(/\d{4}/);
+                if (yearMatch) {
+                  const year = parseInt(yearMatch[0]);
+                  candidateDistractors.push(
+                    correctAnswer.replace(/\d{4}/, (year + 1).toString()),
+                    correctAnswer.replace(/\d{4}/, (year - 1).toString()),
+                    correctAnswer.replace(/\d{4}/, (year + 2).toString())
+                  );
+                } else {
+                  candidateDistractors.push(
+                    "Data precedente non specificata",
+                    "Data successiva da definirsi",
+                    "Nessuna data stabilita"
+                  );
+                }
+              } else if (correctLen < 15) {
+                // Risposte brevi: fallback generici ma pertinenti
                 candidateDistractors.push(
                   "Nessuna delle precedenti",
                   "Tutte le precedenti",
                   "Non definito dalla norma"
                 );
-              } else if (correctAnswer.length >= 60) {
-                // Long answers: generate equally long distractors
+              } else if (correctLen >= 80) {
+                // Risposte molto lunghe: genera distrattori ugualmente elaborati
                 candidateDistractors.push(
                   "Una descrizione alternativa che sembra riferirsi allo stesso istituto ma ne altera in modo improprio i presupposti e gli effetti giuridici previsti dalla normativa vigente.",
                   "Una formulazione che combina elementi di discipline diverse generando una definizione apparentemente corretta ma priva di fondamento normativo e dottrinale consolidato.",
                   "Una sintesi semplificata che omette condizioni essenziali e requisiti procedurali, portando a un'interpretazione imprecisa dell'istituto richiamato nella domanda."
                 );
-              } else {
-                // Medium-length fallback
+              } else if (correctLen >= 40) {
+                // Risposte medie: distrattori di lunghezza media
                 candidateDistractors.push(
-                  "Una definizione alternativa che modifica i presupposti giuridici previsti.",
-                  "Una formulazione che altera l'ambito di applicazione della norma.",
-                  "Una descrizione imprecisa che omette requisiti essenziali."
+                  "Una definizione alternativa che modifica i presupposti giuridici previsti dalla normativa.",
+                  "Una formulazione che altera l'ambito di applicazione e gli effetti della norma di riferimento.",
+                  "Una descrizione imprecisa che omette requisiti essenziali e condizioni di applicabilità."
+                );
+              } else {
+                // Risposte medio-brevi
+                candidateDistractors.push(
+                  "Un'altra disposizione normativa",
+                  "Un principio diverso",
+                  "Non previsto dalla legge"
                 );
               }
 
-              distractors = candidateDistractors
-                .filter((d) => d && d.trim().length > 0 && d !== correctAnswer)
+              // Combina distrattori esistenti con fallback
+              const allDistractors = distractors.concat(candidateDistractors)
+                .filter((d) => d && d.trim().length > 0 && d !== correctAnswer);
+
+              // Rimuovi duplicati e seleziona 3
+              distractors = Array.from(new Set(allDistractors))
                 .sort(() => 0.5 - Math.random())
                 .slice(0, 3);
             }
@@ -1320,24 +1396,47 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
             if (shouldUseAI) {
               try {
                 const correctLen = fc.retro.length;
-                const prompt = `Sei un esperto creatore di quiz per concorsi pubblici.
-    Genera 3 risposte ERRATE (distrattori) plausibili e coerenti per questa domanda.
+                const isNumericAnswer = !isNaN(Number(fc.retro));
+                const isDateAnswer = /^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(fc.retro) || /^\d{4}$/.test(fc.retro);
+
+                const prompt = `Sei un esperto creatore di quiz per concorsi pubblici italiani.
+    Genera 3 risposte ERRATE (distrattori) plausibili e TEMATICAMENTE COERENTI per questa domanda.
+
     DOMANDA: "${fc.fronte}"
     RISPOSTA CORRETTA: "${fc.retro}"
     MATERIA: "${fc.materia}"
-    LUNGHEZZA RISPOSTA CORRETTA: ${correctLen} caratteri
+    TIPO RISPOSTA: ${isNumericAnswer ? 'NUMERO' : isDateAnswer ? 'DATA' : 'TESTO'}
+    LUNGHEZZA RISPOSTA: ${correctLen} caratteri
 
     ⚠️ REGOLE TASSATIVE (NON DEROGABILI):
-    1. I distrattori devono essere ASSOLUTAMENTE coerenti con la domanda. Se la domanda chiede "principi", i distrattori devono essere "principi" (anche se sbagliati). Se chiede "anni", devono essere "anni".
-    2. NON restituire numeri a caso se la risposta non è un numero.
-    3. NON restituire frasi a caso se la risposta è un numero.
-    4. **REGOLA CRITICA SULLA LUNGHEZZA**:
+
+    1. **COERENZA TEMATICA ASSOLUTA**:
+       - I distrattori DEVONO essere della STESSA CATEGORIA della risposta corretta.
+       - Se la domanda chiede "quale articolo...", i distrattori devono essere altri articoli (es. "art. 3", "art. 7").
+       - Se la domanda chiede "quale principio...", i distrattori devono essere altri principi giuridici.
+       - Se la domanda chiede "quale legge...", i distrattori devono essere altre leggi.
+       - Se la domanda chiede "quanti giorni/anni/mesi...", i distrattori devono essere numeri plausibili.
+       - MAI mescolare categorie diverse (es. date per domande su concetti, testo per domande numeriche).
+
+    2. **COERENZA DI TIPO**:
+       ${isNumericAnswer ? '- La risposta è un NUMERO. Genera SOLO numeri come distrattori (es. per "30 giorni" usa "15 giorni", "60 giorni", "90 giorni").' : ''}
+       ${isDateAnswer ? '- La risposta è una DATA. Genera SOLO date plausibili come distrattori.' : ''}
+       ${!isNumericAnswer && !isDateAnswer ? '- La risposta è TESTO. Genera testo coerente con il contesto giuridico della domanda.' : ''}
+
+    3. **COERENZA GRAMMATICALE**:
+       - I distrattori devono completare la frase della domanda in modo grammaticalmente corretto.
+       - Stesso genere (maschile/femminile) e numero (singolare/plurale) della risposta corretta.
+
+    4. **LUNGHEZZA SIMILE**:
        - La risposta corretta ha ${correctLen} caratteri.
-       - ALMENO UN distrattore DEVE avere lunghezza >= ${Math.floor(correctLen * 0.9)} caratteri.
-       - Gli altri distrattori devono avere lunghezza compresa tra ${Math.floor(correctLen * 0.6)} e ${Math.floor(correctLen * 1.4)} caratteri.
-       - NON generare MAI distrattori molto più corti della risposta corretta (es. < 50% della lunghezza).
-    5. Se la risposta corretta è lunga (> 50 caratteri), i distrattori devono essere UGUALMENTE elaborati e dettagliati.
-    6. Restituisci SOLO un array JSON di stringhe: ["Distrattore 1", "Distrattore 2", "Distrattore 3"]`;
+       - OGNI distrattore deve avere lunghezza tra ${Math.floor(correctLen * 0.6)} e ${Math.floor(correctLen * 1.5)} caratteri.
+       - Se la risposta è lunga (>${Math.max(50, correctLen)}), i distrattori devono essere ugualmente elaborati.
+
+    5. **PLAUSIBILITÀ**:
+       - I distrattori devono sembrare risposte credibili per un candidato che non conosce bene l'argomento.
+       - Evita opzioni palesemente assurde o fuori contesto.
+
+    Restituisci SOLO un array JSON di 3 stringhe: ["Distrattore 1", "Distrattore 2", "Distrattore 3"]`;
                 const aiResponse = await generateWithFallback({
                   task: "distractors_generate",
                   userPrompt: prompt,
