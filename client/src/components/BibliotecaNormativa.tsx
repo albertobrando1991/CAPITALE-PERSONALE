@@ -21,6 +21,7 @@ interface Normativa {
   nome: string;
   articoliAnalizzati: number;
   stato: "caricato" | "elaborazione" | "completato";
+  url?: string;
 }
 
 interface BibliotecaNormativaProps {

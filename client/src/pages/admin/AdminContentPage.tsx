@@ -8,11 +8,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Plus, Search, Loader2, Edit, Trash2, BookOpen, Layers, Library, ScrollText, Upload, Folder, FolderPlus, ArrowLeft } from "lucide-react";
+import { FileText, Plus, Search, Loader2, Trash2, Layers, Library, ScrollText, Upload, ExternalLink } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
 
 export default function AdminContentPage() {
   const { toast } = useToast();
@@ -31,16 +30,11 @@ export default function AdminContentPage() {
     data: "", urlNormattiva: "", urn: "" 
   });
 
-  // State for Folders
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [isFolderOpen, setIsFolderOpen] = useState(false);
-  const [folderForm, setFolderForm] = useState({ nome: "", descrizione: "", colore: "#3b82f6" });
-
   // State for Documento Dialog
   const [isDocOpen, setIsDocOpen] = useState(false);
-  const [docForm, setDocForm] = useState({ 
-    titolo: "", descrizione: "", materia: "Diritto Amministrativo", 
-    fileName: "", isStaffOnly: false, pdfBase64: "", folderId: "" 
+  const [docForm, setDocForm] = useState({
+    titolo: "", descrizione: "", materia: "",
+    fileName: "", isStaffOnly: false
   });
 
   // Fetch Concorsi
@@ -53,32 +47,22 @@ export default function AdminContentPage() {
     }
   });
 
-  // Fetch Normative
+  // Fetch Normative - same endpoint as public page for sync
   const { data: normative, isLoading: isLoadingNormative } = useQuery({
-    queryKey: ['admin-normative'],
+    queryKey: ['norme', 'search'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/normative');
+      const res = await fetch('/api/norme/search?limit=100');
       if (!res.ok) throw new Error('Errore caricamento normative');
       return res.json();
     }
   });
 
-  // Fetch Documenti Pubblici
+  // Fetch Documenti Pubblici - same endpoint as public page for sync
   const { data: documenti, isLoading: isLoadingDocumenti } = useQuery({
-    queryKey: ['admin-documenti-pubblici'],
+    queryKey: ['libreria', 'documenti'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/documenti-pubblici');
+      const res = await fetch('/api/libreria/documenti');
       if (!res.ok) throw new Error('Errore caricamento documenti');
-      return res.json();
-    }
-  });
-
-  // Fetch Folders
-  const { data: folders, isLoading: isLoadingFolders } = useQuery({
-    queryKey: ['admin-folders'],
-    queryFn: async () => {
-      const res = await fetch('/api/admin/cartelle-libreria');
-      if (!res.ok) throw new Error('Errore caricamento cartelle');
       return res.json();
     }
   });
@@ -104,86 +88,93 @@ export default function AdminContentPage() {
 
   const createNormativaMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/admin/normative', {
+      // Build URN from tipo, numero, anno
+      const urn = `urn:nir:stato:${normativaForm.tipo.toLowerCase().replace(/\s+/g, '.')}:${normativaForm.anno}-01-01;${normativaForm.numero}`;
+      const res = await fetch('/api/norme', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(normativaForm)
+        body: JSON.stringify({
+          ...normativaForm,
+          urn,
+          anno: parseInt(normativaForm.anno),
+        })
       });
-      if (!res.ok) throw new Error('Errore creazione normativa');
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.[0]?.message || 'Errore creazione normativa');
+      }
       return res.json();
     },
     onSuccess: () => {
       toast({ title: "Normativa aggiunta", description: "La norma è stata aggiunta alla biblioteca." });
       setIsNormativaOpen(false);
       setNormativaForm({ titolo: "", tipo: "Legge", numero: "", anno: new Date().getFullYear().toString(), data: "", urlNormattiva: "", urn: "" });
-      queryClient.invalidateQueries({ queryKey: ['admin-normative'] });
+      queryClient.invalidateQueries({ queryKey: ['norme', 'search'] });
     }
   });
 
+  // For real upload with file
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
   const createDocMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/admin/documenti-pubblici', {
+      if (!selectedFile) throw new Error('Seleziona un file PDF');
+
+      const formData = new FormData();
+      formData.append('pdf', selectedFile);
+      formData.append('titolo', docForm.titolo);
+      formData.append('descrizione', docForm.descrizione);
+      formData.append('materia', docForm.materia);
+      formData.append('isStaffOnly', String(docForm.isStaffOnly));
+      formData.append('tags', JSON.stringify([]));
+
+      const res = await fetch('/api/libreria/documenti', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(docForm)
+        body: formData
       });
-      if (!res.ok) throw new Error('Errore caricamento documento');
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Errore caricamento documento');
+      }
       return res.json();
     },
     onSuccess: () => {
       toast({ title: "Documento caricato", description: "Il file è stato aggiunto alla libreria pubblica." });
       setIsDocOpen(false);
-      setDocForm({ titolo: "", descrizione: "", materia: "Diritto Amministrativo", fileName: "", isStaffOnly: false, pdfBase64: "", folderId: "" });
-      queryClient.invalidateQueries({ queryKey: ['admin-documenti-pubblici'] });
-    }
-  });
-
-  // Create Folder Mutation
-  const createFolderMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch('/api/admin/cartelle-libreria', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...folderForm, parentId: currentFolderId })
-      });
-      if (!res.ok) throw new Error('Errore creazione cartella');
-      return res.json();
+      setDocForm({ titolo: "", descrizione: "", materia: "", fileName: "", isStaffOnly: false });
+      setSelectedFile(null);
+      queryClient.invalidateQueries({ queryKey: ['libreria', 'documenti'] });
     },
-    onSuccess: () => {
-      toast({ title: "Cartella creata" });
-      setIsFolderOpen(false);
-      setFolderForm({ nome: "", descrizione: "", colore: "#3b82f6" });
-      queryClient.invalidateQueries({ queryKey: ['admin-folders'] });
+    onError: (err: Error) => {
+      toast({ title: "Errore", description: err.message, variant: "destructive" });
     }
   });
 
-  // Filtered Content based on Folder
-  const currentFolders = folders?.filter((f: any) => 
-    currentFolderId ? f.parentId === currentFolderId : !f.parentId
-  ) || [];
+  // All documents
+  const allDocs = documenti || [];
 
-  const currentDocs = documenti?.filter((d: any) => 
-    currentFolderId ? d.folderId === currentFolderId : !d.folderId
-  ) || [];
+  // Group documents by materia for display
+  const docsByMateria = allDocs.reduce((acc: Record<string, any[]>, doc: any) => {
+    const materia = doc.materia || 'Altro';
+    if (!acc[materia]) acc[materia] = [];
+    acc[materia].push(doc);
+    return acc;
+  }, {});
 
-  const getCurrentFolderName = () => {
-    if (!currentFolderId) return "Root";
-    return folders?.find((f: any) => f.id === currentFolderId)?.nome || "Cartella";
-  };
-
-  // File Upload Handler (Simulated Base64 for now)
+  // File Upload Handler
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // In real app: Upload to S3/Storage and get URL
-      // Here: Just mock name and size, maybe base64 if small
+      if (file.size > 50 * 1024 * 1024) {
+        toast({ title: "Errore", description: "File troppo grande (max 50MB)", variant: "destructive" });
+        return;
+      }
+      if (!file.type.includes('pdf')) {
+        toast({ title: "Errore", description: "Solo file PDF sono supportati", variant: "destructive" });
+        return;
+      }
+      setSelectedFile(file);
       setDocForm({ ...docForm, fileName: file.name });
-      
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setDocForm(prev => ({ ...prev, pdfBase64: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
     }
   };
 
@@ -270,174 +261,144 @@ export default function AdminContentPage() {
           <TabsContent value="libreria" className="space-y-4 mt-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
-                {currentFolderId && (
-                   <Button variant="ghost" size="sm" onClick={() => setCurrentFolderId(null)}>
-                     <ArrowLeft className="mr-2 h-4 w-4" /> Indietro
-                   </Button>
-                )}
                 <h3 className="text-lg font-medium flex items-center gap-2">
-                  <Library className="h-5 w-5" /> 
-                  {currentFolderId ? getCurrentFolderName() : "Libreria Pubblica"}
+                  <Library className="h-5 w-5" />
+                  Libreria Pubblica ({allDocs.length} documenti)
                 </h3>
               </div>
-              
-              <div className="flex gap-2">
-                {/* New Folder Button */}
-                <Dialog open={isFolderOpen} onOpenChange={setIsFolderOpen}>
-                  <DialogTrigger asChild><Button variant="outline"><FolderPlus className="mr-2 h-4 w-4" /> Nuova Cartella</Button></DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader><DialogTitle>Nuova Cartella</DialogTitle></DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Nome Cartella</label>
-                        <Input value={folderForm.nome} onChange={(e) => setFolderForm({...folderForm, nome: e.target.value})} />
-                      </div>
-                      <div className="space-y-2">
-                         <label className="text-sm font-medium">Colore</label>
-                         <div className="flex gap-2">
-                           {['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6'].map(color => (
-                             <div 
-                               key={color} 
-                               className={`w-6 h-6 rounded-full cursor-pointer border-2 ${folderForm.colore === color ? 'border-black' : 'border-transparent'}`}
-                               style={{ backgroundColor: color }}
-                               onClick={() => setFolderForm({...folderForm, colore: color})}
-                             />
-                           ))}
-                         </div>
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button onClick={() => createFolderMutation.mutate()} disabled={createFolderMutation.isPending}>Crea</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
 
-                {/* Upload File Button */}
-                <Dialog open={isDocOpen} onOpenChange={(open) => {
-                    setIsDocOpen(open);
-                    if(open) setDocForm(prev => ({ ...prev, folderId: currentFolderId || "" }));
-                }}>
-                  <DialogTrigger asChild><Button><Upload className="mr-2 h-4 w-4" /> Carica File</Button></DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader><DialogTitle>Carica Documento in {getCurrentFolderName()}</DialogTitle></DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Titolo</label>
-                        <Input value={docForm.titolo} onChange={(e) => setDocForm({...docForm, titolo: e.target.value})} />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Materia</label>
-                        <Select value={docForm.materia} onValueChange={(v) => setDocForm({...docForm, materia: v})}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Diritto Amministrativo">Diritto Amministrativo</SelectItem>
-                            <SelectItem value="Diritto Costituzionale">Diritto Costituzionale</SelectItem>
-                            <SelectItem value="Contabilità Pubblica">Contabilità Pubblica</SelectItem>
-                            <SelectItem value="Altro">Altro</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">File (PDF/Audio/Video)</label>
-                        <Input type="file" onChange={handleFileUpload} />
-                      </div>
+              {/* Upload File Button */}
+              <Dialog open={isDocOpen} onOpenChange={setIsDocOpen}>
+                <DialogTrigger asChild><Button><Upload className="mr-2 h-4 w-4" /> Carica Documento</Button></DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Carica Documento</DialogTitle>
+                    <DialogDescription>I documenti caricati saranno visibili nella Libreria Pubblica del sito.</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Titolo *</label>
+                      <Input value={docForm.titolo} onChange={(e) => setDocForm({...docForm, titolo: e.target.value})} placeholder="es. Costituzione Italiana Commentata" />
                     </div>
-                    <DialogFooter>
-                      <Button onClick={() => createDocMutation.mutate()} disabled={createDocMutation.isPending || !docForm.fileName}>
-                        {createDocMutation.isPending ? "Caricamento..." : "Carica"}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              {currentFolders.map((folder: any) => (
-                <Card 
-                  key={folder.id} 
-                  className="cursor-pointer hover:bg-accent/50 transition-colors border-l-4 relative group"
-                  style={{ borderLeftColor: folder.colore }}
-                  onClick={() => setCurrentFolderId(folder.id)}
-                >
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <Folder className="h-8 w-8 text-muted-foreground" style={{ color: folder.colore }} />
-                    <div className="overflow-hidden flex-1">
-                      <h4 className="font-medium truncate">{folder.nome}</h4>
-                      <p className="text-xs text-muted-foreground truncate">{folder.descrizione || "Cartella"}</p>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Descrizione</label>
+                      <Input value={docForm.descrizione} onChange={(e) => setDocForm({...docForm, descrizione: e.target.value})} placeholder="Breve descrizione del documento" />
                     </div>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive h-6 w-6"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if(confirm("Eliminare questa cartella?")) {
-                          fetch(`/api/admin/cartelle-libreria/${folder.id}`, { method: 'DELETE' })
-                            .then(() => queryClient.invalidateQueries({ queryKey: ['admin-folders'] }));
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-3 w-3" />
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Materia *</label>
+                      <Select value={docForm.materia} onValueChange={(v) => setDocForm({...docForm, materia: v})}>
+                        <SelectTrigger><SelectValue placeholder="Seleziona materia" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Diritto Amministrativo">Diritto Amministrativo</SelectItem>
+                          <SelectItem value="Diritto Costituzionale">Diritto Costituzionale</SelectItem>
+                          <SelectItem value="Diritto Civile">Diritto Civile</SelectItem>
+                          <SelectItem value="Contabilità Pubblica">Contabilità Pubblica</SelectItem>
+                          <SelectItem value="Economia Aziendale">Economia Aziendale</SelectItem>
+                          <SelectItem value="Informatica">Informatica</SelectItem>
+                          <SelectItem value="Lingua Inglese">Lingua Inglese</SelectItem>
+                          <SelectItem value="Logica">Logica</SelectItem>
+                          <SelectItem value="Storia">Storia</SelectItem>
+                          <SelectItem value="Geografia">Geografia</SelectItem>
+                          <SelectItem value="Testi Specifici per Concorsi Pubblici">Testi Specifici per Concorsi</SelectItem>
+                          <SelectItem value="Altro">Altro</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">File PDF *</label>
+                      <Input type="file" accept=".pdf,application/pdf" onChange={handleFileUpload} />
+                      {selectedFile && <p className="text-sm text-muted-foreground">File selezionato: {selectedFile.name}</p>}
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsDocOpen(false)}>Annulla</Button>
+                    <Button onClick={() => createDocMutation.mutate()} disabled={createDocMutation.isPending || !selectedFile || !docForm.titolo || !docForm.materia}>
+                      {createDocMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Caricamento...</> : "Carica"}
                     </Button>
-                  </CardContent>
-                </Card>
-              ))}
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
 
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow><TableHead>Titolo</TableHead><TableHead>Materia</TableHead><TableHead>File</TableHead><TableHead>Azioni</TableHead></TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {currentDocs.length === 0 ? (
-                      <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Nessun documento in questa cartella.</TableCell></TableRow>
-                    ) : (
-                      currentDocs.map((d: any) => (
-                        <TableRow key={d.id}>
-                          <TableCell className="font-medium flex items-center gap-2">
-                            <FileText className="h-4 w-4 text-blue-500" />
-                            {d.titolo}
-                          </TableCell>
-                          <TableCell><Badge variant="outline">{d.materia}</Badge></TableCell>
-                          <TableCell>{d.fileName}</TableCell>
-                          <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => {
-                               if (!confirm("Eliminare documento?")) return;
-                               await fetch(`/api/admin/documenti-pubblici/${d.id}`, { method: 'DELETE' });
-                               queryClient.invalidateQueries({ queryKey: ['admin-documenti-pubblici'] });
-                            }}><Trash2 className="h-4 w-4" /></Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+            {isLoadingDocumenti ? (
+              <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
+            ) : (
+              <Card>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Titolo</TableHead>
+                        <TableHead>Materia</TableHead>
+                        <TableHead>File</TableHead>
+                        <TableHead>Downloads</TableHead>
+                        <TableHead className="text-right">Azioni</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {allDocs.length === 0 ? (
+                        <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Nessun documento presente. Carica il primo documento!</TableCell></TableRow>
+                      ) : (
+                        allDocs.map((d: any) => (
+                          <TableRow key={d.id}>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                <FileText className="h-4 w-4 text-red-500" />
+                                <div>
+                                  <p>{d.titolo}</p>
+                                  {d.descrizione && <p className="text-xs text-muted-foreground">{d.descrizione}</p>}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell><Badge variant="outline">{d.materia}</Badge></TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{d.fileName || 'N/A'}</TableCell>
+                            <TableCell>{d.downloadCount || 0}</TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => {
+                                 if (!confirm("Eliminare documento?")) return;
+                                 await fetch(`/api/libreria/documenti/${d.id}`, { method: 'DELETE' });
+                                 queryClient.invalidateQueries({ queryKey: ['libreria', 'documenti'] });
+                              }}><Trash2 className="h-4 w-4" /></Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* TAB NORMATIVA */}
           <TabsContent value="normativa" className="space-y-4 mt-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-medium">Biblioteca Normativa</h3>
+              <h3 className="text-lg font-medium flex items-center gap-2">
+                <ScrollText className="h-5 w-5" />
+                Biblioteca Normativa ({normative?.length || 0} norme)
+              </h3>
               <Dialog open={isNormativaOpen} onOpenChange={setIsNormativaOpen}>
                 <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4" /> Aggiungi Norma</Button></DialogTrigger>
                 <DialogContent>
-                  <DialogHeader><DialogTitle>Nuova Normativa</DialogTitle></DialogHeader>
+                  <DialogHeader>
+                    <DialogTitle>Nuova Normativa</DialogTitle>
+                    <DialogDescription>Le norme aggiunte saranno visibili nella Biblioteca Normativa del sito.</DialogDescription>
+                  </DialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Tipo</label>
+                        <label className="text-sm font-medium">Tipo *</label>
                         <Select value={normativaForm.tipo} onValueChange={(v) => setNormativaForm({...normativaForm, tipo: v})}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder="Seleziona tipo" /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="Legge">Legge</SelectItem>
                             <SelectItem value="Decreto Legislativo">D.Lgs</SelectItem>
+                            <SelectItem value="Decreto Legge">D.L.</SelectItem>
                             <SelectItem value="DPR">DPR</SelectItem>
+                            <SelectItem value="DPCM">DPCM</SelectItem>
                             <SelectItem value="Costituzione">Costituzione</SelectItem>
+                            <SelectItem value="Codice">Codice</SelectItem>
+                            <SelectItem value="Regolamento UE">Regolamento UE</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -447,60 +408,80 @@ export default function AdminContentPage() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Anno</label>
-                      <Input placeholder="es. 1990" value={normativaForm.anno} onChange={(e) => setNormativaForm({...normativaForm, anno: e.target.value})} />
+                      <label className="text-sm font-medium">Anno *</label>
+                      <Input type="number" placeholder="es. 1990" value={normativaForm.anno} onChange={(e) => setNormativaForm({...normativaForm, anno: e.target.value})} />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Titolo</label>
-                      <Input placeholder="Legge sul procedimento amministrativo" value={normativaForm.titolo} onChange={(e) => setNormativaForm({...normativaForm, titolo: e.target.value})} />
+                      <label className="text-sm font-medium">Titolo *</label>
+                      <Input placeholder="es. Norme in materia di procedimento amministrativo" value={normativaForm.titolo} onChange={(e) => setNormativaForm({...normativaForm, titolo: e.target.value})} />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">URL Normattiva</label>
+                      <label className="text-sm font-medium">URL Normattiva *</label>
                       <Input placeholder="https://www.normattiva.it/..." value={normativaForm.urlNormattiva} onChange={(e) => setNormativaForm({...normativaForm, urlNormattiva: e.target.value})} />
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button onClick={() => createNormativaMutation.mutate()} disabled={createNormativaMutation.isPending}>
-                      {createNormativaMutation.isPending ? "Salvataggio..." : "Salva Norma"}
+                    <Button variant="outline" onClick={() => setIsNormativaOpen(false)}>Annulla</Button>
+                    <Button onClick={() => createNormativaMutation.mutate()} disabled={createNormativaMutation.isPending || !normativaForm.tipo || !normativaForm.anno || !normativaForm.titolo || !normativaForm.urlNormattiva}>
+                      {createNormativaMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvataggio...</> : "Salva Norma"}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
             </div>
 
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow><TableHead>Atto</TableHead><TableHead>Titolo</TableHead><TableHead>Link</TableHead><TableHead>Azioni</TableHead></TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {normative?.length === 0 ? (
-                      <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Nessuna normativa presente.</TableCell></TableRow>
-                    ) : (
-                      normative?.map((n: any) => (
-                        <TableRow key={n.id}>
-                          <TableCell className="font-medium whitespace-nowrap">{n.tipo} {n.numero}/{n.anno}</TableCell>
-                          <TableCell>{n.titolo}</TableCell>
-                          <TableCell>
-                            <a href={n.urlNormattiva} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
-                              Link <ScrollText className="h-3 w-3" />
-                            </a>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => {
-                               if (!confirm("Eliminare norma?")) return;
-                               await fetch(`/api/admin/normative/${n.id}`, { method: 'DELETE' });
-                               queryClient.invalidateQueries({ queryKey: ['admin-normative'] });
-                            }}><Trash2 className="h-4 w-4" /></Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+            {isLoadingNormative ? (
+              <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
+            ) : (
+              <Card>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Atto</TableHead>
+                        <TableHead>Titolo</TableHead>
+                        <TableHead>Anno</TableHead>
+                        <TableHead>Link</TableHead>
+                        <TableHead className="text-right">Azioni</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {normative?.length === 0 ? (
+                        <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Nessuna normativa presente. Aggiungi la prima norma!</TableCell></TableRow>
+                      ) : (
+                        normative?.map((n: any) => (
+                          <TableRow key={n.id}>
+                            <TableCell className="font-medium whitespace-nowrap">
+                              <Badge variant="outline">{n.tipo}</Badge>
+                              {n.numero && <span className="ml-2">n. {n.numero}</span>}
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <p className="font-medium">{n.titoloBreve || n.titolo}</p>
+                                {n.titoloBreve && <p className="text-xs text-muted-foreground line-clamp-1">{n.titolo}</p>}
+                              </div>
+                            </TableCell>
+                            <TableCell>{n.anno}</TableCell>
+                            <TableCell>
+                              <a href={n.urlNormattiva} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                                Normattiva <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => {
+                                 if (!confirm("Eliminare norma?")) return;
+                                 await fetch(`/api/norme/${n.id}`, { method: 'DELETE' });
+                                 queryClient.invalidateQueries({ queryKey: ['norme', 'search'] });
+                              }}><Trash2 className="h-4 w-4" /></Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
         </Tabs>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLocation } from 'wouter';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -7,7 +8,7 @@ import {
   ArrowLeft, Book, Brain, TrendingUp, Target, Lightbulb,
   CheckCircle, Award, BookOpen, Download, ExternalLink, Clock,
   Home, Hash, Film, Trash2, Plus, Scale, Folder, FolderOpen,
-  Wind, Moon, Droplets, Heart
+  Wind, Moon, Droplets, Heart, Loader2
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
@@ -16,62 +17,170 @@ import { BibliotecaNormativa } from '@/components/BibliotecaNormativa';
 import { UploadMaterial } from '@/components/UploadMaterial';
 import { MaterialCard } from '@/components/MaterialCard';
 
+// Types for API responses
+interface Norma {
+  id: string;
+  urn: string;
+  tipo: string;
+  numero?: string;
+  anno: number;
+  titolo: string;
+  titoloBreve?: string;
+  urlNormattiva: string;
+  keywords?: string[];
+}
+
+interface DocumentoLibreria {
+  id: string;
+  titolo: string;
+  descrizione?: string;
+  materia: string;
+  tags?: string[];
+  fileName?: string;
+  fileSize?: number;
+  hasPdf?: boolean;
+  pdfUrl?: string;
+  downloadCount?: number;
+  createdAt?: string;
+}
+
 
 export default function LibreriaPubblicaPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [selectedArticle, setSelectedArticle] = useState<string | null>(null);
-  
+
   // State per Materiali
   const [selectedMateria, setSelectedMateria] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [mockMaterials, setMockMaterials] = useState<any[]>([
-    { id: '1', title: 'Costituzione Italiana', type: 'normativa', status: 'completed', flashcardsCount: 120, quizzesCount: 15, materia: 'Diritto Costituzionale', fileUrl: '/documents/dummy.pdf' },
-    { id: '2', title: 'Legge 241/90', type: 'normativa', status: 'completed', flashcardsCount: 85, quizzesCount: 10, materia: 'Diritto Amministrativo', fileUrl: '/documents/dummy.pdf' },
-    { id: '3', title: 'Riassunto Privato', type: 'manuale', status: 'completed', flashcardsCount: 40, quizzesCount: 5, materia: 'Diritto Privato', fileUrl: '/documents/dummy.pdf' },
-  ]);
+
+  // Fetch normative from API
+  const { data: normativeData, isLoading: isLoadingNormative } = useQuery<Norma[]>({
+    queryKey: ['norme', 'search'],
+    queryFn: async () => {
+      const res = await fetch('/api/norme/search?limit=50');
+      if (!res.ok) throw new Error('Errore nel caricamento delle normative');
+      return res.json();
+    },
+  });
+
+  // Fetch documenti libreria from API
+  const { data: documentiData, isLoading: isLoadingDocumenti, refetch: refetchDocumenti } = useQuery<DocumentoLibreria[]>({
+    queryKey: ['libreria', 'documenti', selectedMateria],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (selectedMateria) params.append('materia', selectedMateria);
+      const res = await fetch(`/api/libreria/documenti?${params.toString()}`);
+      if (!res.ok) throw new Error('Errore nel caricamento dei documenti');
+      return res.json();
+    },
+  });
+
+  // Transform normative for BibliotecaNormativa component
+  const normativeForComponent = (normativeData || []).map((norma) => ({
+    id: norma.id,
+    nome: norma.titoloBreve || norma.titolo,
+    articoliAnalizzati: 0, // This could be enhanced with actual article count
+    stato: 'completato' as const,
+    url: norma.urlNormattiva,
+  }));
+
+  // Transform documenti for MaterialCard component
+  const materials = (documentiData || []).map((doc) => ({
+    id: doc.id,
+    title: doc.titolo,
+    type: 'documento' as const,
+    status: 'completed' as const,
+    flashcardsCount: 0,
+    quizzesCount: 0,
+    materia: doc.materia,
+    fileUrl: doc.pdfUrl,
+    hasPdf: doc.hasPdf,
+  }));
 
   const materie = [
-    "Diritto Costituzionale",
     "Diritto Amministrativo",
-    "Diritto Privato",
-    "Contabilità di Stato",
+    "Diritto Costituzionale",
+    "Diritto Civile",
+    "Contabilità Pubblica",
+    "Economia Aziendale",
     "Informatica",
-    "Inglese",
-    "Logica"
+    "Lingua Inglese",
+    "Logica",
+    "Storia",
+    "Geografia",
+    "Testi Specifici per Concorsi Pubblici",
+    "Altro"
   ];
 
   const handleUpload = async (file: File, title: string, type: string) => {
-    // Simulazione upload: Creiamo un URL locale per il file
-    console.log("Uploading:", title, type, selectedMateria);
-    const fileUrl = URL.createObjectURL(file);
-    
-    setMockMaterials(prev => [...prev, {
-        id: String(Date.now()),
-        title,
-        type: type as any,
-        status: 'processing',
-        flashcardsCount: 0,
-        quizzesCount: 0,
-        materia: selectedMateria,
-        fileUrl: fileUrl // Salviamo l'URL del file
-    }]);
-    setIsUploadOpen(false);
+    try {
+      const formData = new FormData();
+      formData.append('pdf', file);
+      formData.append('titolo', title);
+      formData.append('materia', selectedMateria || 'Diritto Costituzionale');
+      formData.append('tags', JSON.stringify([type]));
+
+      const res = await fetch('/api/libreria/documenti', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Errore nel caricamento');
+      }
+
+      toast({
+        title: "Documento caricato",
+        description: `${title} è stato caricato con successo`,
+      });
+
+      // Refresh documenti list
+      refetchDocumenti();
+      setIsUploadOpen(false);
+    } catch (error: any) {
+      console.error("Errore upload:", error);
+      toast({
+        title: "Errore",
+        description: error.message || "Errore nel caricamento del documento",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleViewMaterial = (id: string) => {
-    const material = mockMaterials.find(m => m.id === id);
-    if (material) {
-      if (material.fileUrl) {
-        window.open(material.fileUrl, '_blank');
+  const handleViewMaterial = async (id: string) => {
+    try {
+      // Fetch full documento with PDF
+      const res = await fetch(`/api/libreria/documenti/${id}`);
+      if (!res.ok) throw new Error('Documento non trovato');
+
+      const documento = await res.json();
+
+      if (documento.pdfBase64) {
+        // Open base64 PDF in new tab
+        const pdfBlob = await fetch(`data:application/pdf;base64,${documento.pdfBase64}`).then(r => r.blob());
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        window.open(pdfUrl, '_blank');
+
+        // Log download
+        fetch(`/api/libreria/documenti/${id}/download`, { method: 'POST' });
+      } else if (documento.pdfUrl) {
+        window.open(documento.pdfUrl, '_blank');
       } else {
-        // Fallback per eventuali materiali senza file
         toast({
           title: "Documento non disponibile",
-          description: `Impossibile aprire il documento: ${material.title}`,
+          description: `Il PDF per ${documento.titolo} non è disponibile`,
           variant: "destructive"
         });
       }
+    } catch (error) {
+      console.error('Errore apertura documento:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile aprire il documento",
+        variant: "destructive"
+      });
     }
   };
 
@@ -112,7 +221,7 @@ export default function LibreriaPubblicaPage() {
 
         {/* TAB MINDSET */}
         <TabsContent value="mindset" className="space-y-6">
-          
+
           {/* Intro Card */}
           <Card className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 border-2 border-purple-200">
             <CardContent className="pt-6">
@@ -124,7 +233,7 @@ export default function LibreriaPubblicaPage() {
                   <h2 className="text-2xl font-bold mb-2">Ingegneria del Valore Umano</h2>
                   <p className="text-muted-foreground leading-relaxed">
                     Il successo concorsuale è un'equazione dove <strong>la variabile psicologica
-                    pesa quanto quella tecnica</strong>. La preparazione non è un evento,
+                      pesa quanto quella tecnica</strong>. La preparazione non è un evento,
                     ma un <strong>processo di trasformazione personale</strong>.
                   </p>
                 </div>
@@ -134,7 +243,7 @@ export default function LibreriaPubblicaPage() {
 
           {/* I 3 Pilastri */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
+
             {/* Pilastro 1: Growth Mindset */}
             <Card
               className="border-l-4 border-l-green-500 cursor-pointer hover:shadow-lg transition-shadow"
@@ -204,7 +313,7 @@ export default function LibreriaPubblicaPage() {
 
           {/* Articoli Approfondimento */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
+
             {/* Articolo: Come affrontare gli errori */}
             <Card className="hover:shadow-md transition-shadow">
               <CardHeader>
@@ -416,7 +525,7 @@ export default function LibreriaPubblicaPage() {
 
         {/* TAB MNEMOTECNICHE - TEORIA */}
         <TabsContent value="mnemotecniche" className="space-y-6">
-          
+
           {/* Intro Card */}
           <Card className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-950/30 dark:to-orange-950/30 border-2 border-yellow-200">
             <CardContent className="pt-6">
@@ -438,7 +547,7 @@ export default function LibreriaPubblicaPage() {
 
           {/* Le 3 Tecniche Principali */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
+
             {/* 1. Palazzo della Memoria */}
             <Card className="border-l-4 border-l-purple-500">
               <CardHeader>
@@ -540,7 +649,7 @@ export default function LibreriaPubblicaPage() {
                 <p className="text-sm text-muted-foreground">
                   Immagina la tua casa. Ogni stanza rappresenta un articolo della legge sul procedimento amministrativo.
                 </p>
-                
+
                 <div className="space-y-3">
                   <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200">
                     <div className="flex items-start gap-3">
@@ -712,7 +821,7 @@ export default function LibreriaPubblicaPage() {
                 <div className="space-y-3">
                   <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200">
                     <h4 className="font-semibold mb-3">🎬 Sceneggiatura Mentale</h4>
-                    
+
                     <div className="space-y-3 text-sm">
                       <div className="flex items-start gap-3">
                         <Badge className="bg-green-600 shrink-0">Setting</Badge>
@@ -737,8 +846,8 @@ export default function LibreriaPubblicaPage() {
                         <div>
                           <p><strong>Impossessamento della cosa mobile altrui</strong></p>
                           <p className="text-xs mt-1">
-                            AZIONE 1: Rompe la vetrina con un martello (CRASH!)<br/>
-                            AZIONE 2: Infila la mano e PRENDE una collana d'oro<br/>
+                            AZIONE 1: Rompe la vetrina con un martello (CRASH!)<br />
+                            AZIONE 2: Infila la mano e PRENDE una collana d'oro<br />
                             AZIONE 3: La mette in tasca e SCAPPA via
                           </p>
                           <p className="text-muted-foreground text-xs mt-2">
@@ -845,7 +954,7 @@ export default function LibreriaPubblicaPage() {
 
         {/* TAB MATERIALI PUBBLICI */}
         <TabsContent value="materiali" className="space-y-8">
-          
+
           {/* Sezione 1: Biblioteca Normativa AI */}
           <div className="space-y-4">
             <h3 className="text-xl font-bold flex items-center gap-2">
@@ -855,50 +964,22 @@ export default function LibreriaPubblicaPage() {
             <p className="text-muted-foreground text-sm">
               Accedi alle principali leggi analizzate dall'AI con collegamenti diretti e quiz generati.
             </p>
-            <BibliotecaNormativa
-              normative={[
-                { 
-                  id: '1', 
-                  nome: 'Costituzione della Repubblica Italiana', 
-                  articoliAnalizzati: 139, 
-                  stato: 'completato',
-                  url: 'https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:costituzione:1947-12-27'
-                },
-                { 
-                  id: '2', 
-                  nome: 'Legge 241/1990 (Procedimento Amministrativo)', 
-                  articoliAnalizzati: 31, 
-                  stato: 'completato',
-                  url: 'https://www.normattiva.it/atto/caricaDettaglioAtto?atto.dataPubblicazioneGazzetta=1990-08-18&atto.codiceRedazionale=090G0294&atto.articolo.numero=0&atto.articolo.sottoArticolo=1&atto.articolo.sottoArticolo1=0&qId=6ec85cd3-5c5f-45ef-925e-d0b980c3f57e&tabID=0.10456650702230474&title=lbl.dettaglioAtto'
-                },
-                { 
-                  id: '3', 
-                  nome: 'D.Lgs. 165/2001 (TUPI)', 
-                  articoliAnalizzati: 74, 
-                  stato: 'completato',
-                  url: 'https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legislativo:2001-03-30;165'
-                },
-                { 
-                  id: '4', 
-                  nome: 'D.Lgs. 33/2013 (Trasparenza)', 
-                  articoliAnalizzati: 53, 
-                  stato: 'elaborazione',
-                  url: 'https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legislativo:2013-03-14;33'
-                },
-                { 
-                  id: '5', 
-                  nome: 'D.Lgs. 101/2018 (GDPR - Privacy)', 
-                  articoliAnalizzati: 22, 
-                  stato: 'completato',
-                  url: 'https://www.normattiva.it/atto/caricaDettaglioAtto?atto.dataPubblicazioneGazzetta=2018-09-04&atto.codiceRedazionale=18G00129&atto.articolo.numero=0&atto.articolo.sottoArticolo=1&atto.articolo.sottoArticolo1=0&qId=149b53bc-034f-4d41-8d06-96dec18e4fa1&tabID=0.10456650702230474&title=lbl.dettaglioAtto'
-                }
-              ]}
-              domandeGenerate={1250}
-              quizTipoConcorso={15}
-              onUploadPdf={(file) => console.log('Upload law', file)}
-              onGoToQuiz={() => setLocation('/quiz')}
-              onViewStats={() => setLocation('/stats')}
-            />
+            {isLoadingNormative ? (
+              <Card>
+                <CardContent className="flex items-center justify-center p-8">
+                  <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                  <span>Caricamento normative...</span>
+                </CardContent>
+              </Card>
+            ) : (
+              <BibliotecaNormativa
+                normative={normativeForComponent}
+                isLoading={isLoadingNormative}
+                onUploadPdf={(file) => console.log('Upload law', file)}
+                onGoToQuiz={() => setLocation('/quiz')}
+                onViewStats={() => setLocation('/stats')}
+              />
+            )}
           </div>
 
           <div className="border-t my-8" />
@@ -911,7 +992,7 @@ export default function LibreriaPubblicaPage() {
                 Documenti Consultabili
               </h3>
             </div>
-            
+
             <p className="text-muted-foreground text-sm mb-4">
               Consulta i nostri documenti , dispense e schemi divisi per materia
             </p>
@@ -921,17 +1002,17 @@ export default function LibreriaPubblicaPage() {
               <div className="space-y-4 animate-in fade-in slide-in-from-left-4">
                 <div className="flex items-center justify-between bg-muted/30 p-4 rounded-lg border">
                   <div className="flex items-center gap-3">
-                     <Button variant="ghost" size="sm" onClick={() => setSelectedMateria(null)}>
-                       <ArrowLeft className="h-4 w-4 mr-2" />
-                       Torna indietro
-                     </Button>
-                     <div className="h-6 w-px bg-border mx-2" />
-                     <h4 className="text-lg font-semibold flex items-center gap-2">
-                       <FolderOpen className="h-5 w-5 text-primary" />
-                       {selectedMateria}
-                     </h4>
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedMateria(null)}>
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Torna indietro
+                    </Button>
+                    <div className="h-6 w-px bg-border mx-2" />
+                    <h4 className="text-lg font-semibold flex items-center gap-2">
+                      <FolderOpen className="h-5 w-5 text-primary" />
+                      {selectedMateria}
+                    </h4>
                   </div>
-                  
+
                   <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
                     <DialogTrigger asChild>
                       <Button size="sm">
@@ -949,16 +1030,20 @@ export default function LibreriaPubblicaPage() {
                 </div>
 
                 {/* Lista Materiali */}
-                {mockMaterials.filter(m => m.materia === selectedMateria).length > 0 ? (
+                {isLoadingDocumenti ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    <span>Caricamento documenti...</span>
+                  </div>
+                ) : materials.filter(m => m.materia === selectedMateria).length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {mockMaterials
+                    {materials
                       .filter(m => m.materia === selectedMateria)
                       .map((material) => (
                         <MaterialCard
                           key={material.id}
                           {...material}
                           onView={handleViewMaterial}
-                          onDelete={(id) => setMockMaterials(prev => prev.filter(m => m.id !== id))}
                         />
                       ))}
                   </div>
@@ -979,7 +1064,7 @@ export default function LibreriaPubblicaPage() {
               // VISTA LISTA CARTELLE
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {materie.map(materia => {
-                  const count = mockMaterials.filter(m => m.materia === materia).length;
+                  const count = materials.filter(m => m.materia === materia).length;
                   return (
                     <Card
                       key={materia}
@@ -1024,7 +1109,7 @@ function ArticleModal({ articleId, onClose }: { articleId: string; onClose: () =
         <div className="space-y-6">
           <div className="prose dark:prose-invert max-w-none">
             <h3 className="text-xl font-semibold text-primary mb-4">Guida pratica per analizzare ogni errore nei quiz e trasformarlo in un apprendimento concreto.</h3>
-            
+
             <p className="text-muted-foreground mb-6">
               L'errore non è un fallimento, è un dato. Nel contesto della preparazione ai concorsi, ogni risposta sbagliata vale oro: ti indica esattamente dove risiede una lacuna che, se colmata ora, non ti tradirà il giorno dell'esame.
             </p>
@@ -1080,13 +1165,13 @@ function ArticleModal({ articleId, onClose }: { articleId: string; onClose: () =
         </div>
       );
     }
-    
+
     if (id === 'abitudini-studio') {
       return (
         <div className="space-y-6">
           <div className="prose dark:prose-invert max-w-none">
             <h3 className="text-xl font-semibold text-primary mb-4">Come creare una routine di studio che resiste alla noia e ai momenti di scarsa motivazione.</h3>
-            
+
             <p className="text-muted-foreground mb-6">
               La motivazione è un'emozione, ed è volubile. L'abitudine è un automatismo, ed è affidabile. Per vincere un concorso, non ti serve più forza di volontà, ti servono abitudini indistruttibili che ti portino alla scrivania anche quando non ne hai voglia.
             </p>
@@ -1149,7 +1234,7 @@ function ArticleModal({ articleId, onClose }: { articleId: string; onClose: () =
         <div className="space-y-6">
           <div className="prose dark:prose-invert max-w-none">
             <h3 className="text-xl font-semibold text-primary mb-4">Perché i progressi sembrano fermarsi e come uscire dalla fase di stallo con strategie comprovate.</h3>
-            
+
             <p className="text-muted-foreground mb-6">
               Il plateau è una fase naturale dell'apprendimento dove i risultati visibili si fermano, ma la consolidazione neurale continua. È il momento in cui la maggior parte dei candidati molla, ed è proprio qui che si vince il concorso.
             </p>
@@ -1197,7 +1282,7 @@ function ArticleModal({ articleId, onClose }: { articleId: string; onClose: () =
         <div className="space-y-6">
           <div className="prose dark:prose-invert max-w-none">
             <h3 className="text-xl font-semibold text-primary mb-4">Esercizio guidato per definire il tuo "perché profondo".</h3>
-            
+
             <p className="text-muted-foreground mb-6">
               Nei momenti bui, quando la stanchezza prevale e i risultati non arrivano, la forza di volontà non basta. Serve una Visione. Questo esercizio ti aiuterà a scriverla.
             </p>
@@ -1227,8 +1312,8 @@ function ArticleModal({ articleId, onClose }: { articleId: string; onClose: () =
                   Usa le risposte sopra per riempire questo modello. Rendilo solenne.
                 </p>
                 <div className="bg-white dark:bg-slate-950 p-4 rounded border border-blue-200 dark:border-blue-800 font-serif text-lg leading-relaxed italic text-center">
-                  "Mi impegno a studiare con costanza perché voglio diventare [RUOLO] per garantire a me stesso e a [PERSONE CARE] una vita fatta di [VALORI: es. stabilità, dignità].<br/><br/>
-                  Accetto la fatica di oggi perché è il prezzo per non dover più subire [DOLORE DA EVITARE].<br/><br/>
+                  "Mi impegno a studiare con costanza perché voglio diventare [RUOLO] per garantire a me stesso e a [PERSONE CARE] una vita fatta di [VALORI: es. stabilità, dignità].<br /><br />
+                  Accetto la fatica di oggi perché è il prezzo per non dover più subire [DOLORE DA EVITARE].<br /><br />
                   Il mio obiettivo non è solo passare un esame, ma diventare la persona capace di passarlo."
                 </div>
               </div>

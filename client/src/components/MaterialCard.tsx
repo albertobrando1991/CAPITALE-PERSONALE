@@ -6,7 +6,7 @@ import { FileText, Trash2, Eye, Layers, HelpCircle } from "lucide-react";
 interface MaterialCardProps {
   id: string;
   title: string;
-  type: "normativa" | "giurisprudenza" | "manuale";
+  type: "normativa" | "giurisprudenza" | "manuale" | "documento";
   status: "pending" | "processing" | "completed";
   flashcardsCount: number;
   quizzesCount: number;
@@ -18,6 +18,7 @@ const typeLabels = {
   normativa: "Normativa",
   giurisprudenza: "Giurisprudenza",
   manuale: "Manuale",
+  documento: "Documento",
 };
 
 const statusLabels = {
@@ -74,14 +75,16 @@ export function MaterialCard({
             <Eye className="h-4 w-4 mr-2" />
             Visualizza
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onDelete?.(id)}
-            data-testid={`button-delete-material-${id}`}
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
+          {onDelete && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onDelete(id)}
+              data-testid={`button-delete-material-${id}`}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

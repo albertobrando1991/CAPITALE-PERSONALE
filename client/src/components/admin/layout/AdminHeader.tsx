@@ -11,8 +11,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
-import { Bell, Search } from "lucide-react";
+import { Bell, Search, Home } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Link } from "wouter";
 
 export function AdminHeader() {
   const { user, logout } = useAuth();
@@ -33,6 +34,13 @@ export function AdminHeader() {
       </div>
 
       <div className="flex items-center gap-4">
+        <Link href="/dashboard">
+          <Button variant="outline" size="sm" className="gap-2">
+            <Home className="h-4 w-4" />
+            Torna al Sito
+          </Button>
+        </Link>
+
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
           <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500" />
