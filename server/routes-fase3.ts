@@ -34,7 +34,7 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB
 });
@@ -68,8 +68,8 @@ const requireAuth = (req: Request, res: Response, next: Function) => {
 
 // Helper to get userId from session or user object
 const getUserId = (req: Request): string => {
-    // @ts-ignore
-    return req.session?.userId || (req as any).user?.id;
+  // @ts-ignore
+  return req.session?.userId || (req as any).user?.id;
 }
 
 // Inizializza Gemini AI (per Recovery Plans) - Removed duplicate
@@ -102,30 +102,30 @@ router.get('/:concorsoId/progress', requireAuth, async (req: Request, res: Respo
     // Se le tabelle fase3 usano integer per concorso_id, allora c'è un problema di design o dobbiamo fare una lookup.
     // Tuttavia, guardando le migration (che non vedo ma assumo), se concorsi.id è UUID, allora fase3_progress.concorso_id dovrebbe essere UUID o Text.
     // Se è integer, allora dobbiamo convertire UUID -> ID Integer (se esiste questa mappatura) o correggere il tipo.
-    
+
     // Per ora, assumiamo che se è UUID, il DB lo supporti o che dobbiamo fare un cast.
     // Se il DB si aspetta Integer e noi passiamo UUID string, postgres darà errore "invalid input syntax for integer".
-    
+
     // VERIFICA RAPIDA: Se concorsoId è stringa lunga (UUID), passiamolo come stringa.
     // Postgres farà il cast automatico se la colonna è UUID. Se è Integer, fallirà.
-    
+
     // Inizializza record se non esiste
     // FIX: Sostituito ON CONFLICT che fallisce se manca il vincolo UNIQUE nel DB
     const checkExist = await db.query(
-        'SELECT id FROM fase3_progress WHERE user_id = $1 AND concorso_id = $2 LIMIT 1',
-        [userId, concorsoId]
+      'SELECT id FROM fase3_progress WHERE user_id = $1 AND concorso_id = $2 LIMIT 1',
+      [userId, concorsoId]
     );
 
     if (checkExist.rows.length === 0) {
-        try {
-            await db.query(`
+      try {
+        await db.query(`
                 INSERT INTO fase3_progress (user_id, concorso_id)
                 VALUES ($1, $2)
             `, [userId, concorsoId]);
-        } catch (insertError) {
-             console.error("Error initializing progress record:", insertError);
-             // Continue anyway, maybe it exists? Or maybe DB constraint issue.
-        }
+      } catch (insertError) {
+        console.error("Error initializing progress record:", insertError);
+        // Continue anyway, maybe it exists? Or maybe DB constraint issue.
+      }
     }
 
     // AUTO-CLEANUP: Rimuovi bin vuoti (senza errori) per evitare "0 errori" nella UI
@@ -136,7 +136,7 @@ router.get('/:concorsoId/progress', requireAuth, async (req: Request, res: Respo
         AND id NOT IN (SELECT DISTINCT error_bin_id FROM fase3_errors WHERE error_bin_id IS NOT NULL)
       `, [userId, concorsoId]);
     } catch (cleanupError) {
-       console.error("Error during auto-cleanup:", cleanupError);
+      console.error("Error during auto-cleanup:", cleanupError);
     }
 
     // SYNC: Ricalcola statistiche reali per garantire coerenza Dashboard
@@ -149,7 +149,7 @@ router.get('/:concorsoId/progress', requireAuth, async (req: Request, res: Respo
         (SELECT COALESCE(AVG(score_percentage), 0) FROM fase3_drill_sessions WHERE user_id = $1 AND concorso_id = $2 AND is_completed = true) as retention_rate,
         (SELECT COUNT(*) FROM fase3_srs_items WHERE user_id = $1 AND concorso_id = $2 AND last_reviewed_at IS NOT NULL) as total_srs_reviews
     `, [userId, concorsoId]);
-    
+
     const stats = statsResult.rows[0];
 
     // Aggiorna tabella progress con dati reali
@@ -165,14 +165,14 @@ router.get('/:concorsoId/progress', requireAuth, async (req: Request, res: Respo
             updated_at = CURRENT_TIMESTAMP
         WHERE user_id = $7 AND concorso_id = $8
     `, [
-        stats.total_errors || 0, 
-        stats.weak_areas_count || 0, 
-        stats.total_drill_sessions || 0, 
-        stats.total_drill_hours || 0, 
-        stats.retention_rate || 0, 
-        stats.total_srs_reviews || 0,
-        userId, 
-        concorsoId
+      stats.total_errors || 0,
+      stats.weak_areas_count || 0,
+      stats.total_drill_sessions || 0,
+      stats.total_drill_hours || 0,
+      stats.retention_rate || 0,
+      stats.total_srs_reviews || 0,
+      userId,
+      concorsoId
     ]);
 
     // Recupera progresso aggiornato
@@ -186,15 +186,15 @@ router.get('/:concorsoId/progress', requireAuth, async (req: Request, res: Respo
     `, [userId, concorsoId]);
 
     if (result.rows.length === 0) {
-        // Fallback if INSERT failed silently or something else
-        return res.json({
-            status: 'WEAK',
-            total_errors: 0,
-            weak_areas_count: 0,
-            active_weak_areas: 0,
-            items_due_today: 0,
-            retention_rate: 0
-        });
+      // Fallback if INSERT failed silently or something else
+      return res.json({
+        status: 'WEAK',
+        total_errors: 0,
+        weak_areas_count: 0,
+        active_weak_areas: 0,
+        items_due_today: 0,
+        retention_rate: 0
+      });
     }
 
     // Calcola stato dinamico
@@ -279,10 +279,10 @@ router.get('/:concorsoId/error-bins', requireAuth, async (req: Request, res: Res
     query += ` ORDER BY eb.error_count DESC, eb.updated_at DESC`;
 
     const result = await db.query(query, params);
-    
+
     // Prevent caching
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-    
+
     res.json(result.rows);
   } catch (error) {
     console.error('Errore GET error-bins:', error);
@@ -357,16 +357,16 @@ router.post('/:concorsoId/errors', requireAuth, async (req: Request, res: Respon
     // Se materia_id non è fornito, prova a trovarlo dal topic_name (che spesso è il nome della materia)
     let finalMateriaId = materia_id;
     if (!finalMateriaId && topic_name) {
-        const materiaResult = await db.query(`
+      const materiaResult = await db.query(`
             SELECT id FROM materie_sq3r 
             WHERE user_id = $1 AND concorso_id = $2 
             AND TRIM(UPPER(nome_materia)) = TRIM(UPPER($3))
             LIMIT 1
         `, [userId, concorsoId, topic_name]);
-        
-        if (materiaResult.rows.length > 0) {
-            finalMateriaId = materiaResult.rows[0].id;
-        }
+
+      if (materiaResult.rows.length > 0) {
+        finalMateriaId = materiaResult.rows[0].id;
+      }
     }
 
     // Trova o crea Error Bin per questo topic
@@ -397,11 +397,11 @@ router.post('/:concorsoId/errors', requireAuth, async (req: Request, res: Respon
 
     // MAPPING MISTAKE TYPE (English Frontend -> Italian DB Constraint)
     const mistakeMap: Record<string, string> = {
-        'knowledge_gap': 'confusione_concetti',
-        'misinterpretation': 'comprensione', 
-        'memory_slip': 'memoria',
-        'distraction': 'distrazione',
-        'time_pressure': 'tempo'
+      'knowledge_gap': 'confusione_concetti',
+      'misinterpretation': 'comprensione',
+      'memory_slip': 'memoria',
+      'distraction': 'distrazione',
+      'time_pressure': 'tempo'
     };
 
     const validMistakeType = mistakeMap[mistake_type] || 'altro';
@@ -417,7 +417,7 @@ router.post('/:concorsoId/errors', requireAuth, async (req: Request, res: Respon
       RETURNING *
     `, [
       userId, concorsoId, errorBinId, source_type, source_id,
-      question_text, wrong_answer, correct_answer, explanation, 
+      question_text, wrong_answer, correct_answer, explanation,
       validMistakeType
     ]);
 
@@ -453,14 +453,14 @@ router.post('/:concorsoId/errors', requireAuth, async (req: Request, res: Respon
  * Ricalcola forzatamente tutte le statistiche e i collegamenti
  */
 router.post('/:concorsoId/sync', requireAuth, async (req: Request, res: Response) => {
-    try {
-        const { concorsoId } = req.params;
-        const userId = getUserId(req);
+  try {
+    const { concorsoId } = req.params;
+    const userId = getUserId(req);
 
-        console.log(`[SYNC] Starting full sync for user ${userId}, concorso ${concorsoId}`);
+    console.log(`[SYNC] Starting full sync for user ${userId}, concorso ${concorsoId}`);
 
-        // 1. Ricalcola totali errori per bin
-        await db.query(`
+    // 1. Ricalcola totali errori per bin
+    await db.query(`
             UPDATE fase3_error_bins b
             SET error_count = (
                 SELECT COUNT(*) FROM fase3_errors e 
@@ -470,14 +470,14 @@ router.post('/:concorsoId/sync', requireAuth, async (req: Request, res: Response
             WHERE user_id = $1 AND concorso_id = $2
         `, [userId, concorsoId]);
 
-        // 2. Elimina bin vuoti (rimasti a 0 errori)
-        await db.query(`
+    // 2. Elimina bin vuoti (rimasti a 0 errori)
+    await db.query(`
             DELETE FROM fase3_error_bins 
             WHERE user_id = $1 AND concorso_id = $2 AND error_count = 0
         `, [userId, concorsoId]);
 
-        // 3. Aggiorna progresso generale
-        const stats = await db.query(`
+    // 3. Aggiorna progresso generale
+    const stats = await db.query(`
             SELECT
                 (SELECT COUNT(*) FROM fase3_errors WHERE user_id = $1 AND concorso_id = $2) as total_errors,
                 (SELECT COUNT(*) FROM fase3_error_bins WHERE user_id = $1 AND concorso_id = $2 AND is_resolved = false) as weak_areas_count,
@@ -486,9 +486,9 @@ router.post('/:concorsoId/sync', requireAuth, async (req: Request, res: Response
                 (SELECT COALESCE(AVG(score_percentage), 0) FROM fase3_drill_sessions WHERE user_id = $1 AND concorso_id = $2 AND is_completed = true) as retention_rate
         `, [userId, concorsoId]);
 
-        const s = stats.rows[0];
+    const s = stats.rows[0];
 
-        await db.query(`
+    await db.query(`
             UPDATE fase3_progress
             SET 
                 total_errors = $1,
@@ -500,9 +500,9 @@ router.post('/:concorsoId/sync', requireAuth, async (req: Request, res: Response
             WHERE user_id = $6 AND concorso_id = $7
         `, [s.total_errors, s.weak_areas_count, s.total_drill_sessions, s.total_drill_hours, s.retention_rate, userId, concorsoId]);
 
-        // 4. Se ci sono errori orfani (senza bin o con bin cancellato), ricreiamo i bin
-        // Questo risolve il problema: "Errori Totali: 48, Aree Deboli: 0"
-        const orphanedErrors = await db.query(`
+    // 4. Se ci sono errori orfani (senza bin o con bin cancellato), ricreiamo i bin
+    // Questo risolve il problema: "Errori Totali: 48, Aree Deboli: 0"
+    const orphanedErrors = await db.query(`
             SELECT topic_name, topic_slug, materia_id, COUNT(*) as count
             FROM fase3_errors e
             LEFT JOIN fase3_error_bins b ON e.error_bin_id = b.id
@@ -510,44 +510,44 @@ router.post('/:concorsoId/sync', requireAuth, async (req: Request, res: Response
             GROUP BY topic_name, topic_slug, materia_id
         `, [userId, concorsoId]);
 
-        if (orphanedErrors.rows.length > 0) {
-            console.log(`[SYNC] Found ${orphanedErrors.rows.length} orphaned error groups. Recreating bins...`);
-            
-            for (const group of orphanedErrors.rows) {
-                // Ricrea bin
-                const newBin = await db.query(`
+    if (orphanedErrors.rows.length > 0) {
+      console.log(`[SYNC] Found ${orphanedErrors.rows.length} orphaned error groups. Recreating bins...`);
+
+      for (const group of orphanedErrors.rows) {
+        // Ricrea bin
+        const newBin = await db.query(`
                     INSERT INTO fase3_error_bins (user_id, concorso_id, materia_id, topic_name, topic_slug, error_count)
                     VALUES ($1, $2, $3, $4, $5, $6)
                     RETURNING id
                 `, [userId, concorsoId, group.materia_id, group.topic_name, group.topic_slug, group.count]);
-                
-                const newBinId = newBin.rows[0].id;
 
-                // Ricollega errori
-                await db.query(`
+        const newBinId = newBin.rows[0].id;
+
+        // Ricollega errori
+        await db.query(`
                     UPDATE fase3_errors
                     SET error_bin_id = $1
                     WHERE user_id = $2 AND concorso_id = $3 AND topic_slug = $4 AND error_bin_id IS NULL OR error_bin_id NOT IN (SELECT id FROM fase3_error_bins)
                 `, [newBinId, userId, concorsoId, group.topic_slug]);
-            }
-            
-            // Rilancia sync per aggiornare i conteggi finali
-            console.log(`[SYNC] Bins recreated. Triggering final stats update.`);
-            // ... (la ricorsione qui sarebbe pericolosa, ci affidiamo al prossimo sync o aggiorniamo manualmente i contatori di progress)
-             await db.query(`
+      }
+
+      // Rilancia sync per aggiornare i conteggi finali
+      console.log(`[SYNC] Bins recreated. Triggering final stats update.`);
+      // ... (la ricorsione qui sarebbe pericolosa, ci affidiamo al prossimo sync o aggiorniamo manualmente i contatori di progress)
+      await db.query(`
                 UPDATE fase3_progress
                 SET weak_areas_count = (SELECT COUNT(*) FROM fase3_error_bins WHERE user_id = $1 AND concorso_id = $2 AND is_resolved = false)
                 WHERE user_id = $1 AND concorso_id = $2
             `, [userId, concorsoId]);
-        }
-
-        console.log(`[SYNC] Completed. Stats updated.`);
-        res.json({ success: true, stats: s });
-
-    } catch (error) {
-        console.error('Errore SYNC:', error);
-        res.status(500).json({ error: 'Errore sincronizzazione' });
     }
+
+    console.log(`[SYNC] Completed. Stats updated.`);
+    res.json({ success: true, stats: s });
+
+  } catch (error) {
+    console.error('Errore SYNC:', error);
+    res.status(500).json({ error: 'Errore sincronizzazione' });
+  }
 });
 
 /**
@@ -625,11 +625,11 @@ Formato risposta: Markdown, massimo 300 parole, tono motivante ma diretto.
     } catch (e: any) {
       console.error("Errore generazione Recovery Plan (OpenRouter):", e?.message || e);
     }
-    
+
     // FALLBACK ESTREMO (Se entrambe le AI falliscono, per evitare crash 500)
     if (!recoveryPlan) {
-        console.log("All AI services failed. Using static fallback plan.");
-        recoveryPlan = `
+      console.log("All AI services failed. Using static fallback plan.");
+      recoveryPlan = `
 ## Piano di Recupero (Fallback)
 
 **Nota:** I servizi di intelligenza artificiale sono momentaneamente non disponibili. Ecco un piano generico basato sui tuoi errori.
@@ -649,12 +649,12 @@ Dagli errori registrati emerge una necessità di consolidare le basi teoriche de
     }
 
     if (!recoveryPlan) {
-        return res.status(503).json({ error: "Impossibile generare Recovery Plan al momento (AI Error)" });
+      return res.status(503).json({ error: "Impossibile generare Recovery Plan al momento (AI Error)" });
     }
 
     // Salva Recovery Plan
     try {
-        await db.query(`
+      await db.query(`
           UPDATE fase3_error_bins
           SET
             recovery_plan = $1,
@@ -663,18 +663,18 @@ Dagli errori registrati emerge una necessità di consolidare le basi teoriche de
           WHERE id = $2
         `, [recoveryPlan, binId]);
     } catch (dbError: any) {
-        console.error("Error saving recovery plan:", dbError);
-        // Self-healing: Se mancano le colonne, aggiungile e riprova
-        if (dbError.message?.includes("column") || dbError.code === '42703') {
-             console.log("⚠️ Missing columns detected. Attempting schema fix...");
-             try {
-                 await db.query(`
+      console.error("Error saving recovery plan:", dbError);
+      // Self-healing: Se mancano le colonne, aggiungile e riprova
+      if (dbError.message?.includes("column") || dbError.code === '42703') {
+        console.log("⚠️ Missing columns detected. Attempting schema fix...");
+        try {
+          await db.query(`
                     ALTER TABLE fase3_error_bins 
                     ADD COLUMN IF NOT EXISTS recovery_plan TEXT,
                     ADD COLUMN IF NOT EXISTS recovery_plan_generated_at TIMESTAMP;
                  `);
-                 // Riprova update
-                 await db.query(`
+          // Riprova update
+          await db.query(`
                   UPDATE fase3_error_bins
                   SET
                     recovery_plan = $1,
@@ -682,21 +682,21 @@ Dagli errori registrati emerge una necessità di consolidare le basi teoriche de
                     updated_at = CURRENT_TIMESTAMP
                   WHERE id = $2
                 `, [recoveryPlan, binId]);
-                console.log("✅ Schema fix successful and data saved.");
-             } catch (fixError) {
-                 console.error("❌ Failed to fix schema:", fixError);
-                 // Non possiamo salvare, ma restituiamo comunque il piano al frontend per non bloccare l'utente
-             }
+          console.log("✅ Schema fix successful and data saved.");
+        } catch (fixError) {
+          console.error("❌ Failed to fix schema:", fixError);
+          // Non possiamo salvare, ma restituiamo comunque il piano al frontend per non bloccare l'utente
         }
+      }
     }
 
     res.json({ recovery_plan: recoveryPlan });
   } catch (error: any) {
     console.error('Errore generazione Recovery Plan:', error);
-    res.status(500).json({ 
-        error: 'Errore generazione piano recupero',
-        details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    res.status(500).json({
+      error: 'Errore generazione piano recupero',
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -760,22 +760,22 @@ router.post('/:concorsoId/generate-questions', requireAuth, upload.single('file'
     } else if (type === 'text') {
       textToAnalyze = content;
     } else if (type === 'topic') {
-        // Recupera contenuto dai capitoli del topic
-        const userId = getUserId(req);
-        const chapters = await db.query(`
+      // Recupera contenuto dai capitoli del topic
+      const userId = getUserId(req);
+      const chapters = await db.query(`
             SELECT contenuto_testo, titolo FROM capitoli_sq3r 
             WHERE materia_id = $1 AND user_id = $2
         `, [topic_id, userId]);
-        
-        if (chapters.rows.length === 0) return res.status(404).json({ error: "Nessun contenuto trovato per questo argomento" });
-        
-        textToAnalyze = chapters.rows.map(c => `Capitolo: ${c.titolo}\n${c.contenuto_testo}`).join("\n\n");
+
+      if (chapters.rows.length === 0) return res.status(404).json({ error: "Nessun contenuto trovato per questo argomento" });
+
+      textToAnalyze = chapters.rows.map(c => `Capitolo: ${c.titolo}\n${c.contenuto_testo}`).join("\n\n");
     } else {
-        return res.status(400).json({ error: "Tipo generazione non valido" });
+      return res.status(400).json({ error: "Tipo generazione non valido" });
     }
 
     if (!textToAnalyze || textToAnalyze.length < 50) {
-        return res.status(400).json({ error: "Testo insufficiente per generare domande" });
+      return res.status(400).json({ error: "Testo insufficiente per generare domande" });
     }
 
     // 2. Genera domande con AI
@@ -808,10 +808,10 @@ router.post('/:concorsoId/generate-questions', requireAuth, upload.single('file'
 
     let questions = [];
     try {
-        const parsed = JSON.parse(questionsJson);
-        questions = Array.isArray(parsed) ? parsed : (parsed.questions || []);
+      const parsed = JSON.parse(questionsJson);
+      questions = Array.isArray(parsed) ? parsed : (parsed.questions || []);
     } catch (e) {
-        return res.status(500).json({ error: "Errore parsing risposta AI" });
+      return res.status(500).json({ error: "Errore parsing risposta AI" });
     }
 
     res.json({ questions });
@@ -838,7 +838,7 @@ router.post('/:concorsoId/error-bins/:binId/resolve', requireAuth, async (req: R
     `, [binId, userId, concorsoId]);
 
     if (current.rows.length === 0) {
-        return res.status(404).json({ error: "Bin non trovato" });
+      return res.status(404).json({ error: "Bin non trovato" });
     }
 
     const newState = !current.rows[0].is_resolved;
@@ -883,9 +883,9 @@ router.post('/:concorsoId/drill-sessions', requireAuth, async (req: Request, res
     // Se generated_questions è un oggetto/array, convertilo in stringa
     let questionsStr = null;
     if (req.body.generated_questions) {
-        questionsStr = typeof req.body.generated_questions === 'string' 
-            ? req.body.generated_questions 
-            : JSON.stringify(req.body.generated_questions);
+      questionsStr = typeof req.body.generated_questions === 'string'
+        ? req.body.generated_questions
+        : JSON.stringify(req.body.generated_questions);
     }
 
     const result = await db.query(`
@@ -924,14 +924,14 @@ router.patch('/:concorsoId/drill-sessions/:sessionId/complete', requireAuth, asy
 
     // LOGICA DI RISOLUZIONE ERRORI (Collegamento Drill -> Error Binning)
     if (questions_data && Array.isArray(questions_data)) {
-        console.log(`[Drill Complete] Processing ${questions_data.length} questions for error resolution...`);
-        let resolvedCount = 0;
+      console.log(`[Drill Complete] Processing ${questions_data.length} questions for error resolution...`);
+      let resolvedCount = 0;
 
-        for (const q of questions_data) {
-            // Se la domanda è corretta, rimuoviamo l'errore corrispondente dal DB
-            if (q.isCorrect && q.questionText) {
-                console.log(`[Drill Complete] Attempting to resolve error: "${q.questionText.substring(0, 30)}..."`);
-                const deleteResult = await db.query(`
+      for (const q of questions_data) {
+        // Se la domanda è corretta, rimuoviamo l'errore corrispondente dal DB
+        if (q.isCorrect && q.questionText) {
+          console.log(`[Drill Complete] Attempting to resolve error: "${q.questionText.substring(0, 30)}..."`);
+          const deleteResult = await db.query(`
                     DELETE FROM fase3_errors
                     WHERE user_id = $1 AND concorso_id = $2 
                     AND (
@@ -940,20 +940,20 @@ router.patch('/:concorsoId/drill-sessions/:sessionId/complete', requireAuth, asy
                         TRIM(UPPER(question_text)) LIKE TRIM(UPPER($3)) || '%'
                     )
                 `, [userId, concorsoId, q.questionText]);
-                
-                if (deleteResult.rowCount > 0) {
-                    console.log(`[Drill Complete] Deleted ${deleteResult.rowCount} errors.`);
-                    resolvedCount += deleteResult.rowCount;
-                } else {
-                    console.log(`[Drill Complete] No matching error found to delete.`);
-                }
-            }
-        }
-        console.log(`[Drill Complete] Total resolved errors: ${resolvedCount}`);
 
-        if (resolvedCount > 0) {
-            // Se abbiamo risolto errori, aggiorniamo i conteggi dei bin
-            await db.query(`
+          if (deleteResult.rowCount > 0) {
+            console.log(`[Drill Complete] Deleted ${deleteResult.rowCount} errors.`);
+            resolvedCount += deleteResult.rowCount;
+          } else {
+            console.log(`[Drill Complete] No matching error found to delete.`);
+          }
+        }
+      }
+      console.log(`[Drill Complete] Total resolved errors: ${resolvedCount}`);
+
+      if (resolvedCount > 0) {
+        // Se abbiamo risolto errori, aggiorniamo i conteggi dei bin
+        await db.query(`
                 UPDATE fase3_error_bins b
                 SET error_count = (
                     SELECT COUNT(*) FROM fase3_errors e 
@@ -963,21 +963,21 @@ router.patch('/:concorsoId/drill-sessions/:sessionId/complete', requireAuth, asy
                 WHERE user_id = $1 AND concorso_id = $2
             `, [userId, concorsoId]);
 
-            // Rimuoviamo bin svuotati
-            await db.query(`
+        // Rimuoviamo bin svuotati
+        await db.query(`
                 DELETE FROM fase3_error_bins 
                 WHERE user_id = $1 AND concorso_id = $2 AND error_count = 0
             `, [userId, concorsoId]);
-            
-            // Aggiorna contatori globali progress
-            await db.query(`
+
+        // Aggiorna contatori globali progress
+        await db.query(`
                 UPDATE fase3_progress
                 SET 
                     total_errors = (SELECT COUNT(*) FROM fase3_errors WHERE user_id = $1 AND concorso_id = $2),
                     weak_areas_count = (SELECT COUNT(*) FROM fase3_error_bins WHERE user_id = $1 AND concorso_id = $2 AND is_resolved = false)
                 WHERE user_id = $1 AND concorso_id = $2
             `, [userId, concorsoId]);
-        }
+      }
     }
 
     // Calcola improvement_rate (confronto con sessione precedente stesso topic)
@@ -1083,44 +1083,44 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
 
     // Priorità: Domande generate (se presenti)
     if (session.generated_questions) {
-        try {
-            console.log(`[DEBUG] generated_questions type: ${typeof session.generated_questions}`);
-            console.log(`[DEBUG] generated_questions length: ${session.generated_questions.length}`);
-            console.log(`[DEBUG] generated_questions preview: ${session.generated_questions.substring(0, 100)}`);
+      try {
+        console.log(`[DEBUG] generated_questions type: ${typeof session.generated_questions}`);
+        console.log(`[DEBUG] generated_questions length: ${session.generated_questions.length}`);
+        console.log(`[DEBUG] generated_questions preview: ${session.generated_questions.substring(0, 100)}`);
 
-            questions = typeof session.generated_questions === 'string' 
-                ? JSON.parse(session.generated_questions) 
-                : session.generated_questions;
-            
-            // Double parse check (if double stringified)
-            if (typeof questions === 'string') {
-                console.log(`[DEBUG] Double stringified JSON detected. Parsing again.`);
-                try {
-                    questions = JSON.parse(questions);
-                } catch (e2) {
-                    console.error("[DEBUG] Second parse failed", e2);
-                }
-            }
+        questions = typeof session.generated_questions === 'string'
+          ? JSON.parse(session.generated_questions)
+          : session.generated_questions;
 
-            console.log(`[DEBUG] Parsed questions length: ${Array.isArray(questions) ? questions.length : 'Not Array'}`);
-            
-            if (Array.isArray(questions)) {
-                // Normalizza formato se necessario
-                questions = questions.map((q: any) => ({
-                    text: q.text || q.question,
-                    options: q.options,
-                    correctAnswer: q.correctAnswer,
-                    explanation: q.explanation || "",
-                    topic: q.topic || "Generale"
-                }));
-            } else {
-                questions = [];
-            }
-        } catch (e) {
-            console.error("Errore parsing generated_questions", e);
+        // Double parse check (if double stringified)
+        if (typeof questions === 'string') {
+          console.log(`[DEBUG] Double stringified JSON detected. Parsing again.`);
+          try {
+            questions = JSON.parse(questions);
+          } catch (e2) {
+            console.error("[DEBUG] Second parse failed", e2);
+          }
         }
-    } 
-    
+
+        console.log(`[DEBUG] Parsed questions length: ${Array.isArray(questions) ? questions.length : 'Not Array'}`);
+
+        if (Array.isArray(questions)) {
+          // Normalizza formato se necessario
+          questions = questions.map((q: any) => ({
+            text: q.text || q.question,
+            options: q.options,
+            correctAnswer: q.correctAnswer,
+            explanation: q.explanation || "",
+            topic: q.topic || "Generale"
+          }));
+        } else {
+          questions = [];
+        }
+      } catch (e) {
+        console.error("Errore parsing generated_questions", e);
+      }
+    }
+
     if (questions.length === 0 && session.mode === 'topic') {
       const nomeMateria = session.topic_id;
       console.log(`🔍 [Drill] Cercando domande per Topic: "${nomeMateria}" (Concorso: ${concorsoId})`);
@@ -1140,14 +1140,14 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
             WHERE user_id = $1 AND concorso_id = $2 
             AND TRIM(UPPER(materia)) = TRIM(UPPER($3))
         `, [userId, concorsoId, nomeMateria]);
-        
+
         let flashcards = flashcardsResult.rows;
         console.log(`   Found ${flashcards.length} exact matches`);
 
         // Se non troviamo flashcard con il nome esatto, proviamo una ricerca parziale sulla MATERIA
         if (flashcards.length === 0) {
-             console.log(`   Attempting partial match on MATERIA...`);
-             const partialMatchResult = await db.query(`
+          console.log(`   Attempting partial match on MATERIA...`);
+          const partialMatchResult = await db.query(`
                 SELECT id, fronte, retro, materia, fonte
                 FROM flashcards
                 WHERE user_id = $1 AND concorso_id = $2 
@@ -1157,28 +1157,28 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
                     TRIM(UPPER($3)) LIKE '%' || TRIM(UPPER(materia)) || '%'
                 )
             `, [userId, concorsoId, nomeMateria]);
-            
-            if (partialMatchResult.rows.length > 0) {
-                console.log(`   Found ${partialMatchResult.rows.length} partial matches`);
-                flashcards.push(...partialMatchResult.rows);
-            }
+
+          if (partialMatchResult.rows.length > 0) {
+            console.log(`   Found ${partialMatchResult.rows.length} partial matches`);
+            flashcards.push(...partialMatchResult.rows);
+          }
         }
 
         // Se ancora 0, proviamo a cercare nella FONTE (nome del file/materiale)
         // Spesso la materia nelle flashcard è "Generale" ma la fonte è "Diritto Costituzionale.pdf"
         if (flashcards.length === 0) {
-             console.log(`   Attempting match on FONTE (Source)...`);
-             const sourceMatchResult = await db.query(`
+          console.log(`   Attempting match on FONTE (Source)...`);
+          const sourceMatchResult = await db.query(`
                 SELECT id, fronte, retro, materia, fonte
                 FROM flashcards
                 WHERE user_id = $1 AND concorso_id = $2 
                 AND TRIM(UPPER(fonte)) LIKE '%' || TRIM(UPPER($3)) || '%'
             `, [userId, concorsoId, nomeMateria]);
 
-            if (sourceMatchResult.rows.length > 0) {
-                console.log(`   Found ${sourceMatchResult.rows.length} matches by source`);
-                flashcards.push(...sourceMatchResult.rows);
-            }
+          if (sourceMatchResult.rows.length > 0) {
+            console.log(`   Found ${sourceMatchResult.rows.length} matches by source`);
+            flashcards.push(...sourceMatchResult.rows);
+          }
         }
 
         const uniqueFlashcardsById = new Map<string, any>();
@@ -1209,208 +1209,223 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
         // 3. Trasforma flashcards in domande quiz (con distrattori)
         // Se abbiamo abbastanza flashcards (>4), usiamo le altre come distrattori.
         // Altrimenti usiamo placeholder.
-        
-        for (const fc of flashcards) {
-             let distractors: string[] = [];
-             let usedCache = false;
 
-             // 1. Check Cache
-             try {
-                 // A. Cerca nella cache personale (per ID flashcard)
-                 let cachedResult = await db.query(`
+        for (const fc of flashcards) {
+          let distractors: string[] = [];
+          let usedCache = false;
+
+          // 1. Check Cache
+          try {
+            // A. Cerca nella cache personale (per ID flashcard)
+            let cachedResult = await db.query(`
                     SELECT distractors FROM fase3_generated_questions 
                     WHERE user_id = $1 AND flashcard_id = $2
                  `, [userId, fc.id]);
-                 
-                 // B. Se non trova, cerca nella cache GLOBALE (per contenuto uguale)
-                 // Questo permette di riutilizzare i distrattori generati da ALTRI utenti per la stessa domanda
-                 if (cachedResult.rows.length === 0) {
-                     cachedResult = await db.query(`
+
+            // B. Se non trova, cerca nella cache GLOBALE (per contenuto uguale)
+            // Questo permette di riutilizzare i distrattori generati da ALTRI utenti per la stessa domanda
+            if (cachedResult.rows.length === 0) {
+              cachedResult = await db.query(`
                         SELECT distractors FROM fase3_generated_questions 
                         WHERE TRIM(question_text) = TRIM($1) 
                           AND TRIM(correct_answer) = TRIM($2)
                         LIMIT 1
                      `, [fc.fronte, fc.retro]);
-                     
-                     if (cachedResult.rows.length > 0) {
-                         console.log(`🌍 Global Cache HIT for question: "${fc.fronte.substring(0, 30)}..."`);
-                     }
-                 } else {
-                     console.log(`✅ Personal Cache HIT for flashcard ${fc.id}`);
-                 }
-                 
-                 if (cachedResult.rows.length > 0) {
-                     // Check if distractors is a string (JSON stringified) and parse it
-                     const rawDistractors = cachedResult.rows[0].distractors;
-                     if (typeof rawDistractors === 'string') {
-                         try {
-                             distractors = JSON.parse(rawDistractors);
-                         } catch (e) {
-                             console.error("Error parsing distractors from cache:", e);
-                             // Fallback to empty array or raw string if parsing fails (though likely string is the issue)
-                             distractors = []; 
-                         }
-                     } else {
-                         distractors = rawDistractors;
-                     }
-                     usedCache = true;
-                 }
-             } catch (e) {
-                 console.error("Error checking cache:", e);
-             }
 
-             if (!usedCache) {
-                 // Trova distrattori (altre flashcards della stessa materia o concorso)
-                 const otherFlashcards = flashcards.filter(f => f.id !== fc.id);
-                 
-                 if (otherFlashcards.length >= 3) {
-                     distractors = otherFlashcards
-                        .sort(() => 0.5 - Math.random())
-                        .slice(0, 3)
-                        .map(f => f.retro);
-                 } else {
-                     const correctAnswer = fc.retro;
-                     const isNumber = !isNaN(Number(correctAnswer));
-                     const candidateDistractors: string[] = otherFlashcards.map(f => f.retro);
-                     
-                     if (isNumber) {
-                        const num = Number(correctAnswer);
-                        candidateDistractors.push(
-                            (num + Math.floor(Math.random() * 20) + 1).toString(),
-                            (Math.max(0, num - Math.floor(Math.random() * 20) - 1)).toString(),
-                            (num + Math.floor(Math.random() * 50) + 20).toString()
-                        );
-                     } else if (correctAnswer.length < 15) {
-                         candidateDistractors.push(
-                             "Nessuna delle precedenti",
-                             "Tutte le precedenti",
-                             "Non definito dalla norma"
-                         );
-                     } else {
-                         candidateDistractors.push(
-                             "Una descrizione alternativa che sembra riferirsi allo stesso istituto ma ne altera in modo improprio presupposti e effetti giuridici previsti.",
-                             "Una formulazione che combina elementi di discipline diverse generando una definizione apparentemente corretta ma priva di fondamento normativo.",
-                             "Una sintesi semplificata che omette condizioni essenziali e porta a un'interpretazione imprecisa dell'istituto richiamato nella domanda."
-                         );
-                     }
+              if (cachedResult.rows.length > 0) {
+                console.log(`🌍 Global Cache HIT for question: "${fc.fronte.substring(0, 30)}..."`);
+              }
+            } else {
+              console.log(`✅ Personal Cache HIT for flashcard ${fc.id}`);
+            }
 
-                     distractors = candidateDistractors
-                        .filter((d) => d && d.trim().length > 0 && d !== correctAnswer)
-                        .sort(() => 0.5 - Math.random())
-                        .slice(0, 3);
-                 }
+            if (cachedResult.rows.length > 0) {
+              // Check if distractors is a string (JSON stringified) and parse it
+              const rawDistractors = cachedResult.rows[0].distractors;
+              if (typeof rawDistractors === 'string') {
+                try {
+                  distractors = JSON.parse(rawDistractors);
+                } catch (e) {
+                  console.error("Error parsing distractors from cache:", e);
+                  // Fallback to empty array or raw string if parsing fails (though likely string is the issue)
+                  distractors = [];
+                }
+              } else {
+                distractors = rawDistractors;
+              }
+              usedCache = true;
+            }
+          } catch (e) {
+            console.error("Error checking cache:", e);
+          }
 
-                 // --- INTEGRAZIONE AI PER DISTRATTORI ---
-                 // Se abbiamo configurato l'AI, usiamola per generare distrattori coerenti
-                 // Se non è configurata, usiamo la logica locale migliorata
-                 const shouldUseAI = !!(
-                     process.env.OPENROUTER_API_KEY ||
-                     process.env.OPEN_ROUTER_API_KEY ||
-                     process.env.OPEN_ROUTER
-                 );
-                 
-                 if (shouldUseAI) { 
-                     try {
-                         const prompt = `Sei un esperto creatore di quiz per concorsi pubblici.
+          if (!usedCache) {
+            // Trova distrattori (altre flashcards della stessa materia o concorso)
+            const otherFlashcards = flashcards.filter(f => f.id !== fc.id);
+
+            if (otherFlashcards.length >= 3) {
+              distractors = otherFlashcards
+                .sort(() => 0.5 - Math.random())
+                .slice(0, 3)
+                .map(f => f.retro);
+            } else {
+              const correctAnswer = fc.retro;
+              const isNumber = !isNaN(Number(correctAnswer));
+              const candidateDistractors: string[] = otherFlashcards.map(f => f.retro);
+
+              if (isNumber) {
+                const num = Number(correctAnswer);
+                candidateDistractors.push(
+                  (num + Math.floor(Math.random() * 20) + 1).toString(),
+                  (Math.max(0, num - Math.floor(Math.random() * 20) - 1)).toString(),
+                  (num + Math.floor(Math.random() * 50) + 20).toString()
+                );
+              } else if (correctAnswer.length < 15) {
+                candidateDistractors.push(
+                  "Nessuna delle precedenti",
+                  "Tutte le precedenti",
+                  "Non definito dalla norma"
+                );
+              } else if (correctAnswer.length >= 60) {
+                // Long answers: generate equally long distractors
+                candidateDistractors.push(
+                  "Una descrizione alternativa che sembra riferirsi allo stesso istituto ma ne altera in modo improprio i presupposti e gli effetti giuridici previsti dalla normativa vigente.",
+                  "Una formulazione che combina elementi di discipline diverse generando una definizione apparentemente corretta ma priva di fondamento normativo e dottrinale consolidato.",
+                  "Una sintesi semplificata che omette condizioni essenziali e requisiti procedurali, portando a un'interpretazione imprecisa dell'istituto richiamato nella domanda."
+                );
+              } else {
+                // Medium-length fallback
+                candidateDistractors.push(
+                  "Una definizione alternativa che modifica i presupposti giuridici previsti.",
+                  "Una formulazione che altera l'ambito di applicazione della norma.",
+                  "Una descrizione imprecisa che omette requisiti essenziali."
+                );
+              }
+
+              distractors = candidateDistractors
+                .filter((d) => d && d.trim().length > 0 && d !== correctAnswer)
+                .sort(() => 0.5 - Math.random())
+                .slice(0, 3);
+            }
+
+            // --- INTEGRAZIONE AI PER DISTRATTORI ---
+            // Se abbiamo configurato l'AI, usiamola per generare distrattori coerenti
+            // Se non è configurata, usiamo la logica locale migliorata
+            const shouldUseAI = !!(
+              process.env.OPENROUTER_API_KEY ||
+              process.env.OPEN_ROUTER_API_KEY ||
+              process.env.OPEN_ROUTER
+            );
+
+            if (shouldUseAI) {
+              try {
+                const correctLen = fc.retro.length;
+                const prompt = `Sei un esperto creatore di quiz per concorsi pubblici.
     Genera 3 risposte ERRATE (distrattori) plausibili e coerenti per questa domanda.
     DOMANDA: "${fc.fronte}"
     RISPOSTA CORRETTA: "${fc.retro}"
     MATERIA: "${fc.materia}"
+    LUNGHEZZA RISPOSTA CORRETTA: ${correctLen} caratteri
 
-    REGOLE TASSATIVE:
+    ⚠️ REGOLE TASSATIVE (NON DEROGABILI):
     1. I distrattori devono essere ASSOLUTAMENTE coerenti con la domanda. Se la domanda chiede "principi", i distrattori devono essere "principi" (anche se sbagliati). Se chiede "anni", devono essere "anni".
     2. NON restituire numeri a caso se la risposta non è un numero.
     3. NON restituire frasi a caso se la risposta è un numero.
-    4. La lunghezza di ciascun distrattore deve essere SIMILE (circa ±30%) a quella della risposta corretta; evita risposte molto più brevi o molto più lunghe.
-    5. Restituisci SOLO un array JSON di stringhe: ["Distrattore 1", "Distrattore 2", "Distrattore 3"]`;
-                         const aiResponse = await generateWithFallback({
-                           task: "distractors_generate",
-                           userPrompt: prompt,
-                           temperature: 0.5,
-                           maxOutputTokens: 250,
-                           responseMode: "json",
-                           jsonRoot: "array",
-                         });
+    4. **REGOLA CRITICA SULLA LUNGHEZZA**:
+       - La risposta corretta ha ${correctLen} caratteri.
+       - ALMENO UN distrattore DEVE avere lunghezza >= ${Math.floor(correctLen * 0.9)} caratteri.
+       - Gli altri distrattori devono avere lunghezza compresa tra ${Math.floor(correctLen * 0.6)} e ${Math.floor(correctLen * 1.4)} caratteri.
+       - NON generare MAI distrattori molto più corti della risposta corretta (es. < 50% della lunghezza).
+    5. Se la risposta corretta è lunga (> 50 caratteri), i distrattori devono essere UGUALMENTE elaborati e dettagliati.
+    6. Restituisci SOLO un array JSON di stringhe: ["Distrattore 1", "Distrattore 2", "Distrattore 3"]`;
+                const aiResponse = await generateWithFallback({
+                  task: "distractors_generate",
+                  userPrompt: prompt,
+                  temperature: 0.5,
+                  maxOutputTokens: 250,
+                  responseMode: "json",
+                  jsonRoot: "array",
+                });
 
-                         const generatedDistractors = JSON.parse(cleanJson(aiResponse));
-                         if (Array.isArray(generatedDistractors) && generatedDistractors.length === 3) {
-                             distractors = generatedDistractors;
-                             console.log("✅ AI Distractors generated:", distractors);
-                             
-                             // SAVE TO CACHE
-                             try {
-                                 await db.query(`
+                const generatedDistractors = JSON.parse(cleanJson(aiResponse));
+                if (Array.isArray(generatedDistractors) && generatedDistractors.length === 3) {
+                  distractors = generatedDistractors;
+                  console.log("✅ AI Distractors generated:", distractors);
+
+                  // SAVE TO CACHE
+                  try {
+                    await db.query(`
                                     INSERT INTO fase3_generated_questions (user_id, concorso_id, flashcard_id, question_text, correct_answer, distractors, topic)
                                     VALUES ($1, $2, $3, $4, $5, $6, $7)
                                     ON CONFLICT (user_id, flashcard_id) DO UPDATE 
                                     SET distractors = $6, updated_at = CURRENT_TIMESTAMP
                                  `, [userId, concorsoId, fc.id, fc.fronte, fc.retro, JSON.stringify(distractors), fc.materia]);
-                                 // console.log("💾 Saved to cache");
-                             } catch (saveErr) {
-                                 console.error("Error saving to cache:", saveErr);
-                             }
+                    // console.log("💾 Saved to cache");
+                  } catch (saveErr) {
+                    console.error("Error saving to cache:", saveErr);
+                  }
 
-                         } else {
-                             console.log("⚠️ AI returned invalid distractors format:", aiResponse);
-                         }
-                     } catch (e) {
-                         console.error("Errore generazione AI distrattori, fallback locale", e);
-                         // Fallback alla logica locale già implementata sopra
-                     }
-                 } else {
-                     console.log("⚠️ AI not configured, skipping smart generation");
-                 }
-             }
+                } else {
+                  console.log("⚠️ AI returned invalid distractors format:", aiResponse);
+                }
+              } catch (e) {
+                console.error("Errore generazione AI distrattori, fallback locale", e);
+                // Fallback alla logica locale già implementata sopra
+              }
+            } else {
+              console.log("⚠️ AI not configured, skipping smart generation");
+            }
+          }
 
-             {
-               const correctAnswer = fc.retro;
-               const isNumber = !isNaN(Number(correctAnswer));
-               const normalized = (Array.isArray(distractors) ? distractors : [])
-                 .map((d) => (typeof d === "string" ? d.trim() : ""))
-                 .filter((d) => d.length > 0 && d !== correctAnswer);
+          {
+            const correctAnswer = fc.retro;
+            const isNumber = !isNaN(Number(correctAnswer));
+            const normalized = (Array.isArray(distractors) ? distractors : [])
+              .map((d) => (typeof d === "string" ? d.trim() : ""))
+              .filter((d) => d.length > 0 && d !== correctAnswer);
 
-               distractors = normalized;
+            distractors = normalized;
 
-               if (!isNumber && correctAnswer.length >= 60) {
-                 const minLen = Math.floor(correctAnswer.length * 0.7);
-                 const hasLong = distractors.some((d) => d.length >= minLen);
-                 if (!hasLong) {
-                   const longFallback =
-                     "Una sintesi semplificata che omette condizioni essenziali e porta a un'interpretazione imprecisa dell'istituto richiamato nella domanda.";
-                   let shortestIdx = 0;
-                   for (let i = 1; i < distractors.length; i++) {
-                     if (distractors[i].length < distractors[shortestIdx].length) shortestIdx = i;
-                   }
-                   if (distractors.length >= 1) {
-                     distractors[shortestIdx] = longFallback;
-                   } else {
-                     distractors.push(longFallback);
-                   }
-                 }
-               }
+            if (!isNumber && correctAnswer.length >= 60) {
+              const minLen = Math.floor(correctAnswer.length * 0.7);
+              const hasLong = distractors.some((d) => d.length >= minLen);
+              if (!hasLong) {
+                const longFallback =
+                  "Una sintesi semplificata che omette condizioni essenziali e porta a un'interpretazione imprecisa dell'istituto richiamato nella domanda.";
+                let shortestIdx = 0;
+                for (let i = 1; i < distractors.length; i++) {
+                  if (distractors[i].length < distractors[shortestIdx].length) shortestIdx = i;
+                }
+                if (distractors.length >= 1) {
+                  distractors[shortestIdx] = longFallback;
+                } else {
+                  distractors.push(longFallback);
+                }
+              }
+            }
 
-               while (distractors.length < 3) {
-                 distractors.push(
-                   isNumber
-                     ? "0"
-                     : correctAnswer.length >= 60
-                       ? "Una formulazione che sembra corretta ma introduce presupposti non previsti e modifica impropriamente l'ambito di applicazione."
-                       : "Nessuna delle precedenti"
-                 );
-               }
-               distractors = distractors.slice(0, 3);
-             }
+            while (distractors.length < 3) {
+              distractors.push(
+                isNumber
+                  ? "0"
+                  : correctAnswer.length >= 60
+                    ? "Una formulazione che sembra corretta ma introduce presupposti non previsti e modifica impropriamente l'ambito di applicazione."
+                    : "Nessuna delle precedenti"
+              );
+            }
+            distractors = distractors.slice(0, 3);
+          }
 
-             // Mischia opzioni
-             const options = [fc.retro, ...distractors].sort(() => 0.5 - Math.random());
-             
-             questions.push({
-                 text: fc.fronte,
-                 options: options,
-                 correctAnswer: fc.retro,
-                 explanation: `Fonte: ${fc.fonte || 'Materiale di studio'}`,
-                 topic: fc.materia
-             });
+          // Mischia opzioni
+          const options = [fc.retro, ...distractors].sort(() => 0.5 - Math.random());
+
+          questions.push({
+            text: fc.fronte,
+            options: options,
+            correctAnswer: fc.retro,
+            explanation: `Fonte: ${fc.fonte || 'Materiale di studio'}`,
+            topic: fc.materia
+          });
         }
       }
     } else if (session.mode === 'weak') {
@@ -1427,88 +1442,88 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
 
       // Se non ci sono errori registrati, non possiamo generare domande "weak"
       if (errorsResult.rows.length === 0) {
-         // Fallback: potremmo tornare array vuoto o switchare a topic random.
-         // Per ora array vuoto, il frontend gestirà "Nessuna area debole trovata"
+        // Fallback: potremmo tornare array vuoto o switchare a topic random.
+        // Per ora array vuoto, il frontend gestirà "Nessuna area debole trovata"
       } else {
-         const errorItems = errorsResult.rows;
-         
-         // Per generare i distrattori (opzioni errate), prendiamo tutte le risposte corrette/errate disponibili nel set
-         // o usiamo fallback.
-         const allAnswers = [
-            ...new Set([
-                ...errorItems.map((e: any) => e.correct_answer),
-                ...errorItems.map((e: any) => e.wrong_answer)
-            ])
-         ];
+        const errorItems = errorsResult.rows;
 
-         for (const err of errorItems) {
-             // Genera distrattori
-             let distractors = allAnswers
-                .filter(a => a !== err.correct_answer)
-                .sort(() => 0.5 - Math.random())
-                .slice(0, 3);
-             
-             // Se non abbiamo abbastanza distrattori dal pool degli errori, aggiungiamo filler
-             while (distractors.length < 3) {
-                 distractors.push(`Altra opzione ${distractors.length + 1}`);
-             }
+        // Per generare i distrattori (opzioni errate), prendiamo tutte le risposte corrette/errate disponibili nel set
+        // o usiamo fallback.
+        const allAnswers = [
+          ...new Set([
+            ...errorItems.map((e: any) => e.correct_answer),
+            ...errorItems.map((e: any) => e.wrong_answer)
+          ])
+        ];
 
-             const options = [err.correct_answer, ...distractors].sort(() => 0.5 - Math.random());
+        for (const err of errorItems) {
+          // Genera distrattori
+          let distractors = allAnswers
+            .filter(a => a !== err.correct_answer)
+            .sort(() => 0.5 - Math.random())
+            .slice(0, 3);
 
-             questions.push({
-                 text: err.question_text,
-                 options: options,
-                 correctAnswer: err.correct_answer,
-                 explanation: err.explanation || "Revisione errore precedente",
-                 topic: err.topic_name
-             });
-         }
+          // Se non abbiamo abbastanza distrattori dal pool degli errori, aggiungiamo filler
+          while (distractors.length < 3) {
+            distractors.push(`Altra opzione ${distractors.length + 1}`);
+          }
+
+          const options = [err.correct_answer, ...distractors].sort(() => 0.5 - Math.random());
+
+          questions.push({
+            text: err.question_text,
+            options: options,
+            correctAnswer: err.correct_answer,
+            explanation: err.explanation || "Revisione errore precedente",
+            topic: err.topic_name
+          });
+        }
       }
     }
 
     // Se non ci sono domande (es. nessun capitolo studiato/recensito), aggiungi warning o gestisci lato frontend
     if (questions.length === 0 && session.mode === 'topic' && session.topic_id) {
-        console.log(`⚠️ [Drill] No flashcards found for topic "${session.topic_id}". Attempting to generate from SQ3R content...`);
-        
-        // 1. Trova ID materia
-        const materiaResult = await db.query(`
+      console.log(`⚠️ [Drill] No flashcards found for topic "${session.topic_id}". Attempting to generate from SQ3R content...`);
+
+      // 1. Trova ID materia
+      const materiaResult = await db.query(`
             SELECT id FROM materie_sq3r 
             WHERE user_id = $1 AND concorso_id = $2 
             AND (TRIM(UPPER(nome_materia)) = TRIM(UPPER($3)) OR TRIM(UPPER(nome_materia)) LIKE '%' || TRIM(UPPER($3)) || '%')
             LIMIT 1
         `, [userId, concorsoId, session.topic_id]);
 
-        if (materiaResult.rows.length > 0) {
-            const materiaId = materiaResult.rows[0].id;
-            
-            // 2. Recupera testo dai capitoli (PDF URL)
-            const chaptersResult = await db.query(`
+      if (materiaResult.rows.length > 0) {
+        const materiaId = materiaResult.rows[0].id;
+
+        // 2. Recupera testo dai capitoli (PDF URL)
+        const chaptersResult = await db.query(`
                 SELECT titolo, pdf_url FROM capitoli_sq3r 
                 WHERE materia_id = $1 AND user_id = $2 AND pdf_url IS NOT NULL
             `, [materiaId, userId]);
 
-            if (chaptersResult.rows.length > 0) {
-                console.log(`🔍 Found ${chaptersResult.rows.length} chapters with PDF. Extracting text...`);
-                let fullText = "";
-                
-                // Extract text from PDFs (limit to first 3 chapters to avoid timeouts)
-                for (const cap of chaptersResult.rows.slice(0, 3)) {
-                    if (cap.pdf_url && cap.pdf_url.includes('base64,')) {
-                        try {
-                            const base64Data = cap.pdf_url.split('base64,')[1];
-                            const buffer = Buffer.from(base64Data, 'base64');
-                            const text = await extractTextFromPDF(buffer);
-                            fullText += `CAPITOLO: ${cap.titolo}\n${text}\n\n`;
-                        } catch (e) {
-                            console.error(`Error extracting PDF for chapter ${cap.titolo}:`, e);
-                        }
-                    }
-                }
+        if (chaptersResult.rows.length > 0) {
+          console.log(`🔍 Found ${chaptersResult.rows.length} chapters with PDF. Extracting text...`);
+          let fullText = "";
 
-                if (fullText.length > 500) {
-                    console.log(`🤖 [Drill] Generating questions from ${fullText.length} chars of SQ3R content...`);
-                    
-                    const systemPrompt = `Sei un esperto creatore di quiz per concorsi pubblici. 
+          // Extract text from PDFs (limit to first 3 chapters to avoid timeouts)
+          for (const cap of chaptersResult.rows.slice(0, 3)) {
+            if (cap.pdf_url && cap.pdf_url.includes('base64,')) {
+              try {
+                const base64Data = cap.pdf_url.split('base64,')[1];
+                const buffer = Buffer.from(base64Data, 'base64');
+                const text = await extractTextFromPDF(buffer);
+                fullText += `CAPITOLO: ${cap.titolo}\n${text}\n\n`;
+              } catch (e) {
+                console.error(`Error extracting PDF for chapter ${cap.titolo}:`, e);
+              }
+            }
+          }
+
+          if (fullText.length > 500) {
+            console.log(`🤖 [Drill] Generating questions from ${fullText.length} chars of SQ3R content...`);
+
+            const systemPrompt = `Sei un esperto creatore di quiz per concorsi pubblici. 
                     Analizza il testo fornito e genera ${session.total_questions} domande a risposta multipla.
                     
                     Restituisci un ARRAY JSON puro:
@@ -1522,44 +1537,44 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
                       }
                     ]`;
 
-                    const userPrompt = `Testo da analizzare:\n${fullText.substring(0, 30000)}`;
-                    
-                    const questionsJson = await generateWithFallback({
-                      task: "fase3_drill_generate",
-                      systemPrompt,
-                      userPrompt,
-                      temperature: 0.4,
-                      maxOutputTokens: 3000,
-                      responseMode: "json",
-                      jsonRoot: "array",
-                    });
+            const userPrompt = `Testo da analizzare:\n${fullText.substring(0, 30000)}`;
 
-                    try {
-                        const parsed = JSON.parse(questionsJson);
-                        const generatedQs = Array.isArray(parsed) ? parsed : (parsed.questions || []);
-                        
-                        if (generatedQs.length > 0) {
-                            questions = generatedQs.map((q: any) => ({
-                                text: q.text || q.question,
-                                options: q.options,
-                                correctAnswer: q.correctAnswer,
-                                explanation: q.explanation || "Generata da AI",
-                                topic: q.topic || session.topic_id
-                            }));
-                            
-                            // Save to session so we don't regenerate on refresh
-                            await db.query(`
+            const questionsJson = await generateWithFallback({
+              task: "fase3_drill_generate",
+              systemPrompt,
+              userPrompt,
+              temperature: 0.4,
+              maxOutputTokens: 3000,
+              responseMode: "json",
+              jsonRoot: "array",
+            });
+
+            try {
+              const parsed = JSON.parse(questionsJson);
+              const generatedQs = Array.isArray(parsed) ? parsed : (parsed.questions || []);
+
+              if (generatedQs.length > 0) {
+                questions = generatedQs.map((q: any) => ({
+                  text: q.text || q.question,
+                  options: q.options,
+                  correctAnswer: q.correctAnswer,
+                  explanation: q.explanation || "Generata da AI",
+                  topic: q.topic || session.topic_id
+                }));
+
+                // Save to session so we don't regenerate on refresh
+                await db.query(`
                                 UPDATE fase3_drill_sessions 
                                 SET generated_questions = $1
                                 WHERE id = $2
                             `, [JSON.stringify(questions), sessionId]);
-                        }
-                    } catch (e) {
-                        console.error("Error parsing generated questions:", e);
-                    }
-                }
+              }
+            } catch (e) {
+              console.error("Error parsing generated questions:", e);
             }
+          }
         }
+      }
     }
 
     if (questions.length > 0 && questions.length < session.total_questions) {
@@ -1576,8 +1591,8 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
 
     // Aggiungi ID progressivi per la sessione
     const finalQuestions = selected.map((q, i) => ({
-        id: i + 1,
-        ...q
+      id: i + 1,
+      ...q
     }));
 
     res.json(finalQuestions);
@@ -1639,11 +1654,11 @@ router.delete('/:concorsoId/drill-sessions/:sessionId', requireAuth, async (req:
     // Tuttavia, per semplicità e coerenza storica, spesso si preferisce non toccare le statistiche aggregate
     // o ricalcolarle completamente.
     // Implementiamo un decremento semplice per mantenere i contatori allineati.
-    
+
     // Recuperiamo durata della sessione eliminata (se completata) per aggiornare le ore totali
     // Ma l'abbiamo già cancellata... oops. Facciamolo in una transazione o prima della delete.
     // Per ora, accettiamo che le statistiche globali possano divergere leggermente o ricalcoliamole.
-    
+
     // MIGLIORE PRATICA: Ricalcolo totale statistiche drill
     await db.query(`
       UPDATE fase3_progress
