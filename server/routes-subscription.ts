@@ -1,7 +1,7 @@
 
 import type { Express } from 'express';
 import { db } from './db';
-import { userSubscriptions } from '../shared/schema';
+import { userSubscriptions, userRoles } from '../shared/schema';
 import { eq } from 'drizzle-orm';
 import { isAlwaysPremium } from './utils/auth-helpers';
 
@@ -16,14 +16,23 @@ export function registerSubscriptionRoutes(app: Express) {
         return res.json({ tier: 'free', status: 'none' });
       }
 
-      // 🔥 ADMIN SEMPRE PREMIUM
-      if (isAlwaysPremium(user.email)) {
-        console.log(`👑 Admin ${user.email} → Force Premium`);
+      // Check DB role
+      const [userRole] = await db
+        .select()
+        .from(userRoles)
+        .where(eq(userRoles.userId, user.id));
+
+      const isDbAdmin = userRole?.role === 'admin' || userRole?.role === 'super_admin' || userRole?.role === 'staff';
+
+      // 🔥 ADMIN SEMPRE PREMIUM (Env var OR DB role)
+      if (isAlwaysPremium(user.email) || isDbAdmin) {
+        console.log(`👑 Admin/Staff ${user.email} → Force Premium`);
         return res.json({
           userId: user.id,
           tier: 'premium',
           status: 'active',
           isAdmin: true,
+          role: userRole?.role || 'admin',
           sintesiUsate: 0,
           sintesiLimite: null, // Illimitato
           startDate: new Date(),

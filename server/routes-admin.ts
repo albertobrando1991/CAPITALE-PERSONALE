@@ -4,14 +4,14 @@ import { podcastDatabase, podcastRequests, staffMembers } from '../shared/schema
 import { users, userSubscriptions, userRoles, userSuspensions, adminActivityLog } from '../shared/schema';
 import { eq, desc, sql, like, or, and } from 'drizzle-orm';
 import { isAdmin, isStaff } from './utils/auth-helpers';
-import { requireAdmin, requireAdminOrStaff, getUserId } from './middleware/auth';
+import { getUserId } from './middleware/auth';
 import multer from 'multer';
 import { z } from 'zod';
 
 const router = Router();
 
 // Middleware per verificare admin
-function requireAdmin(req: any, res: any, next: any) {
+async function requireAdmin(req: any, res: any, next: any) {
   const user = req.user as any;
   if (!user) {
     return res.status(401).json({ error: 'Non autenticato' });
@@ -19,20 +19,37 @@ function requireAdmin(req: any, res: any, next: any) {
 
   const userEmail = user.email || 'dev@trae-ai.com';
 
-  if (!isAdmin(userEmail)) {
-    console.log(`🚫 Accesso negato per ${userEmail} (richiede ADMIN)`);
-    return res.status(403).json({
-      error: 'Accesso negato',
-      message: 'Solo gli amministratori possono accedere a questa risorsa'
-    });
+  // 1. Check Env Vars first (sync)
+  if (isAdmin(userEmail)) {
+    console.log(`✅ Accesso ADMIN (Env) consentito per ${userEmail}`);
+    return next();
   }
 
-  console.log(`✅ Accesso ADMIN consentito per ${userEmail}`);
-  next();
+  // 2. Check Database (async)
+  try {
+    const [userRole] = await db
+      .select({ role: userRoles.role })
+      .from(userRoles)
+      .where(eq(userRoles.userId, user.id || user.sub))
+      .limit(1);
+
+    if (userRole?.role === 'admin' || userRole?.role === 'super_admin') {
+      console.log(`✅ Accesso ADMIN (DB) consentito per ${userEmail}`);
+      return next();
+    }
+  } catch (err) {
+    console.error("❌ Errore check admin role:", err);
+  }
+
+  console.log(`🚫 Accesso negato per ${userEmail} (richiede ADMIN)`);
+  return res.status(403).json({
+    error: 'Accesso negato',
+    message: 'Solo gli amministratori possono accedere a questa risorsa'
+  });
 }
 
 // Middleware per verificare staff
-function requireStaff(req: any, res: any, next: any) {
+async function requireStaff(req: any, res: any, next: any) {
   const user = req.user as any;
   if (!user) {
     return res.status(401).json({ error: 'Non autenticato' });
@@ -40,16 +57,34 @@ function requireStaff(req: any, res: any, next: any) {
 
   const userEmail = user.email || 'dev@trae-ai.com';
 
-  if (!isStaff(userEmail) && !isAdmin(userEmail)) {
-    console.log(`🚫 Accesso negato per ${userEmail} (richiede STAFF o ADMIN)`);
-    return res.status(403).json({
-      error: 'Accesso negato',
-      message: 'Solo lo staff può accedere a questa risorsa'
-    });
+  // 1. Check Env Vars first
+  if (isStaff(userEmail) || isAdmin(userEmail)) {
+    console.log(`✅ Accesso STAFF (Env) consentito per ${userEmail}`);
+    return next();
   }
 
-  console.log(`✅ Accesso STAFF consentito per ${userEmail}`);
-  next();
+  // 2. Check Database
+  try {
+    const [userRole] = await db
+      .select({ role: userRoles.role })
+      .from(userRoles)
+      .where(eq(userRoles.userId, user.id || user.sub))
+      .limit(1);
+
+    const role = userRole?.role;
+    if (role === 'staff' || role === 'admin' || role === 'super_admin') {
+      console.log(`✅ Accesso STAFF (DB) consentito per ${userEmail}`);
+      return next();
+    }
+  } catch (err) {
+    console.error("❌ Errore check staff role:", err);
+  }
+
+  console.log(`🚫 Accesso negato per ${userEmail} (richiede STAFF o ADMIN)`);
+  return res.status(403).json({
+    error: 'Accesso negato',
+    message: 'Solo lo staff può accedere a questa risorsa'
+  });
 }
 
 // Multer per upload audio (max 100MB)
@@ -123,14 +158,14 @@ router.post('/podcast/upload', requireStaff, upload.single('audio'), async (req,
   try {
     const user = req.user as any;
     const audioFile = req.file;
-    const { 
-      titolo, 
-      descrizione, 
-      materia, 
-      argomento, 
-      durata, 
-      trascrizione, 
-      isPremiumOnly, 
+    const {
+      titolo,
+      descrizione,
+      materia,
+      argomento,
+      durata,
+      trascrizione,
+      isPremiumOnly,
       requestId  // NUOVO: ID della richiesta (opzionale)
     } = req.body;
 
@@ -278,7 +313,7 @@ router.delete('/requests/:id', requireAdmin, async (req, res) => {
     // Gestione Bulk Delete (se id è 'bulk')
     if (id === 'bulk') {
       const { status } = req.body; // Es: { status: 'completed' }
-      
+
       if (!status) {
         return res.status(400).json({ error: 'Stato mancante per eliminazione bulk' });
       }
