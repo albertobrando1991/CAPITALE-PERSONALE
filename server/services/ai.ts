@@ -114,17 +114,17 @@ export interface GenerateWithFallbackOptions {
 function getModelChain(task: AITask): string[] {
   switch (task) {
     case "flashcards_generate":
-      return ["google/gemini-2.0-flash", "openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet"];
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
     case "flashcard_explain":
-      return ["anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash", "anthropic/claude-3.5-sonnet"];
     case "distractors_generate":
       return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
     case "quiz_generate":
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash", "anthropic/claude-3.5-sonnet"];
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
     case "fase3_drill_generate":
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash", "anthropic/claude-3.5-sonnet"];
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
     case "concept_explain":
-      return ["anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash", "anthropic/claude-3.5-sonnet"];
     case "sq3r_generate":
       return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
     case "sq3r_chapters_extract":
@@ -136,27 +136,27 @@ function getModelChain(task: AITask): string[] {
     case "ocr_images":
       return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
     default:
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash", "anthropic/claude-3.5-sonnet"];
+      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
   }
 }
 
 function getDefaultMaxOutputTokens(task: AITask): number {
   switch (task) {
     case "flashcards_generate":
-      return 2500;
+      return 1500;
     case "quiz_generate":
-      return 2500;
+      return 1500;
     case "fase3_drill_generate":
-      return 3000;
+      return 1800;
     case "sq3r_generate":
-      return 3000;
+      return 2200;
     case "sq3r_chapters_extract":
-      return 2000;
+      return 1500;
     case "recovery_plan":
-      return 1200;
+      return 1000;
     case "flashcard_explain":
     case "concept_explain":
-      return 900;
+      return 700;
     case "reframing_generate":
       return 400;
     case "distractors_generate":
@@ -164,7 +164,7 @@ function getDefaultMaxOutputTokens(task: AITask): number {
     case "ocr_images":
       return 1200;
     default:
-      return 1200;
+      return 1000;
   }
 }
 

@@ -1239,36 +1239,40 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
                  const otherFlashcards = flashcards.filter(f => f.id !== fc.id);
                  
                  if (otherFlashcards.length >= 3) {
-                     // Prendi 3 random
                      distractors = otherFlashcards
                         .sort(() => 0.5 - Math.random())
                         .slice(0, 3)
                         .map(f => f.retro);
                  } else {
-                     // Fallback MIGLIORATO: Genera distrattori plausibili se possibile, o usa generici ma sensati
-                     // Se la risposta corretta è un numero (es. "200"), generiamo numeri vicini
                      const correctAnswer = fc.retro;
                      const isNumber = !isNaN(Number(correctAnswer));
+                     const candidateDistractors: string[] = otherFlashcards.map(f => f.retro);
                      
                      if (isNumber) {
                         const num = Number(correctAnswer);
-                        distractors = [
+                        candidateDistractors.push(
                             (num + Math.floor(Math.random() * 20) + 1).toString(),
                             (Math.max(0, num - Math.floor(Math.random() * 20) - 1)).toString(),
                             (num + Math.floor(Math.random() * 50) + 20).toString()
-                        ];
+                        );
                      } else if (correctAnswer.length < 15) {
-                        // Risposta breve (probabilmente un termine o data) -> cerchiamo altre risposte brevi nel DB
-                        // o usiamo placeholder più specifici se non ne troviamo
-                         distractors = ["Nessuna delle precedenti", "Tutte le precedenti", "Non definito dalla norma"];
+                         candidateDistractors.push(
+                             "Nessuna delle precedenti",
+                             "Tutte le precedenti",
+                             "Non definito dalla norma"
+                         );
                      } else {
-                        // Risposta lunga (definizione) -> usiamo risposte generiche di "confusione"
-                        distractors = [
-                            "Il concetto opposto a quanto affermato nella domanda.",
-                            "Una procedura che non si applica in questo contesto specifico.",
-                            "Una definizione obsoleta non più in vigore."
-                        ];
+                         candidateDistractors.push(
+                             "Una descrizione alternativa che sembra riferirsi allo stesso istituto ma ne altera in modo improprio presupposti e effetti giuridici previsti.",
+                             "Una formulazione che combina elementi di discipline diverse generando una definizione apparentemente corretta ma priva di fondamento normativo.",
+                             "Una sintesi semplificata che omette condizioni essenziali e porta a un'interpretazione imprecisa dell'istituto richiamato nella domanda."
+                         );
                      }
+
+                     distractors = candidateDistractors
+                        .filter((d) => d && d.trim().length > 0 && d !== correctAnswer)
+                        .sort(() => 0.5 - Math.random())
+                        .slice(0, 3);
                  }
 
                  // --- INTEGRAZIONE AI PER DISTRATTORI ---
@@ -1292,7 +1296,8 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
     1. I distrattori devono essere ASSOLUTAMENTE coerenti con la domanda. Se la domanda chiede "principi", i distrattori devono essere "principi" (anche se sbagliati). Se chiede "anni", devono essere "anni".
     2. NON restituire numeri a caso se la risposta non è un numero.
     3. NON restituire frasi a caso se la risposta è un numero.
-    4. Restituisci SOLO un array JSON di stringhe: ["Distrattore 1", "Distrattore 2", "Distrattore 3"]`;
+    4. La lunghezza di ciascun distrattore deve essere SIMILE (circa ±30%) a quella della risposta corretta; evita risposte molto più brevi o molto più lunghe.
+    5. Restituisci SOLO un array JSON di stringhe: ["Distrattore 1", "Distrattore 2", "Distrattore 3"]`;
                          const aiResponse = await generateWithFallback({
                            task: "distractors_generate",
                            userPrompt: prompt,
