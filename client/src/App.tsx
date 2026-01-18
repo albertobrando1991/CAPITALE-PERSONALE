@@ -37,6 +37,14 @@ import PricingPage from "@/pages/PricingPage";
 import PodcastDatabasePage from "@/pages/PodcastDatabasePage";
 import MyPodcastRequestsPage from "@/pages/MyPodcastRequestsPage";
 import AdminDashboard from "@/pages/AdminDashboard";
+import AdminOverviewPage from "@/pages/admin/OverviewPage";
+import AdminUsersPage from "@/pages/admin/AdminUsersPage";
+import AdminContentPage from "@/pages/admin/AdminContentPage";
+import AdminLibraryPage from "@/pages/admin/AdminLibraryPage";
+import AdminRegulationsPage from "@/pages/admin/AdminRegulationsPage";
+import AdminSubscriptionsPage from "@/pages/admin/AdminSubscriptionsPage";
+import AdminAnalyticsPage from "@/pages/admin/AdminAnalyticsPage";
+import AdminSettingsPage from "@/pages/admin/AdminSettingsPage";
 import MnemotecnichePage from "@/pages/MnemotecnichePage";
 import { SpecialistaProvider } from "@/contexts/SpecialistaContext";
 import { BenessereProvider } from '@/contexts/BenessereContext';
@@ -114,6 +122,14 @@ function ProtectedRoutes() {
               <Route path="/concorsi/:concorsoId/fase3/drill" component={DrillSessionPage} />
               <Route path="/concorsi/:concorsoId/fase3/review" component={ReviewCalendarPage} />
               <Route path="/admin" component={AdminDashboard} />
+              <Route path="/admin/overview" component={AdminOverviewPage} />
+              <Route path="/admin/users" component={AdminUsersPage} />
+              <Route path="/admin/content" component={AdminContentPage} />
+              <Route path="/admin/library" component={AdminLibraryPage} />
+              <Route path="/admin/regulations" component={AdminRegulationsPage} />
+              <Route path="/admin/subscriptions" component={AdminSubscriptionsPage} />
+              <Route path="/admin/analytics" component={AdminAnalyticsPage} />
+              <Route path="/admin/settings" component={AdminSettingsPage} />
               <Route component={NotFound} />
             </Switch>
           </main>

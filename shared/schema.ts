@@ -139,6 +139,8 @@ export * from "./schema-sq3r";
 export * from "./schema-libreria";
 export * from "./schema-normativa";
 export * from "./schema-fase3";
+export * from "./schema-rbac";
+export * from "./schema-audit";
 
 // ============================================
 // MNEMOTECNICHE TABLES

@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { db } from './db';
 import { podcastDatabase, podcastRequests, staffMembers } from '../shared/schema-sq3r';
-import { userSubscriptions } from '../shared/schema';
-import { eq, desc, sql } from 'drizzle-orm';
+import { users, userSubscriptions, userRoles, userSuspensions, adminActivityLog } from '../shared/schema';
+import { eq, desc, sql, like, or, and } from 'drizzle-orm';
 import { isAdmin, isStaff } from './utils/auth-helpers';
+import { requireAdmin, requireAdminOrStaff, getUserId } from './middleware/auth';
 import multer from 'multer';
+import { z } from 'zod';
 
 const router = Router();
 
@@ -389,6 +391,450 @@ router.delete('/staff/:id', requireAdmin, async (req, res) => {
   } catch (error: any) {
     console.error('❌ Errore rimozione staff:', error);
     res.status(500).json({ error: 'Errore rimozione' });
+  }
+});
+
+// ============================================
+// USER MANAGEMENT
+// ============================================
+
+// Lista utenti paginata con ricerca
+router.get('/users', requireAdmin, async (req, res) => {
+  try {
+    const { page = '1', limit = '10', search = '' } = req.query;
+    const pageNum = Math.max(1, parseInt(page as string));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
+    const offset = (pageNum - 1) * limitNum;
+
+    // Build query with optional search
+    let baseQuery = db
+      .select({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        profileImageUrl: users.profileImageUrl,
+        createdAt: users.createdAt,
+      })
+      .from(users);
+
+    if (search) {
+      const searchTerm = `%${search}%`;
+      baseQuery = baseQuery.where(
+        or(
+          like(users.email, searchTerm),
+          like(users.firstName, searchTerm),
+          like(users.lastName, searchTerm)
+        )
+      ) as any;
+    }
+
+    const usersData = await baseQuery
+      .orderBy(desc(users.createdAt))
+      .limit(limitNum)
+      .offset(offset);
+
+    // Get roles and subscriptions for each user
+    const enrichedUsers = await Promise.all(
+      usersData.map(async (u) => {
+        const [roleData] = await db
+          .select({ role: userRoles.role })
+          .from(userRoles)
+          .where(eq(userRoles.userId, u.id))
+          .limit(1);
+
+        const [subData] = await db
+          .select({ tier: userSubscriptions.tier, status: userSubscriptions.status })
+          .from(userSubscriptions)
+          .where(eq(userSubscriptions.userId, u.id))
+          .limit(1);
+
+        const [suspensionData] = await db
+          .select()
+          .from(userSuspensions)
+          .where(and(
+            eq(userSuspensions.userId, u.id),
+            eq(userSuspensions.isActive, true)
+          ))
+          .limit(1);
+
+        return {
+          ...u,
+          role: roleData?.role || 'user',
+          subscriptionTier: subData?.tier || 'free',
+          subscriptionStatus: subData?.status || 'none',
+          isSuspended: !!suspensionData,
+          suspensionReason: suspensionData?.reason,
+        };
+      })
+    );
+
+    // Get total count
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(users);
+
+    const totalCount = Number(countResult?.count || 0);
+    const totalPages = Math.ceil(totalCount / limitNum);
+
+    res.json({
+      data: enrichedUsers,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: totalCount,
+        totalPages,
+        hasMore: pageNum < totalPages,
+      },
+    });
+  } catch (error: any) {
+    console.error('❌ Errore lista utenti:', error);
+    res.status(500).json({ error: 'Errore recupero utenti' });
+  }
+});
+
+// Validazione per invito
+const inviteSchema = z.object({
+  email: z.string().email('Email non valida'),
+  role: z.enum(['staff', 'admin']).default('staff'),
+});
+
+// Invita staff/admin
+router.post('/invite', requireAdmin, async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const parsed = inviteSchema.parse(req.body);
+
+    // Check if user already exists
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, parsed.email))
+      .limit(1);
+
+    let userId: string;
+
+    if (existingUser) {
+      userId = existingUser.id;
+
+      // Check if already has role
+      const [existingRole] = await db
+        .select()
+        .from(userRoles)
+        .where(eq(userRoles.userId, userId))
+        .limit(1);
+
+      if (existingRole) {
+        return res.status(409).json({
+          error: 'Utente ha già un ruolo assegnato',
+          currentRole: existingRole.role
+        });
+      }
+    } else {
+      // Create user placeholder
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          email: parsed.email,
+        })
+        .returning();
+      userId = newUser.id;
+    }
+
+    // Assign role
+    await db.insert(userRoles).values({
+      userId,
+      role: parsed.role,
+      assignedBy: adminId,
+    });
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: 'invite_user',
+      entityType: 'user',
+      entityId: userId,
+      details: { email: parsed.email, role: parsed.role },
+    });
+
+    console.log(`✅ Utente invitato: ${parsed.email} come ${parsed.role}`);
+
+    // TODO: Send invitation email
+    // await sendInvitationEmail(parsed.email, parsed.role);
+
+    res.json({
+      success: true,
+      message: `Invito inviato a ${parsed.email}`,
+      userId,
+    });
+  } catch (error: any) {
+    console.error('❌ Errore invito:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors[0].message });
+    }
+    res.status(500).json({ error: 'Errore invio invito' });
+  }
+});
+
+// Validazione cambio ruolo
+const changeRoleSchema = z.object({
+  role: z.enum(['user', 'staff', 'admin', 'super_admin']),
+});
+
+// Cambia ruolo utente
+router.patch('/users/:id/role', requireAdmin, async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const { id: targetUserId } = req.params;
+    const parsed = changeRoleSchema.parse(req.body);
+
+    // Prevent self-demotion
+    if (targetUserId === adminId && parsed.role === 'user') {
+      return res.status(400).json({ error: 'Non puoi rimuovere il tuo stesso ruolo admin' });
+    }
+
+    // Super admin can only be assigned by super admin
+    if (parsed.role === 'super_admin') {
+      const [adminRole] = await db
+        .select({ role: userRoles.role })
+        .from(userRoles)
+        .where(eq(userRoles.userId, adminId!))
+        .limit(1);
+
+      if (adminRole?.role !== 'super_admin') {
+        return res.status(403).json({ error: 'Solo super_admin può assegnare ruolo super_admin' });
+      }
+    }
+
+    // Check if user exists
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, targetUserId))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({ error: 'Utente non trovato' });
+    }
+
+    // Upsert role
+    const [existingRole] = await db
+      .select()
+      .from(userRoles)
+      .where(eq(userRoles.userId, targetUserId))
+      .limit(1);
+
+    if (existingRole) {
+      await db
+        .update(userRoles)
+        .set({ role: parsed.role, assignedBy: adminId, assignedAt: new Date() })
+        .where(eq(userRoles.userId, targetUserId));
+    } else {
+      await db.insert(userRoles).values({
+        userId: targetUserId,
+        role: parsed.role,
+        assignedBy: adminId,
+      });
+    }
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: 'change_role',
+      entityType: 'user',
+      entityId: targetUserId,
+      details: {
+        previousRole: existingRole?.role || 'user',
+        newRole: parsed.role
+      },
+    });
+
+    console.log(`✅ Ruolo cambiato: ${user.email} → ${parsed.role}`);
+
+    res.json({
+      success: true,
+      userId: targetUserId,
+      role: parsed.role,
+    });
+  } catch (error: any) {
+    console.error('❌ Errore cambio ruolo:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors[0].message });
+    }
+    res.status(500).json({ error: 'Errore cambio ruolo' });
+  }
+});
+
+// Validazione ban
+const banSchema = z.object({
+  reason: z.string().min(5, 'Motivo troppo breve'),
+  expiresAt: z.string().datetime().optional(),
+});
+
+// Ban/Sospendi utente
+router.post('/users/:id/ban', requireAdmin, async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const { id: targetUserId } = req.params;
+    const parsed = banSchema.parse(req.body);
+
+    // Prevent self-ban
+    if (targetUserId === adminId) {
+      return res.status(400).json({ error: 'Non puoi sospendere te stesso' });
+    }
+
+    // Check if user exists
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, targetUserId))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({ error: 'Utente non trovato' });
+    }
+
+    // Check target's role - can't ban admins unless you're super_admin
+    const [targetRole] = await db
+      .select({ role: userRoles.role })
+      .from(userRoles)
+      .where(eq(userRoles.userId, targetUserId))
+      .limit(1);
+
+    if (targetRole?.role === 'admin' || targetRole?.role === 'super_admin') {
+      const [adminRole] = await db
+        .select({ role: userRoles.role })
+        .from(userRoles)
+        .where(eq(userRoles.userId, adminId!))
+        .limit(1);
+
+      if (adminRole?.role !== 'super_admin') {
+        return res.status(403).json({ error: 'Solo super_admin può sospendere altri admin' });
+      }
+    }
+
+    // Deactivate any existing suspension
+    await db
+      .update(userSuspensions)
+      .set({ isActive: false })
+      .where(eq(userSuspensions.userId, targetUserId));
+
+    // Create new suspension
+    const [suspension] = await db.insert(userSuspensions).values({
+      userId: targetUserId,
+      reason: parsed.reason,
+      suspendedBy: adminId!,
+      expiresAt: parsed.expiresAt ? new Date(parsed.expiresAt) : null,
+      isActive: true,
+    }).returning();
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: 'ban_user',
+      entityType: 'user',
+      entityId: targetUserId,
+      details: { reason: parsed.reason, expiresAt: parsed.expiresAt },
+    });
+
+    console.log(`✅ Utente sospeso: ${user.email} - ${parsed.reason}`);
+
+    res.json({
+      success: true,
+      suspension,
+    });
+  } catch (error: any) {
+    console.error('❌ Errore sospensione:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors[0].message });
+    }
+    res.status(500).json({ error: 'Errore sospensione utente' });
+  }
+});
+
+// Rimuovi ban
+router.delete('/users/:id/ban', requireAdmin, async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const { id: targetUserId } = req.params;
+
+    const [updated] = await db
+      .update(userSuspensions)
+      .set({ isActive: false })
+      .where(and(
+        eq(userSuspensions.userId, targetUserId),
+        eq(userSuspensions.isActive, true)
+      ))
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Nessuna sospensione attiva trovata' });
+    }
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: 'unban_user',
+      entityType: 'user',
+      entityId: targetUserId,
+      details: {},
+    });
+
+    console.log(`✅ Sospensione rimossa per utente: ${targetUserId}`);
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('❌ Errore rimozione sospensione:', error);
+    res.status(500).json({ error: 'Errore rimozione sospensione' });
+  }
+});
+
+// Dettaglio utente
+router.get('/users/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({ error: 'Utente non trovato' });
+    }
+
+    const [roleData] = await db
+      .select()
+      .from(userRoles)
+      .where(eq(userRoles.userId, id))
+      .limit(1);
+
+    const [subData] = await db
+      .select()
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, id))
+      .limit(1);
+
+    const [suspensionData] = await db
+      .select()
+      .from(userSuspensions)
+      .where(and(
+        eq(userSuspensions.userId, id),
+        eq(userSuspensions.isActive, true)
+      ))
+      .limit(1);
+
+    res.json({
+      ...user,
+      role: roleData?.role || 'user',
+      roleAssignedAt: roleData?.assignedAt,
+      subscription: subData || null,
+      suspension: suspensionData || null,
+    });
+  } catch (error: any) {
+    console.error('❌ Errore dettaglio utente:', error);
+    res.status(500).json({ error: 'Errore recupero utente' });
   }
 });
 

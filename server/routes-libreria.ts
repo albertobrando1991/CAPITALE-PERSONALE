@@ -3,12 +3,7 @@ import multer from 'multer';
 import { z } from 'zod';
 import { storageLibreria } from './storage-libreria';
 import { materieEnum } from '../shared/schema-libreria';
-
-// Helper per ottenere l'ID utente dalla sessione
-function getUserId(req: Request): string {
-  const user = req.user as any;
-  return user?.claims?.sub;
-}
+import { requireAdminOrStaff, getUserId } from './middleware/auth';
 
 // Multer config (max 50MB)
 const upload = multer({
@@ -76,19 +71,14 @@ export function registerLibreriaRoutes(app: Express) {
   // ========== POST UPLOAD DOCUMENTO (STAFF ONLY) ==========
   app.post(
     '/api/libreria/documenti',
+    requireAdminOrStaff,
     upload.single('pdf'),
     async (req: Request, res: Response) => {
       try {
-        // Auth check
         const userId = getUserId(req);
         if (!userId) {
           return res.status(401).json({ error: 'Non autenticato' });
         }
-
-        // TODO: Verifica ruolo staff
-        // if (!req.user.isStaff) {
-        //   return res.status(403).json({ error: 'Solo staff può caricare' });
-        // }
 
         const file = req.file;
         if (!file) {
@@ -138,7 +128,7 @@ export function registerLibreriaRoutes(app: Express) {
   );
 
   // ========== PATCH UPDATE DOCUMENTO (STAFF ONLY) ==========
-  app.patch('/api/libreria/documenti/:id', async (req: Request, res: Response) => {
+  app.patch('/api/libreria/documenti/:id', requireAdminOrStaff, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -157,7 +147,7 @@ export function registerLibreriaRoutes(app: Express) {
   });
 
   // ========== DELETE DOCUMENTO (STAFF ONLY) ==========
-  app.delete('/api/libreria/documenti/:id', async (req: Request, res: Response) => {
+  app.delete('/api/libreria/documenti/:id', requireAdminOrStaff, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
       if (!userId) {

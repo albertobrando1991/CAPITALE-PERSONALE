@@ -2,7 +2,7 @@
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Users, FileText, CreditCard, BarChart2, Activity, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, FileText, CreditCard, BarChart2, Activity, Settings, LogOut, Library, Scale } from "lucide-react";
 
 export function AdminSidebar() {
   const { logout } = useAuth();
@@ -13,9 +13,10 @@ export function AdminSidebar() {
     { title: "Overview", icon: LayoutDashboard, path: "/admin/overview" },
     { title: "Utenti", icon: Users, path: "/admin/users" },
     { title: "Contenuti", icon: FileText, path: "/admin/content" },
+    { title: "Libreria", icon: Library, path: "/admin/library" },
+    { title: "Normativa", icon: Scale, path: "/admin/regulations" },
     { title: "Abbonamenti", icon: CreditCard, path: "/admin/subscriptions" },
     { title: "Analytics", icon: BarChart2, path: "/admin/analytics" },
-    // Audit Log removed
     { title: "Impostazioni", icon: Settings, path: "/admin/settings" },
   ];
 
