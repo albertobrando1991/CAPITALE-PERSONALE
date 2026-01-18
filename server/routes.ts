@@ -131,6 +131,10 @@ export async function registerRoutes(
       if (!flashcard) {
         return res.status(404).json({ error: 'Flashcard non trovata' });
       }
+
+      if (!flashcard.concorsoId) {
+        return res.status(400).json({ error: "Flashcard senza concorso associato" });
+      }
       
       // Ottieni il concorso per contesto
       const concorso = await storage.getConcorso(flashcard.concorsoId, userId);
@@ -144,6 +148,13 @@ export async function registerRoutes(
         domanda: flashcard.fronte.substring(0, 50) + '...'
       });
       
+      const retroRaw = (flashcard.retro || "").trim();
+      const retroNoEvidence = retroRaw
+        .split(/\n\s*\nEvidenza:\s*/i)[0]
+        .split(/\s+Evidenza:\s*/i)[0]
+        .trim();
+      const answerToExplain = retroNoEvidence || retroRaw;
+
       // Prepara il prompt per OpenAI
       const prompt = `Sei un tutor esperto per concorsi pubblici italiani.
 
@@ -156,22 +167,21 @@ DOMANDA DELLA FLASHCARD:
 ${flashcard.fronte}
 
 RISPOSTA CORRETTA:
-${flashcard.retro}
+${answerToExplain}
 
 COMPITO:
-Fornisci una spiegazione SEMPLICE e APPROFONDITA di questo argomento, come se stessi spiegando a uno studente che deve preparare questo concorso pubblico.
+Fornisci una spiegazione chiara e completa di questo argomento per un candidato adulto a concorso pubblico. Mantieni il rigore concettuale, ma spiega in modo comprensibile.
 
 STRUTTURA DELLA SPIEGAZIONE:
-1. **Spiegazione Semplice** (2-3 frasi chiare, come se parlassi a un bambino)
-2. **Contesto e Importanza** (perché è rilevante per il concorso)
-3. **Dettagli Chiave** (i punti fondamentali da ricordare)
-4. **Esempio Pratico** (un caso concreto nella Pubblica Amministrazione italiana)
-5. **Come Ricordarlo** (un trucco mnemonico o analogia)
+1. Spiegazione (2-4 frasi, chiare e precise)
+2. Punti chiave (3-6 bullet brevi)
+3. Errori comuni / trabocchetti d’esame (1-3 punti)
+4. Esempio pratico (1 caso nella PA italiana)
 
 VINCOLI:
-- Usa un linguaggio SEMPLICE e DIRETTO
+- Italiano corretto e professionale, senza frasi infantili
 - Massimo 300 parole
-- Evita tecnicismi eccessivi
+- Evita gergo inutile, ma NON banalizzare
 - Focalizzati sulla preparazione al concorso
 - Sii pratico e concreto
 
@@ -216,9 +226,15 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       
     } catch (error: any) {
       console.error('❌ Errore generazione spiegazione:', error);
-      res.status(500).json({
-        error: 'Errore nella generazione della spiegazione',
-        dettagli: error instanceof Error ? error.message : 'Errore sconosciuto'
+      const message = error instanceof Error ? error.message : "Errore sconosciuto";
+      const looksLikeMissingKey =
+        /api key not configured|api key|key not configured|OPENROUTER_API_KEY/i.test(message);
+
+      res.status(looksLikeMissingKey ? 503 : 500).json({
+        error: "Errore nella generazione della spiegazione",
+        dettagli: looksLikeMissingKey
+          ? "Funzioni AI non configurate (manca OPENROUTER_API_KEY)."
+          : message,
       });
     }
   });
@@ -880,11 +896,20 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
             const fullSentence = (match[0] || "").trim();
             if (!subject || !def) continue;
             if (subject.split(" ").length < 2 && subject.length < 15) continue;
+
+            const normalizedSubject = subject.replace(/\s+/g, " ").trim();
+            const shortSubject =
+              normalizedSubject.length > 120
+                ? normalizedSubject.slice(0, 117) + "..."
+                : normalizedSubject;
+
             const q =
               kind === "intende"
-                ? `Nel testo, cosa si intende per "${subject}"?`
-                : `Nel testo, come viene definito "${subject}"?`;
-            pushIfNew(q, def, fullSentence);
+                ? `Secondo il testo, cosa si intende per ${shortSubject}?`
+                : `Secondo il testo, come viene descritto il seguente concetto: ${shortSubject}?`;
+
+            const retro = `Secondo il testo: ${def}`;
+            pushIfNew(q, retro, fullSentence);
           }
         };
 
@@ -1192,15 +1217,26 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
       }
 
       if (cleaned.length < Math.min(12, desiredCount)) {
-        const fallback = groundedFallbackFromText(contentToAnalyze);
-        if (fallback.length) {
-          cleaned.splice(0, cleaned.length, ...fallback);
-        } else {
+        if (!hasAnyAI) {
+          const fallback = groundedFallbackFromText(contentToAnalyze);
+          if (fallback.length) {
+            cleaned.splice(0, cleaned.length, ...fallback);
+          } else {
+            return res.status(200).json({
+              count: 0,
+              flashcards: [],
+              warning:
+                "Testo non abbastanza strutturato per creare flashcard automaticamente. Prova con appunti incollati o un PDF diverso.",
+              aiConfigured: hasAnyAI,
+              aiErrors: aiErrors.slice(0, 5),
+            });
+          }
+        } else if (cleaned.length === 0) {
           return res.status(200).json({
             count: 0,
             flashcards: [],
             warning:
-              "Testo non abbastanza strutturato per creare flashcard automaticamente. Prova con appunti incollati o un PDF diverso.",
+              "AI configurata ma non è stato possibile generare flashcard affidabili da questo testo. Prova con un PDF più lineare o con appunti senza impaginazione complessa.",
             aiConfigured: hasAnyAI,
             aiErrors: aiErrors.slice(0, 5),
           });
