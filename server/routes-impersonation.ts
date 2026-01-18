@@ -16,7 +16,11 @@ const impersonationSessions = new Map<string, {
   startedAt: Date;
 }>();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'local_dev_secret_jwt';
+const rawJwtSecret = process.env.JWT_SECRET;
+if (!rawJwtSecret && process.env.NODE_ENV === "production") {
+  throw new Error("JWT_SECRET non configurato in produzione");
+}
+const JWT_SECRET = rawJwtSecret || "local_dev_secret_jwt";
 
 export function registerImpersonationRoutes(app: Express) {
   

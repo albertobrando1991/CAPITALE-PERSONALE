@@ -70,7 +70,7 @@ export function getSession() {
   }
 
   if (!process.env.SESSION_SECRET && process.env.NODE_ENV === 'production') {
-    console.warn("⚠️ WARNING: SESSION_SECRET is not set. Using default insecure secret. This is dangerous for production!");
+    throw new Error("SESSION_SECRET non configurato in produzione");
   }
 
   return session({
@@ -186,10 +186,10 @@ export async function setupAuth(app: Express) {
         });
       } catch (err: any) {
         console.error("Login exception:", err);
-        return res.status(500).json({ 
-            error: "Internal login error",
-            details: err.message,
-            stack: err.stack 
+        const details = process.env.NODE_ENV === "production" ? undefined : err.message;
+        return res.status(500).json({
+          error: "Internal login error",
+          ...(details ? { details } : {}),
         });
       }
     });

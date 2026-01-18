@@ -2,10 +2,8 @@
 import 'dotenv/config';
 import { generateWithFallback } from '../server/services/ai';
 
-// Mock process.env for the test if not present
-if (!process.env.OPENROUTER_API_KEY) {
-    process.env.OPENROUTER_API_KEY = "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";
-    console.log("Using provided OpenRouter Key for testing...");
+if (!process.env.OPENROUTER_API_KEY && !process.env.OPEN_ROUTER_API_KEY && !process.env.OPEN_ROUTER) {
+    throw new Error("OPENROUTER_API_KEY non configurata. Imposta la chiave nel tuo .env prima di eseguire questo script.");
 }
 
 async function testOpenRouter() {
@@ -13,11 +11,14 @@ async function testOpenRouter() {
 
     // Test 1: Simple text generation (Flashcard style)
     try {
-        console.log("\n1. Testing 'flashcard' task (Gemini Flash preferred)...");
+        console.log("\n1. Testing 'flashcards_generate' task...");
         const result = await generateWithFallback({
-            task: 'flashcard',
+            task: 'flashcards_generate',
             userPrompt: "Genera una flashcard sulla Rivoluzione Francese.",
-            temperature: 0.7
+            responseMode: "json",
+            jsonRoot: "array",
+            temperature: 0.3,
+            maxOutputTokens: 500
         });
         console.log("✅ Result:", result.substring(0, 100) + "...");
     } catch (error: any) {
@@ -26,12 +27,14 @@ async function testOpenRouter() {
 
     // Test 2: JSON generation (Quiz style - OpenAI preferred)
     try {
-        console.log("\n2. Testing 'quiz' task (GPT-4o-mini preferred) with JSON mode...");
+        console.log("\n2. Testing 'quiz_generate' task with JSON mode...");
         const result = await generateWithFallback({
-            task: 'quiz',
+            task: 'quiz_generate',
             userPrompt: "Genera una domanda di storia romana.",
-            jsonMode: true,
-            temperature: 0.3
+            responseMode: "json",
+            jsonRoot: "array",
+            temperature: 0.3,
+            maxOutputTokens: 600
         });
         console.log("✅ Result:", result);
     } catch (error: any) {

@@ -429,10 +429,11 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       }
     } catch (error: any) {
       console.error("Errore generale nel test:", error);
-      res.status(500).json({ 
+      const isProd = process.env.NODE_ENV === "production";
+      res.status(500).json({
         step: "unknown",
         error: error.message || "Errore sconosciuto",
-        stack: error.stack
+        ...(isProd ? {} : { stack: error.stack }),
       });
     }
   });

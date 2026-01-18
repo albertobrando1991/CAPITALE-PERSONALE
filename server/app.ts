@@ -65,37 +65,37 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-// 🔧 MOCK AUTH per development (RIMUOVERE IN PRODUCTION)
-if (process.env.NODE_ENV !== 'production') {
+// 🔧 MOCK AUTH per development (NON deve mai essere attivo in produzione)
+if (process.env.NODE_ENV === "development") {
   app.use(async (req, res, next) => {
     // Mock user per development
     if (!(req as any).user) {
       // Simula admin per test
-      const mockEmail = 'albertobrando1991@gmail.com'; // Admin
+      const mockEmail = "albertobrando1991@gmail.com";
       
       (req as any).user = {
-        id: 'admin-user-123',
+        id: "admin-user-123",
         email: mockEmail,
-        nome: 'Alberto Brando (Admin)',
-        ruolo: isAdmin(mockEmail) ? 'admin' : 'utente',
-        claims: { sub: 'admin-user-123' }
+        nome: "Alberto Brando (Admin)",
+        ruolo: isAdmin(mockEmail) ? "admin" : "utente",
+        claims: { sub: "admin-user-123" }
       };
       
       // Assicuriamoci che l'utente esista nel DB per evitare errori FK
       try {
         const { storage } = await import("./storage");
-        const existingUser = await storage.getUser('admin-user-123');
+        const existingUser = await storage.getUser("admin-user-123");
         if (!existingUser) {
-           console.log('👤 Creating default admin user for development...');
+           console.log("👤 Creating default admin user for development...");
            await storage.upsertUser({
-             id: 'admin-user-123',
+             id: "admin-user-123",
              email: mockEmail,
-             firstName: 'Alberto',
-             lastName: 'Brando'
+             firstName: "Alberto",
+             lastName: "Brando"
            });
         }
       } catch (err) {
-        console.error('Error ensuring default user exists:', err);
+        console.error("Error ensuring default user exists:", err);
       }
     }
     next();
