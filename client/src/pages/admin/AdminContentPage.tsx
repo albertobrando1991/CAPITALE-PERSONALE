@@ -49,9 +49,9 @@ export default function AdminContentPage() {
 
   // Fetch Concorsi
   const { data: concorsi, isLoading: isLoadingConcorsi } = useQuery({
-    queryKey: ['admin-concorsi'],
+    queryKey: ['concorsi'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/concorsi');
+      const res = await fetch('/api/concorsi');
       if (!res.ok) throw new Error('Errore caricamento concorsi');
       return res.json();
     }
@@ -90,7 +90,7 @@ export default function AdminContentPage() {
   // Mutations
   const createConcorsoMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/admin/concorsi', {
+      const res = await fetch('/api/concorsi', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(concorsoForm)
@@ -102,7 +102,7 @@ export default function AdminContentPage() {
       toast({ title: "Concorso creato", description: "Il nuovo concorso è stato aggiunto con successo." });
       setIsConcorsoOpen(false);
       setConcorsoForm({ nome: "", descrizione: "", dataScadenza: "" });
-      queryClient.invalidateQueries({ queryKey: ['admin-concorsi'] });
+      queryClient.invalidateQueries({ queryKey: ['concorsi'] });
     }
   });
 
@@ -290,8 +290,8 @@ export default function AdminContentPage() {
                         <TableCell className="text-right">
                           <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => {
                              if (!confirm("Eliminare?")) return;
-                             await fetch(`/api/admin/concorsi/${c.id}`, { method: 'DELETE' });
-                             queryClient.invalidateQueries({ queryKey: ['admin-concorsi'] });
+                             await fetch(`/api/concorsi/${c.id}`, { method: 'DELETE' });
+                             queryClient.invalidateQueries({ queryKey: ['concorsi'] });
                           }}><Trash2 className="h-4 w-4" /></Button>
                         </TableCell>
                       </TableRow>
