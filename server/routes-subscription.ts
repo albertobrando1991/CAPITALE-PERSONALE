@@ -12,7 +12,14 @@ export function registerSubscriptionRoutes(app: Express) {
   app.get('/api/subscription/status', async (req, res) => {
     try {
       const user = req.user as any;
-      if (!user?.id) {
+      // Get email from multiple possible locations
+      const userEmail = user?.email || user?.claims?.email;
+      const userId = user?.id || user?.claims?.sub;
+
+      console.log('[SUBSCRIPTION] Checking status for user:', { userId, userEmail, fullUser: JSON.stringify(user) });
+
+      if (!userId) {
+        console.log('[SUBSCRIPTION] No user ID, returning free tier');
         return res.json({ tier: 'free', status: 'none' });
       }
 
@@ -20,15 +27,20 @@ export function registerSubscriptionRoutes(app: Express) {
       const [userRole] = await db
         .select()
         .from(userRoles)
-        .where(eq(userRoles.userId, user.id));
+        .where(eq(userRoles.userId, userId));
+
+      console.log('[SUBSCRIPTION] DB role for user:', userRole);
 
       const isDbAdmin = userRole?.role === 'admin' || userRole?.role === 'super_admin' || userRole?.role === 'staff';
+      const isPremiumByEmail = isAlwaysPremium(userEmail);
+
+      console.log('[SUBSCRIPTION] isDbAdmin:', isDbAdmin, 'isPremiumByEmail:', isPremiumByEmail, 'email used:', userEmail);
 
       // 🔥 ADMIN SEMPRE PREMIUM (Env var OR DB role)
-      if (isAlwaysPremium(user.email) || isDbAdmin) {
-        console.log(`👑 Admin/Staff ${user.email} → Force Premium`);
+      if (isPremiumByEmail || isDbAdmin) {
+        console.log(`👑 Admin/Staff ${userEmail} → Force Premium`);
         return res.json({
-          userId: user.id,
+          userId: userId,
           tier: 'premium',
           status: 'active',
           isAdmin: true,
@@ -42,12 +54,12 @@ export function registerSubscriptionRoutes(app: Express) {
 
       let [subscription] = await db.select()
         .from(userSubscriptions)
-        .where(eq(userSubscriptions.userId, user.id));
+        .where(eq(userSubscriptions.userId, userId));
 
       // Crea subscription free di default se non esiste
       if (!subscription) {
         [subscription] = await db.insert(userSubscriptions).values({
-          userId: user.id,
+          userId: userId,
           tier: 'free',
           status: 'active',
           sintesiLimite: 5,
@@ -66,19 +78,22 @@ export function registerSubscriptionRoutes(app: Express) {
   app.post('/api/subscription/increment-usage', async (req, res) => {
     try {
       const user = req.user as any;
-      if (!user?.id) {
+      const userEmail = user?.email || user?.claims?.email;
+      const userId = user?.id || user?.claims?.sub;
+
+      if (!userId) {
         return res.status(401).json({ error: 'Non autenticato' });
       }
 
       // 🔥 ADMIN SINTESI ILLIMITATE
-      if (isAlwaysPremium(user.email)) {
-        console.log(`👑 Admin ${user.email} → Sintesi illimitate`);
+      if (isAlwaysPremium(userEmail)) {
+        console.log(`👑 Admin ${userEmail} → Sintesi illimitate`);
         return res.json({ success: true, unlimited: true, isAdmin: true });
       }
 
       const [subscription] = await db.select()
         .from(userSubscriptions)
-        .where(eq(userSubscriptions.userId, user.id));
+        .where(eq(userSubscriptions.userId, userId));
 
       if (!subscription) {
         return res.status(404).json({ error: 'Subscription non trovata' });
@@ -92,7 +107,7 @@ export function registerSubscriptionRoutes(app: Express) {
       // Incrementa
       await db.update(userSubscriptions)
         .set({ sintesiUsate: (subscription.sintesiUsate || 0) + 1 })
-        .where(eq(userSubscriptions.userId, user.id));
+        .where(eq(userSubscriptions.userId, userId));
 
       res.json({ success: true, usage: (subscription.sintesiUsate || 0) + 1 });
     } catch (error) {
