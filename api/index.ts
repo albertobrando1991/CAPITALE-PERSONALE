@@ -1,5 +1,6 @@
 export default async function handler(req: any, res: any) {
   try {
+    // @ts-ignore - dist-server/app.cjs è generato in build e non ha dichiarazioni TypeScript
     const { app, initializeApp } = await import("../dist-server/app.cjs");
     await initializeApp();
     return app(req, res);
