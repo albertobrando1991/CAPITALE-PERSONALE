@@ -8,10 +8,16 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Plus, Search, Loader2, Trash2, Layers, Library, ScrollText, Upload, ExternalLink } from "lucide-react";
+import { FileText, Plus, Search, Loader2, Trash2, Layers, Library, ScrollText, Upload, ExternalLink, FolderPlus } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+
+interface Materia {
+  id: string;
+  nome: string;
+  ordine: number;
+}
 
 export default function AdminContentPage() {
   const { toast } = useToast();
@@ -36,6 +42,10 @@ export default function AdminContentPage() {
     titolo: "", descrizione: "", materia: "",
     fileName: "", isStaffOnly: false
   });
+
+  // State for New Folder Dialog
+  const [isFolderOpen, setIsFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
 
   // Fetch Concorsi
   const { data: concorsi, isLoading: isLoadingConcorsi } = useQuery({
@@ -63,6 +73,16 @@ export default function AdminContentPage() {
     queryFn: async () => {
       const res = await fetch('/api/libreria/documenti');
       if (!res.ok) throw new Error('Errore caricamento documenti');
+      return res.json();
+    }
+  });
+
+  // Fetch Materie (Cartelle) - same endpoint as public page for sync
+  const { data: materie = [] } = useQuery<Materia[]>({
+    queryKey: ['materie'],
+    queryFn: async () => {
+      const res = await fetch('/api/libreria/materie');
+      if (!res.ok) throw new Error('Errore caricamento materie');
       return res.json();
     }
   });
@@ -144,6 +164,31 @@ export default function AdminContentPage() {
       setDocForm({ titolo: "", descrizione: "", materia: "", fileName: "", isStaffOnly: false });
       setSelectedFile(null);
       queryClient.invalidateQueries({ queryKey: ['libreria', 'documenti'] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Errore", description: err.message, variant: "destructive" });
+    }
+  });
+
+  // Create Folder Mutation
+  const createFolderMutation = useMutation({
+    mutationFn: async (nome: string) => {
+      const res = await fetch('/api/libreria/materie', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Errore creazione cartella');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Cartella creata", description: "La nuova cartella è ora visibile nella libreria pubblica." });
+      setIsFolderOpen(false);
+      setNewFolderName("");
+      queryClient.invalidateQueries({ queryKey: ['materie'] });
     },
     onError: (err: Error) => {
       toast({ title: "Errore", description: err.message, variant: "destructive" });
@@ -263,13 +308,46 @@ export default function AdminContentPage() {
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-medium flex items-center gap-2">
                   <Library className="h-5 w-5" />
-                  Libreria Pubblica ({allDocs.length} documenti)
+                  Libreria Pubblica ({allDocs.length} documenti, {materie.length} cartelle)
                 </h3>
               </div>
 
-              {/* Upload File Button */}
-              <Dialog open={isDocOpen} onOpenChange={setIsDocOpen}>
-                <DialogTrigger asChild><Button><Upload className="mr-2 h-4 w-4" /> Carica Documento</Button></DialogTrigger>
+              <div className="flex gap-2">
+                {/* Create Folder Button */}
+                <Dialog open={isFolderOpen} onOpenChange={setIsFolderOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline"><FolderPlus className="mr-2 h-4 w-4" /> Crea Cartella</Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Crea Nuova Cartella</DialogTitle>
+                      <DialogDescription>La cartella creata sarà subito visibile nella Libreria Pubblica del sito.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Nome Cartella *</label>
+                        <Input
+                          value={newFolderName}
+                          onChange={(e) => setNewFolderName(e.target.value)}
+                          placeholder="es. Diritto Penale"
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsFolderOpen(false)}>Annulla</Button>
+                      <Button
+                        onClick={() => createFolderMutation.mutate(newFolderName)}
+                        disabled={createFolderMutation.isPending || !newFolderName.trim()}
+                      >
+                        {createFolderMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creazione...</> : "Crea Cartella"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Upload File Button */}
+                <Dialog open={isDocOpen} onOpenChange={setIsDocOpen}>
+                  <DialogTrigger asChild><Button><Upload className="mr-2 h-4 w-4" /> Carica Documento</Button></DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Carica Documento</DialogTitle>
@@ -285,24 +363,27 @@ export default function AdminContentPage() {
                       <Input value={docForm.descrizione} onChange={(e) => setDocForm({...docForm, descrizione: e.target.value})} placeholder="Breve descrizione del documento" />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Materia *</label>
+                      <label className="text-sm font-medium">Cartella/Materia *</label>
                       <Select value={docForm.materia} onValueChange={(v) => setDocForm({...docForm, materia: v})}>
-                        <SelectTrigger><SelectValue placeholder="Seleziona materia" /></SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="Seleziona cartella" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Diritto Amministrativo">Diritto Amministrativo</SelectItem>
-                          <SelectItem value="Diritto Costituzionale">Diritto Costituzionale</SelectItem>
-                          <SelectItem value="Diritto Civile">Diritto Civile</SelectItem>
-                          <SelectItem value="Contabilità Pubblica">Contabilità Pubblica</SelectItem>
-                          <SelectItem value="Economia Aziendale">Economia Aziendale</SelectItem>
-                          <SelectItem value="Informatica">Informatica</SelectItem>
-                          <SelectItem value="Lingua Inglese">Lingua Inglese</SelectItem>
-                          <SelectItem value="Logica">Logica</SelectItem>
-                          <SelectItem value="Storia">Storia</SelectItem>
-                          <SelectItem value="Geografia">Geografia</SelectItem>
-                          <SelectItem value="Testi Specifici per Concorsi Pubblici">Testi Specifici per Concorsi</SelectItem>
-                          <SelectItem value="Altro">Altro</SelectItem>
+                          {materie.length > 0 ? (
+                            materie.map((m) => (
+                              <SelectItem key={m.id} value={m.nome}>{m.nome}</SelectItem>
+                            ))
+                          ) : (
+                            <>
+                              <SelectItem value="Diritto Amministrativo">Diritto Amministrativo</SelectItem>
+                              <SelectItem value="Diritto Costituzionale">Diritto Costituzionale</SelectItem>
+                              <SelectItem value="Diritto Civile">Diritto Civile</SelectItem>
+                              <SelectItem value="Altro">Altro</SelectItem>
+                            </>
+                          )}
                         </SelectContent>
                       </Select>
+                      {materie.length === 0 && (
+                        <p className="text-xs text-muted-foreground">Crea prima una cartella per organizzare i documenti.</p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">File PDF *</label>
@@ -317,7 +398,8 @@ export default function AdminContentPage() {
                     </Button>
                   </DialogFooter>
                 </DialogContent>
-              </Dialog>
+                </Dialog>
+              </div>
             </div>
 
             {isLoadingDocumenti ? (
