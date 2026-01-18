@@ -1181,6 +1181,31 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
             }
         }
 
+        const uniqueFlashcardsById = new Map<string, any>();
+        for (const f of flashcards) {
+          if (f?.id && !uniqueFlashcardsById.has(f.id)) uniqueFlashcardsById.set(f.id, f);
+        }
+        flashcards = Array.from(uniqueFlashcardsById.values());
+
+        if (flashcards.length < session.total_questions) {
+          const missing = session.total_questions - flashcards.length;
+          const existingIds = flashcards.map((f: any) => f.id);
+          const extraResult = await db.query(
+            `
+              SELECT id, fronte, retro, materia, fonte
+              FROM flashcards
+              WHERE user_id = $1 AND concorso_id = $2
+                AND NOT (id = ANY($3))
+              ORDER BY RANDOM()
+              LIMIT $4
+            `,
+            [userId, concorsoId, existingIds.length ? existingIds : ["__none__"], missing]
+          );
+          if (extraResult.rows.length > 0) {
+            flashcards.push(...extraResult.rows);
+          }
+        }
+
         // 3. Trasforma flashcards in domande quiz (con distrattori)
         // Se abbiamo abbastanza flashcards (>4), usiamo le altre come distrattori.
         // Altrimenti usiamo placeholder.
@@ -1335,6 +1360,45 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
                  } else {
                      console.log("⚠️ AI not configured, skipping smart generation");
                  }
+             }
+
+             {
+               const correctAnswer = fc.retro;
+               const isNumber = !isNaN(Number(correctAnswer));
+               const normalized = (Array.isArray(distractors) ? distractors : [])
+                 .map((d) => (typeof d === "string" ? d.trim() : ""))
+                 .filter((d) => d.length > 0 && d !== correctAnswer);
+
+               distractors = normalized;
+
+               if (!isNumber && correctAnswer.length >= 60) {
+                 const minLen = Math.floor(correctAnswer.length * 0.7);
+                 const hasLong = distractors.some((d) => d.length >= minLen);
+                 if (!hasLong) {
+                   const longFallback =
+                     "Una sintesi semplificata che omette condizioni essenziali e porta a un'interpretazione imprecisa dell'istituto richiamato nella domanda.";
+                   let shortestIdx = 0;
+                   for (let i = 1; i < distractors.length; i++) {
+                     if (distractors[i].length < distractors[shortestIdx].length) shortestIdx = i;
+                   }
+                   if (distractors.length >= 1) {
+                     distractors[shortestIdx] = longFallback;
+                   } else {
+                     distractors.push(longFallback);
+                   }
+                 }
+               }
+
+               while (distractors.length < 3) {
+                 distractors.push(
+                   isNumber
+                     ? "0"
+                     : correctAnswer.length >= 60
+                       ? "Una formulazione che sembra corretta ma introduce presupposti non previsti e modifica impropriamente l'ambito di applicazione."
+                       : "Nessuna delle precedenti"
+                 );
+               }
+               distractors = distractors.slice(0, 3);
              }
 
              // Mischia opzioni
@@ -1496,6 +1560,14 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
                 }
             }
         }
+    }
+
+    if (questions.length > 0 && questions.length < session.total_questions) {
+      const missing = session.total_questions - questions.length;
+      for (let i = 0; i < missing; i++) {
+        const pick = questions[Math.floor(Math.random() * questions.length)];
+        if (pick) questions.push({ ...pick });
+      }
     }
 
     // Shuffle e limit

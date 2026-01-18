@@ -143,7 +143,7 @@ function getModelChain(task: AITask): string[] {
 function getDefaultMaxOutputTokens(task: AITask): number {
   switch (task) {
     case "flashcards_generate":
-      return 1500;
+      return 2500;
     case "quiz_generate":
       return 1500;
     case "fase3_drill_generate":
