@@ -952,11 +952,16 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
 
       const systemPrompt = `Sei un esperto creatore di flashcard per la preparazione ai concorsi pubblici italiani (diritto, economia, informatica, lingue, materie tecniche, cultura generale, logica, ecc.).
 
+LIVELLO TARGET
+- Scrivi per un candidato adulto a concorsi pubblici, NON per studenti delle scuole superiori.
+- Usa un italiano corretto, preciso e professionale, evitando frasi infantili o vaghe.
+- Le domande devono richiedere ragionamento, collegare concetti, condizioni, eccezioni e casi pratici, non mera ripetizione di definizioni banali.
+
 OBIETTIVO
-Analizza il testo fornito (da PDF o testo incollato) e genera flashcard che stimolano studio attivo e comprensione profonda, non semplice memorizzazione. Usa SOLO informazioni presenti nel materiale: non inventare contenuti.
+Analizza il testo fornito (da PDF o testo incollato) e genera flashcard che stimolano studio attivo e comprensione profonda. Usa SOLO informazioni presenti nel materiale: non inventare contenuti.
 
 COPERTURA E DENSITÀ
-- Estrai tutti i concetti significativi.
+- Estrai tutti i concetti significativi, soprattutto norme, procedure, condizioni, eccezioni, soglie numeriche, casi pratici.
 - Genera il numero di flashcard richiesto sfruttando al massimo il contenuto.
 - Ogni flashcard deve essere unica: niente duplicati o domande quasi identiche.
 - Varia la tipologia di domanda per coprire diversi aspetti dello stesso argomento.
@@ -974,17 +979,17 @@ TIPI DI DOMANDA (ALTERNALI SPESSO)
 10. Soggetti e competenze: "Chi è competente per...?"
 
 EVITA
-- Domande generiche tipo "Cos'è X?" o "Definisci Y", salvo casi eccezionali in cui il testo insiste sulla definizione.
+- Domande generiche tipo "Cos'è X?" o "Definisci Y" quando X/Y sono solo una parola o un concetto molto generico.
 - Domande sì/no.
 - Domande troppo vaghe o troppo simili tra loro.
-- Copiare letteralmente una frase del testo come domanda senza trasformarla in domanda.
+- Copiare letteralmente una frase del testo come domanda senza trasformarla in una domanda chiara e mirata.
 
 STRUTTURA DI OGNI FLASHCARD
-- "fronte": una domanda specifica e mirata, formulata in italiano corretto.
-- "retro": una risposta accurata e sintetica (massimo 3 frasi) che riassume le informazioni chiave.
+- "fronte": una domanda specifica, autonoma e mirata, formulata in italiano corretto, che include il contesto necessario (es. ambito, norma, situazione pratica).
+- "retro": una risposta accurata e sintetica (2-3 frasi) che riassume le informazioni chiave, con linguaggio tecnico ma comprensibile.
 - "evidenza": una citazione o riferimento dal testo che giustifica la risposta.
-  - Per materie giuridiche: includi, quando possibile, riferimenti del tipo "Art. X, comma Y, Legge n. Z del GG/MM/AAAA".
-  - Per altre materie: copia il passaggio chiave, la formula o il dato numerico esatto (percentuali, soglie, limiti, valori).
+  - Per materie giuridiche: includi, quando possibile, riferimenti del tipo "Art. X, comma Y, Legge n. Z del GG/MM/AAAA" o di regolamenti specifici.
+  - Per altre materie: copia il passaggio chiave, la formula o il dato numerico esatto (percentuali, soglie, limiti, valori, esempi).
 
 CASI SPECIALI: CREA FLASHCARD DEDICATE PER OGNI OCCORRENZA DI
 - Norme (articoli di legge, regolamenti, direttive).
@@ -1066,10 +1071,10 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
           const chunkTokens = new Set(chunkNormalized.split(" ").filter(Boolean));
           const userPrompt =
             `Genera ${perChunkTarget} flashcard sul testo seguente (chunk ${listIdx + 1}/${chunkIndices.length}).\n` +
-            `Requisiti: analizza il contenuto; domande specifiche, difficili, diverse tra loro; risposte 1-3 frasi.\n` +
-            `Preferisci domande del tipo: "quali sono", "in quali casi", "che effetti produce", "qual è la differenza tra", "perché".\n` +
-            `Evita domande generiche tipo "Che cos'è X?" se X è una parola isolata.\n` +
-            `Per "evidenza": copia e incolla dal TESTO una frase/porzione (5-25 parole) che supporta la risposta.\n` +
+            `Requisiti: analizza il contenuto; domande specifiche, non banali, diverse tra loro, che richiedono ragionamento e collegano cause, condizioni, effetti ed eccezioni; livello da concorso pubblico; risposte 1-3 frasi con linguaggio tecnico ma chiaro.\n` +
+            `Preferisci domande del tipo: "quali sono", "in quali casi", "che effetti produce", "qual è la differenza tra", "perché", "in quali condizioni", "quali eccezioni".\n` +
+            `Evita domande meramente definitorie del tipo "Che cos'è X?" o "Definisci Y" quando X/Y sono una singola parola generica; accetta definizioni solo se il testo insiste su una definizione articolata di istituti complessi (es. un istituto giuridico o una procedura).\n` +
+            `Per "evidenza": copia e incolla dal TESTO una frase/porzione (5-25 parole) che supporta direttamente la risposta, senza parafrasi.\n` +
             `Restituisci SOLO JSON.\n` +
             `TESTO:\n${chunk}`;
 
@@ -1147,7 +1152,14 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
           const chunkTokens = f?.__chunkTokens instanceof Set ? f.__chunkTokens : null;
           return { fronte, retro, evidenza, chunkNormalized, chunkTokens };
         })
-        .filter((f) => f.fronte.length >= 12 && f.retro.length >= 5 && f.evidenza.length >= 12)
+        .filter((f) => f.fronte.length >= 20 && f.retro.length >= 15 && f.evidenza.length >= 20)
+        .filter((f) => {
+          const q = f.fronte.toLowerCase().replace(/\s+/g, " ").trim();
+          const tokens = q.split(" ");
+          if (tokens.length <= 4 && /^che\s+cos['’]?\s?è\b/.test(q)) return false;
+          if (tokens.length <= 4 && /^cos['’]?\s?è\b/.test(q)) return false;
+          return true;
+        })
         .filter((f, i, arr) => {
           const key = normalizeForMatch(f.fronte);
           return arr.findIndex((x) => normalizeForMatch(x.fronte) === key) === i;
