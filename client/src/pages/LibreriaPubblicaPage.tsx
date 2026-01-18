@@ -45,6 +45,12 @@ interface DocumentoLibreria {
 }
 
 
+interface Materia {
+  id: string;
+  nome: string;
+  ordine: number;
+}
+
 export default function LibreriaPubblicaPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -62,6 +68,16 @@ export default function LibreriaPubblicaPage() {
       if (!res.ok) throw new Error('Errore nel caricamento delle normative');
       return res.json();
     },
+  });
+
+  // Fetch materie from API
+  const { data: materieData = [] } = useQuery<Materia[]>({
+    queryKey: ['materie'],
+    queryFn: async () => {
+      const res = await fetch('/api/libreria/materie');
+      if (!res.ok) throw new Error('Errore nel caricamento delle materie');
+      return res.json();
+    }
   });
 
   // Fetch documenti libreria from API
@@ -98,20 +114,7 @@ export default function LibreriaPubblicaPage() {
     hasPdf: doc.hasPdf,
   }));
 
-  const materie = [
-    "Diritto Amministrativo",
-    "Diritto Costituzionale",
-    "Diritto Civile",
-    "Contabilità Pubblica",
-    "Economia Aziendale",
-    "Informatica",
-    "Lingua Inglese",
-    "Logica",
-    "Storia",
-    "Geografia",
-    "Testi Specifici per Concorsi Pubblici",
-    "Altro"
-  ];
+
 
   const handleUpload = async (file: File, title: string, type: string) => {
     try {
@@ -1063,20 +1066,20 @@ export default function LibreriaPubblicaPage() {
             ) : (
               // VISTA LISTA CARTELLE
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {materie.map(materia => {
-                  const count = materials.filter(m => m.materia === materia).length;
+                {materieData.map(materia => {
+                  const count = materials.filter(m => m.materia === materia.nome).length;
                   return (
                     <Card
-                      key={materia}
+                      key={materia.id}
                       className="cursor-pointer hover:border-primary hover:bg-muted/50 transition-all group"
-                      onClick={() => setSelectedMateria(materia)}
+                      onClick={() => setSelectedMateria(materia.nome)}
                     >
                       <CardContent className="flex flex-col items-center justify-center p-6 gap-3 text-center">
                         <div className="p-3 bg-yellow-100 dark:bg-yellow-900/20 rounded-full group-hover:scale-110 transition-transform">
                           <Folder className="h-8 w-8 text-yellow-600 dark:text-yellow-500 fill-yellow-600/20" />
                         </div>
                         <div>
-                          <span className="font-semibold block">{materia}</span>
+                          <span className="font-semibold block">{materia.nome}</span>
                           <span className="text-xs text-muted-foreground">{count} documenti</span>
                         </div>
                       </CardContent>

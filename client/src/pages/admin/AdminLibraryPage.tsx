@@ -19,26 +19,18 @@ import {
   FileText,
   Download,
   Loader2,
-  Eye
+  Eye,
+  FolderPlus
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 
-const MATERIE = [
-  "Diritto Costituzionale",
-  "Diritto Amministrativo",
-  "Diritto Civile",
-  "Diritto Penale",
-  "Diritto del Lavoro",
-  "Economia Politica",
-  "Contabilità Pubblica",
-  "Informatica",
-  "Inglese",
-  "Logica e Ragionamento",
-  "Cultura Generale",
-  "Altro"
-] as const;
+interface Materia {
+  id: string;
+  nome: string;
+  ordine: number;
+}
 
 interface Documento {
   id: string;
@@ -61,6 +53,40 @@ export default function AdminLibraryPage() {
   const [filterMateria, setFilterMateria] = useState<string>("all");
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<Documento | null>(null);
+  const [isNewFolderOpen, setIsNewFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+
+  // Fetch materie
+  const { data: materie = [] } = useQuery<Materia[]>({
+    queryKey: ['materie'],
+    queryFn: async () => {
+      const res = await fetch('/api/libreria/materie');
+      if (!res.ok) throw new Error('Errore caricamento materie');
+      return res.json();
+    }
+  });
+
+  // Create Materia Mutation
+  const createMateriaMutation = useMutation({
+    mutationFn: async (nome: string) => {
+      const res = await fetch('/api/libreria/materie', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome }),
+      });
+      if (!res.ok) throw new Error('Errore creazione cartella');
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Cartella creata" });
+      queryClient.invalidateQueries({ queryKey: ['materie'] });
+      setNewFolderName("");
+      setIsNewFolderOpen(false);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Errore", description: err.message, variant: "destructive" });
+    }
+  });
 
   // Form state
   const [formData, setFormData] = useState({
@@ -199,110 +225,147 @@ export default function AdminLibraryPage() {
             <h2 className="text-3xl font-bold tracking-tight">Libreria Pubblica</h2>
             <p className="text-muted-foreground">Gestisci i documenti della libreria pubblica.</p>
           </div>
-          <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={() => { resetForm(); setIsUploadOpen(true); }}>
-                <Plus className="mr-2 h-4 w-4" />
-                Carica Documento
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Carica nuovo documento</DialogTitle>
-                <DialogDescription>
-                  Aggiungi un nuovo PDF alla libreria pubblica.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                {/* File Input */}
-                <div
-                  className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors border-muted-foreground/25 hover:border-primary/50"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf,application/pdf"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                  {selectedFile ? (
-                    <div className="flex items-center justify-center gap-2">
-                      <FileText className="h-8 w-8 text-primary" />
-                      <div>
-                        <p className="font-medium">{selectedFile.name}</p>
-                        <p className="text-sm text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <Upload className="mx-auto h-12 w-12 text-muted-foreground" />
-                      <p className="mt-2">Clicca per selezionare un PDF</p>
-                      <p className="text-sm text-muted-foreground">Max 50MB</p>
-                    </>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
+          <div className="flex gap-2">
+            <Dialog open={isNewFolderOpen} onOpenChange={setIsNewFolderOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline">
+                  <FolderPlus className="mr-2 h-4 w-4" />
+                  Nuova Cartella
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Crea Nuova Cartella</DialogTitle>
+                  <DialogDescription>Aggiungi una nuova categoria di documenti.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <Label>Titolo *</Label>
+                    <Label>Nome Cartella</Label>
                     <Input
-                      value={formData.titolo}
-                      onChange={(e) => setFormData({ ...formData, titolo: e.target.value })}
-                      placeholder="Titolo del documento"
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      placeholder="Es. Diritto Penale"
                     />
                   </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsNewFolderOpen(false)}>Annulla</Button>
+                  <Button
+                    onClick={() => createMateriaMutation.mutate(newFolderName)}
+                    disabled={!newFolderName || createMateriaMutation.isPending}
+                  >
+                    {createMateriaMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Crea
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
+              <DialogTrigger asChild>
+                <Button onClick={() => { resetForm(); setIsUploadOpen(true); }}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Carica Documento
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Carica nuovo documento</DialogTitle>
+                  <DialogDescription>
+                    Aggiungi un nuovo PDF alla libreria pubblica.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  {/* File Input */}
+                  <div
+                    className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors border-muted-foreground/25 hover:border-primary/50"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    {selectedFile ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <FileText className="h-8 w-8 text-primary" />
+                        <div>
+                          <p className="font-medium">{selectedFile.name}</p>
+                          <p className="text-sm text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <Upload className="mx-auto h-12 w-12 text-muted-foreground" />
+                        <p className="mt-2">Clicca per selezionare un PDF</p>
+                        <p className="text-sm text-muted-foreground">Max 50MB</p>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Titolo *</Label>
+                      <Input
+                        value={formData.titolo}
+                        onChange={(e) => setFormData({ ...formData, titolo: e.target.value })}
+                        placeholder="Titolo del documento"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Materia *</Label>
+                      <Select value={formData.materia} onValueChange={(v) => setFormData({ ...formData, materia: v })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona materia" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {materie.map((m) => (
+                            <SelectItem key={m.id} value={m.nome}>{m.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
-                    <Label>Materia *</Label>
-                    <Select value={formData.materia} onValueChange={(v) => setFormData({ ...formData, materia: v })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleziona materia" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {MATERIE.map((m) => (
-                          <SelectItem key={m} value={m}>{m}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label>Descrizione</Label>
+                    <Textarea
+                      value={formData.descrizione}
+                      onChange={(e) => setFormData({ ...formData, descrizione: e.target.value })}
+                      placeholder="Breve descrizione del contenuto"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Tags (separati da virgola)</Label>
+                    <Input
+                      value={formData.tags}
+                      onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                      placeholder="es: costituzione, articoli, diritti"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={formData.isStaffOnly}
+                      onCheckedChange={(v) => setFormData({ ...formData, isStaffOnly: v })}
+                    />
+                    <Label>Solo per staff (non visibile pubblicamente)</Label>
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  <Label>Descrizione</Label>
-                  <Textarea
-                    value={formData.descrizione}
-                    onChange={(e) => setFormData({ ...formData, descrizione: e.target.value })}
-                    placeholder="Breve descrizione del contenuto"
-                    rows={3}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Tags (separati da virgola)</Label>
-                  <Input
-                    value={formData.tags}
-                    onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-                    placeholder="es: costituzione, articoli, diritti"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={formData.isStaffOnly}
-                    onCheckedChange={(v) => setFormData({ ...formData, isStaffOnly: v })}
-                  />
-                  <Label>Solo per staff (non visibile pubblicamente)</Label>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsUploadOpen(false)}>Annulla</Button>
-                <Button onClick={() => uploadMutation.mutate()} disabled={uploadMutation.isPending}>
-                  {uploadMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                  Carica
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsUploadOpen(false)}>Annulla</Button>
+                  <Button onClick={() => uploadMutation.mutate()} disabled={uploadMutation.isPending}>
+                    {uploadMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                    Carica
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
         {/* Filters */}
@@ -320,8 +383,8 @@ export default function AdminLibraryPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Tutte le materie</SelectItem>
-                    {MATERIE.map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    {materie.map((m) => (
+                      <SelectItem key={m.id} value={m.nome}>{m.nome}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

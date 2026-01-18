@@ -1,10 +1,10 @@
 import { db } from './db';
-import { documentiPubblici, downloadLog } from '../shared/schema-libreria';
+import { documentiPubblici, downloadLog, materie } from '../shared/schema-libreria';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
 export class StorageLibreria {
   // ========== DOCUMENTI ==========
-  
+
   async createDocumento(data: {
     titolo: string;
     descrizione?: string;
@@ -25,7 +25,7 @@ export class StorageLibreria {
         updatedAt: new Date(),
       })
       .returning();
-    
+
     console.log('✅ Documento pubblico creato:', documento.id);
     return documento;
   }
@@ -38,33 +38,33 @@ export class StorageLibreria {
   }) {
     // Start with a base query builder
     let query = db.select().from(documentiPubblici).$dynamic();
-    
+
     const conditions = [];
-    
+
     if (filters?.materia) {
       conditions.push(eq(documentiPubblici.materia, filters.materia));
     }
-    
+
     if (filters?.search) {
       conditions.push(
         sql`${documentiPubblici.titolo} ILIKE ${`%${filters.search}%`}`
       );
     }
-    
+
     if (!filters?.staffOnly) {
       conditions.push(eq(documentiPubblici.isStaffOnly, false));
     }
-    
+
     if (conditions.length > 0) {
       query = query.where(and(...conditions));
     }
-    
+
     query = query.orderBy(desc(documentiPubblici.createdAt));
-    
+
     if (filters?.limit) {
       query = query.limit(filters.limit);
     }
-    
+
     return await query;
   }
 
@@ -73,7 +73,7 @@ export class StorageLibreria {
       .select()
       .from(documentiPubblici)
       .where(eq(documentiPubblici.id, id));
-    
+
     return documento;
   }
 
@@ -83,7 +83,7 @@ export class StorageLibreria {
       .set({ ...data, updatedAt: new Date() })
       .where(eq(documentiPubblici.id, id))
       .returning();
-    
+
     console.log('✅ Documento aggiornato:', id);
     return updated;
   }
@@ -99,7 +99,7 @@ export class StorageLibreria {
       .update(documentiPubblici)
       .set({ downloadsCount: sql`${documentiPubblici.downloadsCount} + 1` })
       .where(eq(documentiPubblici.id, documentoId));
-    
+
     // Log download (opzionale)
     if (userId) {
       await db.insert(downloadLog).values({
@@ -108,6 +108,24 @@ export class StorageLibreria {
         createdAt: new Date(),
       });
     }
+  }
+  // ========== MATERIE (Cartelle) ==========
+
+  async getMaterie() {
+    return await db.select().from(materie).orderBy(materie.ordine);
+  }
+
+  async createMateria(nome: string) {
+    const [nuovaMateria] = await db.insert(materie)
+      .values({ nome, ordine: 0 })
+      .returning();
+    console.log('✅ Materia creata:', nome);
+    return nuovaMateria;
+  }
+
+  async deleteMateria(id: string) {
+    await db.delete(materie).where(eq(materie.id, id));
+    console.log('🗑️ Materia eliminata:', id);
   }
 }
 

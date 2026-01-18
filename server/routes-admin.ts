@@ -97,39 +97,67 @@ const upload = multer({
 // DASHBOARD STATS
 // ============================================
 
-router.get('/stats', requireAdmin, async (req, res) => {
+router.get('/stats/overview', requireAdmin, async (req, res) => {
   try {
-    // Totali
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    // Run parallel queries for KPIs
     const [
-      totalPodcasts,
-      totalRequests,
-      pendingRequests,
-      totalUsers,
-      premiumUsers,
+      usersTotal,
+      usersToday,
+      subsActive,
+      subsPremium,
+      subsEnterprise
     ] = await Promise.all([
-      db.select({ count: sql<number>`count(*)` }).from(podcastDatabase),
-      db.select({ count: sql<number>`count(*)` }).from(podcastRequests),
-      db.select({ count: sql<number>`count(*)` }).from(podcastRequests).where(eq(podcastRequests.status, 'pending')),
-      db.select({ count: sql<number>`count(*)` }).from(userSubscriptions),
-      db.select({ count: sql<number>`count(*)` }).from(userSubscriptions).where(sql`tier IN ('premium', 'enterprise')`),
+      db.select({ count: sql<number>`count(*)` }).from(users),
+      db.select({ count: sql<number>`count(*)` }).from(users).where(sql`${users.createdAt} >= ${today}`),
+      db.select({ count: sql<number>`count(*)` }).from(userSubscriptions).where(eq(userSubscriptions.status, 'active')),
+      db.select({ count: sql<number>`count(*)` }).from(userSubscriptions).where(and(eq(userSubscriptions.status, 'active'), eq(userSubscriptions.tier, 'premium'))),
+      db.select({ count: sql<number>`count(*)` }).from(userSubscriptions).where(and(eq(userSubscriptions.status, 'active'), eq(userSubscriptions.tier, 'enterprise')))
     ]);
 
+    // Chart Data: Registrations (Last 7 days)
+    const last7Days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dayName = d.toLocaleDateString('it-IT', { weekday: 'short' });
+      const dayStart = new Date(d); dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(d); dayEnd.setHours(23, 59, 59, 999);
+
+      const count = await db.select({ count: sql<number>`count(*)` })
+        .from(users)
+        .where(and(sql`${users.createdAt} >= ${dayStart}`, sql`${users.createdAt} <= ${dayEnd}`));
+
+      last7Days.push({ name: dayName, value: Number(count[0]?.count || 0) });
+    }
+
+    // Chart Data: Subscriptions Distribution
+    const subDistribution = [
+      { name: 'Gratis', value: Number(usersTotal[0].count) - Number(subsActive[0].count), color: '#94a3b8' },
+      { name: 'Premium', value: Number(subsPremium[0].count), color: '#3b82f6' },
+      { name: 'Enterprise', value: Number(subsEnterprise[0].count), color: '#8b5cf6' }
+    ];
+
     res.json({
-      podcasts: {
-        total: Number(totalPodcasts[0]?.count || 0),
-      },
-      requests: {
-        total: Number(totalRequests[0]?.count || 0),
-        pending: Number(pendingRequests[0]?.count || 0),
-      },
-      users: {
-        total: Number(totalUsers[0]?.count || 0),
-        premium: Number(premiumUsers[0]?.count || 0),
-        free: Number(totalUsers[0]?.count || 0) - Number(premiumUsers[0]?.count || 0),
-      },
+      usersTotal: Number(usersTotal[0]?.count || 0),
+      newUsersToday: Number(usersToday[0]?.count || 0),
+      subscriptionsActive: Number(subsActive[0]?.count || 0),
+      revenueMonthly: 0, // Placeholder until payments are implemented
+      charts: {
+        registrations: last7Days,
+        subscriptions: subDistribution,
+        popularConcorsi: [] // Placeholder
+      }
     });
+
   } catch (error: any) {
-    console.error('❌ Errore recupero stats:', error);
+    console.error('❌ Errore recupero stats overview:', error);
     res.status(500).json({ error: 'Errore recupero statistiche' });
   }
 });
@@ -471,7 +499,7 @@ router.get('/users', requireAdmin, async (req, res) => {
 
     // Get roles and subscriptions for each user
     const enrichedUsers = await Promise.all(
-      usersData.map(async (u) => {
+      usersData.map(async (u: any) => {
         const [roleData] = await db
           .select({ role: userRoles.role })
           .from(userRoles)

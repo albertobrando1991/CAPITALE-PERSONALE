@@ -27,23 +27,23 @@ export function registerLibreriaRoutes(app: Express) {
   app.get('/api/libreria/documenti', async (req: Request, res: Response) => {
     try {
       const { materia, search, limit } = req.query;
-      
+
       const documenti = await storageLibreria.getDocumenti({
         materia: materia as string,
         search: search as string,
         limit: limit ? parseInt(limit as string) : undefined,
         staffOnly: false, // solo documenti pubblici
       });
-      
+
       console.log(`📚 Trovati ${documenti.length} documenti`);
-      
+
       // Rimuovi pdfBase64 dalla response (troppo pesante)
-      const documentiSafe = documenti.map(d => ({
+      const documentiSafe = documenti.map((d: any) => ({
         ...d,
         pdfBase64: undefined,
         hasPdf: !!d.pdfBase64 || !!d.pdfUrl,
       }));
-      
+
       res.json(documentiSafe);
     } catch (error) {
       console.error('❌ Errore GET documenti:', error);
@@ -56,11 +56,11 @@ export function registerLibreriaRoutes(app: Express) {
     try {
       const { id } = req.params;
       const documento = await storageLibreria.getDocumento(id);
-      
+
       if (!documento) {
         return res.status(404).json({ error: 'Documento non trovato' });
       }
-      
+
       res.json(documento);
     } catch (error) {
       console.error('❌ Errore GET documento:', error);
@@ -88,13 +88,13 @@ export function registerLibreriaRoutes(app: Express) {
         // Validazione input
         let bodyData = { ...req.body };
         if (typeof bodyData.tags === 'string') {
-            try {
-                bodyData.tags = JSON.parse(bodyData.tags);
-            } catch (e) {
-                bodyData.tags = []; 
-            }
+          try {
+            bodyData.tags = JSON.parse(bodyData.tags);
+          } catch (e) {
+            bodyData.tags = [];
+          }
         }
-        
+
         if (bodyData.isStaffOnly === 'true') bodyData.isStaffOnly = true;
         if (bodyData.isStaffOnly === 'false') bodyData.isStaffOnly = false;
 
@@ -156,7 +156,7 @@ export function registerLibreriaRoutes(app: Express) {
 
       const { id } = req.params;
       await storageLibreria.deleteDocumento(id);
-      
+
       res.json({ success: true });
     } catch (error) {
       console.error('❌ Errore delete documento:', error);
@@ -169,12 +169,51 @@ export function registerLibreriaRoutes(app: Express) {
     try {
       const { id } = req.params;
       const userId = getUserId(req);
-      await storageLibreria.incrementDownloads(id, userId);
-      
+      await storageLibreria.incrementDownloads(id, userId || undefined);
+
       res.json({ success: true });
     } catch (error) {
       console.error('❌ Errore log download:', error);
       res.status(500).json({ error: 'Errore log download' });
+    }
+  });
+
+  // ========== MATERIE (Cartelle) ==========
+
+  // GET Materie
+  app.get('/api/libreria/materie', async (req: Request, res: Response) => {
+    try {
+      const materie = await storageLibreria.getMaterie();
+      res.json(materie);
+    } catch (error) {
+      console.error('❌ Errore GET materie:', error);
+      res.status(500).json({ error: 'Errore recupero materie' });
+    }
+  });
+
+  // POST Create Materia (Staff/Admin)
+  app.post('/api/libreria/materie', requireAdminOrStaff, async (req: Request, res: Response) => {
+    try {
+      const { nome } = req.body;
+      if (!nome) return res.status(400).json({ error: 'Nome richiesto' });
+
+      const materia = await storageLibreria.createMateria(nome);
+      res.json(materia);
+    } catch (error) {
+      console.error('❌ Errore creazione materia:', error);
+      res.status(500).json({ error: 'Errore creazione materia' });
+    }
+  });
+
+  // DELETE Materia (Admin Only)
+  app.delete('/api/libreria/materie/:id', requireAdminOrStaff, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      await storageLibreria.deleteMateria(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('❌ Errore eliminazione materia:', error);
+      res.status(500).json({ error: 'Errore eliminazione materia' });
     }
   });
 

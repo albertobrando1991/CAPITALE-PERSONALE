@@ -17,31 +17,39 @@ export const materieEnum = [
   'Altro'
 ] as const;
 
+// Tabella materie (cartelle dinamiche)
+export const materie = pgTable('materie', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  nome: text('nome').notNull().unique(),
+  ordine: integer('ordine').default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // Helper type per il cast in frontend se necessario
 export type MateriaEnum = typeof materieEnum[number];
 
 // Tabella documenti pubblici
 export const documentiPubblici = pgTable('documenti_pubblici', {
   id: uuid('id').primaryKey().defaultRandom(),
-  
+
   // Metadati documento
   titolo: text('titolo').notNull(),
   descrizione: text('descrizione'),
   materia: text('materia').notNull(), // una delle materieEnum
   tags: text('tags').array(), // ["concorso", "quiz", "teoria"]
-  
+
   // File
   pdfUrl: text('pdf_url'), // URL storage cloud (opzionale se usiamo base64)
   pdfBase64: text('pdf_base64'), // Storage base64 temporaneo
   fileName: text('file_name').notNull(),
   fileSize: integer('file_size').notNull(), // bytes
   numPages: integer('num_pages'), // numero pagine PDF
-  
+
   // Metadata
   uploadedBy: varchar('uploaded_by').references(() => users.id, { onDelete: 'set null' }),
   isStaffOnly: boolean('is_staff_only').default(false), // documento riservato staff
   downloadsCount: integer('downloads_count').default(0),
-  
+
   // Timestamps
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
