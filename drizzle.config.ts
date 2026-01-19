@@ -5,6 +5,9 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL, ensure the database is provisioned");
 }
 
+// For Supabase: Allow self-signed certificates
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 const connectionString = process.env.DATABASE_URL;
 
 export default defineConfig({
@@ -13,6 +16,6 @@ export default defineConfig({
   dialect: "postgresql",
   dbCredentials: {
     url: connectionString,
-    ssl: { rejectUnauthorized: false },
+    ssl: "require",
   },
 });
