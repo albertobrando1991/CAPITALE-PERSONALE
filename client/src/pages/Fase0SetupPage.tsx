@@ -3,13 +3,14 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { BandoUpload } from "@/components/BandoUpload";
 import { BandoAnalysis, type BandoData } from "@/components/BandoAnalysis";
 import { PhaseProgress, defaultPhases } from "@/components/PhaseProgress";
-import { ArrowLeft, Sparkles, BookOpen, Target, Calendar, Brain, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Sparkles, BookOpen, Target, Calendar, Brain, Loader2, Save, FileText, ExternalLink, Wand2, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Concorso } from "@shared/schema";
+import type { Concorso, OfficialConcorso } from "@shared/schema";
 
 export default function Fase0SetupPage({ params }: { params: { concorsoId: string } }) {
   const { concorsoId } = params;
@@ -30,6 +31,18 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
       return res.json();
     },
     enabled: !!concorsoId,
+  });
+
+  // Fetch official concorso data if this concorso was created from the catalog
+  const { data: officialConcorso } = useQuery<OfficialConcorso>({
+    queryKey: ["/api/official-concorsi", existingConcorso?.officialConcorsoId],
+    queryFn: async () => {
+      const res = await fetch(`/api/official-concorsi`);
+      if (!res.ok) throw new Error("Failed to fetch official concorsi");
+      const list = await res.json();
+      return list.find((c: OfficialConcorso) => c.id === existingConcorso?.officialConcorsoId);
+    },
+    enabled: !!existingConcorso?.officialConcorsoId,
   });
   
   useEffect(() => {
@@ -84,29 +97,75 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
 
   const handleAnalyze = async (file: File) => {
     setIsAnalyzing(true);
-    
+
     try {
       const formData = new FormData();
       formData.append("file", file);
-      
+
       const response = await fetch("/api/analyze-bando", {
         method: "POST",
         body: formData,
       });
-      
+
       if (!response.ok) {
         throw new Error("Errore durante l'analisi");
       }
-      
+
       const data = await response.json();
       setBandoData(data);
-      
+
       toast({
         title: "Analisi completata",
         description: "Il bando è stato analizzato con successo.",
       });
     } catch (error) {
       console.error("Error analyzing bando:", error);
+      toast({
+        title: "Errore",
+        description: "Si è verificato un errore durante l'analisi del bando.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  // Analyze pre-loaded PDF from catalog URL
+  const handleAnalyzeFromUrl = async (pdfUrl: string) => {
+    setIsAnalyzing(true);
+
+    try {
+      // Fetch the PDF from the URL
+      const pdfResponse = await fetch(pdfUrl);
+      if (!pdfResponse.ok) {
+        throw new Error("Impossibile scaricare il PDF");
+      }
+
+      const pdfBlob = await pdfResponse.blob();
+      const pdfFile = new File([pdfBlob], "bando.pdf", { type: "application/pdf" });
+
+      // Use the same analyze endpoint
+      const formData = new FormData();
+      formData.append("file", pdfFile);
+
+      const response = await fetch("/api/analyze-bando", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Errore durante l'analisi");
+      }
+
+      const data = await response.json();
+      setBandoData(data);
+
+      toast({
+        title: "Analisi completata",
+        description: "Il bando dal catalogo è stato analizzato con successo.",
+      });
+    } catch (error) {
+      console.error("Error analyzing bando from URL:", error);
       toast({
         title: "Errore",
         description: "Si è verificato un errore durante l'analisi del bando.",
@@ -302,8 +361,8 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
                         Differenza col metodo universitario
                       </h3>
                       <p className="text-muted-foreground mt-1">
-                        All'università il programma è dato. Qui devi costruirlo tu 
-                        decodificando il bando. Non studiare nulla prima di aver 
+                        All'università il programma è dato. Qui devi costruirlo tu
+                        decodificando il bando. Non studiare nulla prima di aver
                         estratto tutti i dati necessari.
                       </p>
                     </div>
@@ -311,7 +370,74 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
                 </CardContent>
               </Card>
 
-              <BandoUpload onAnalyze={handleAnalyze} isAnalyzing={isAnalyzing} />
+              {/* Pre-loaded PDF from Official Catalog */}
+              {officialConcorso?.bandoPdfUrl ? (
+                <Card className="border-green-500/50 bg-green-50 dark:bg-green-950/20">
+                  <CardContent className="p-6">
+                    <div className="flex items-start gap-4">
+                      <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                        <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="font-semibold text-lg">PDF Bando Pre-caricato</h3>
+                          <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300">
+                            Dal Catalogo
+                          </Badge>
+                        </div>
+                        <p className="text-muted-foreground mb-4">
+                          Il bando per questo concorso è già stato caricato dallo staff.
+                          Puoi avviare l'analisi AI direttamente o visualizzare il PDF.
+                        </p>
+                        <div className="flex flex-wrap gap-3">
+                          <Button
+                            onClick={() => handleAnalyzeFromUrl(officialConcorso.bandoPdfUrl!)}
+                            disabled={isAnalyzing}
+                            className="gap-2"
+                          >
+                            {isAnalyzing ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Analisi in corso...
+                              </>
+                            ) : (
+                              <>
+                                <Wand2 className="h-4 w-4" />
+                                Avvia Analisi AI
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            asChild
+                            className="gap-2"
+                          >
+                            <a href={officialConcorso.bandoPdfUrl} target="_blank" rel="noreferrer">
+                              <FileText className="h-4 w-4" />
+                              Visualizza PDF
+                              <ExternalLink className="h-3 w-3 ml-1" />
+                            </a>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <BandoUpload onAnalyze={handleAnalyze} isAnalyzing={isAnalyzing} />
+              )}
+
+              {/* Show upload option even if there's a pre-loaded PDF - collapsed by default */}
+              {officialConcorso?.bandoPdfUrl && (
+                <details className="group">
+                  <summary className="text-center text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+                    Oppure carica un PDF diverso...
+                  </summary>
+                  <div className="mt-4">
+                    <BandoUpload onAnalyze={handleAnalyze} isAnalyzing={isAnalyzing} />
+                  </div>
+                </details>
+              )}
 
               <Card>
                 <CardHeader>

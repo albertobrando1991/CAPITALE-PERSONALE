@@ -8,6 +8,12 @@ import { getUserId } from './middleware/auth';
 import multer from 'multer';
 import { z } from 'zod';
 import { storage } from './storage';
+import {
+  uploadBandoPdf,
+  deleteBandoPdf,
+  isSupabaseStorageConfigured,
+  ensureBucketExists
+} from './services/supabase-storage';
 
 const router = Router();
 
@@ -92,6 +98,19 @@ async function requireStaff(req: any, res: any, next: any) {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+});
+
+// Multer per upload PDF bando (max 50MB)
+const uploadPdf = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Solo file PDF sono accettati'));
+    }
+  },
 });
 
 // ============================================
@@ -1103,6 +1122,16 @@ router.delete('/official-concorsi/:id', requireAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Concorso ufficiale non trovato' });
     }
 
+    // Delete PDF from storage if exists
+    if (existing.bandoPdfUrl) {
+      try {
+        await deleteBandoPdf(existing.bandoPdfUrl);
+        console.log(`✅ PDF bando eliminato da storage: ${existing.bandoPdfUrl}`);
+      } catch (pdfError) {
+        console.error('⚠️ Errore eliminazione PDF (continuo con eliminazione concorso):', pdfError);
+      }
+    }
+
     const deleted = await storage.deleteOfficialConcorso(id);
 
     if (!deleted) {
@@ -1123,6 +1152,113 @@ router.delete('/official-concorsi/:id', requireAdmin, async (req, res) => {
   } catch (error: any) {
     console.error('❌ Errore eliminazione concorso ufficiale:', error);
     res.status(500).json({ error: 'Errore eliminazione concorso ufficiale' });
+  }
+});
+
+// POST /api/admin/official-concorsi/:id/upload-pdf - Upload bando PDF for official concorso
+router.post('/official-concorsi/:id/upload-pdf', requireStaff, uploadPdf.single('pdf'), async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const { id } = req.params;
+    const pdfFile = req.file;
+
+    if (!pdfFile) {
+      return res.status(400).json({ error: 'File PDF mancante' });
+    }
+
+    // Check if Supabase Storage is configured
+    if (!isSupabaseStorageConfigured()) {
+      return res.status(503).json({
+        error: 'Storage non configurato',
+        message: 'Supabase Storage non è configurato. Contatta l\'amministratore.'
+      });
+    }
+
+    // Check if concorso exists
+    const existing = await storage.getOfficialConcorso(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Concorso ufficiale non trovato' });
+    }
+
+    // Ensure bucket exists
+    await ensureBucketExists();
+
+    // Delete old PDF if exists
+    if (existing.bandoPdfUrl) {
+      try {
+        await deleteBandoPdf(existing.bandoPdfUrl);
+        console.log(`✅ Vecchio PDF eliminato: ${existing.bandoPdfUrl}`);
+      } catch (deleteError) {
+        console.error('⚠️ Errore eliminazione vecchio PDF:', deleteError);
+      }
+    }
+
+    // Upload new PDF
+    const pdfUrl = await uploadBandoPdf(pdfFile.buffer, pdfFile.originalname, id);
+
+    // Update concorso with PDF URL
+    const updated = await storage.updateOfficialConcorso(id, { bandoPdfUrl: pdfUrl });
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: 'upload_bando_pdf',
+      entityType: 'official_concorso',
+      entityId: id,
+      details: { filename: pdfFile.originalname, size: pdfFile.size },
+    });
+
+    console.log(`✅ PDF bando caricato per concorso ${id}: ${pdfFile.originalname}`);
+    res.json({
+      success: true,
+      bandoPdfUrl: pdfUrl,
+      concorso: updated
+    });
+  } catch (error: any) {
+    console.error('❌ Errore upload PDF bando:', error);
+    res.status(500).json({ error: error.message || 'Errore upload PDF' });
+  }
+});
+
+// DELETE /api/admin/official-concorsi/:id/pdf - Delete bando PDF for official concorso
+router.delete('/official-concorsi/:id/pdf', requireStaff, async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const { id } = req.params;
+
+    // Check if concorso exists
+    const existing = await storage.getOfficialConcorso(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Concorso ufficiale non trovato' });
+    }
+
+    if (!existing.bandoPdfUrl) {
+      return res.status(404).json({ error: 'Nessun PDF associato a questo concorso' });
+    }
+
+    // Delete from storage
+    await deleteBandoPdf(existing.bandoPdfUrl);
+
+    // Update concorso to remove PDF URL
+    const updated = await storage.updateOfficialConcorso(id, { bandoPdfUrl: null });
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: 'delete_bando_pdf',
+      entityType: 'official_concorso',
+      entityId: id,
+      details: { previousUrl: existing.bandoPdfUrl },
+    });
+
+    console.log(`✅ PDF bando eliminato per concorso ${id}`);
+    res.json({
+      success: true,
+      concorso: updated
+    });
+  } catch (error: any) {
+    console.error('❌ Errore eliminazione PDF bando:', error);
+    res.status(500).json({ error: error.message || 'Errore eliminazione PDF' });
   }
 });
 

@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { FileText, Plus, Search, Loader2, Trash2, Layers, Library, ScrollText, Upload, ExternalLink, FolderPlus, Folder, FolderOpen, ArrowLeft, Building2, Calendar, Users, Pencil, Globe } from "lucide-react";
+import { FileText, Plus, Search, Loader2, Trash2, Layers, Library, ScrollText, Upload, ExternalLink, FolderPlus, Folder, FolderOpen, ArrowLeft, Building2, Calendar, Users, Pencil, Globe, FileUp, File, X } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -51,6 +51,10 @@ export default function AdminContentPage() {
   const [isOfficialConcorsoOpen, setIsOfficialConcorsoOpen] = useState(false);
   const [officialConcorsoForm, setOfficialConcorsoForm] = useState(initialOfficialConcorsoForm);
   const [editingOfficialConcorso, setEditingOfficialConcorso] = useState<OfficialConcorso | null>(null);
+
+  // State for PDF upload (official concorsi)
+  const [uploadingPdfForId, setUploadingPdfForId] = useState<string | null>(null);
+  const [selectedBandoPdf, setSelectedBandoPdf] = useState<File | null>(null);
 
   // State for Normativa Dialog
   const [isNormativaOpen, setIsNormativaOpen] = useState(false);
@@ -239,6 +243,53 @@ export default function AdminContentPage() {
     }
   });
 
+  // Upload PDF Bando mutation
+  const uploadBandoPdfMutation = useMutation({
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      const formData = new FormData();
+      formData.append('pdf', file);
+
+      const res = await fetch(`/api/admin/official-concorsi/${id}/upload-pdf`, {
+        method: 'POST',
+        body: formData
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Errore upload PDF');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "PDF Bando caricato", description: "Il PDF del bando è stato salvato correttamente." });
+      setUploadingPdfForId(null);
+      setSelectedBandoPdf(null);
+      queryClient.invalidateQueries({ queryKey: ['official-concorsi'] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Errore upload PDF", description: err.message, variant: "destructive" });
+      setUploadingPdfForId(null);
+    }
+  });
+
+  // Delete PDF Bando mutation
+  const deleteBandoPdfMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/official-concorsi/${id}/pdf`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Errore eliminazione PDF');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "PDF eliminato", description: "Il PDF del bando è stato rimosso." });
+      queryClient.invalidateQueries({ queryKey: ['official-concorsi'] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Errore", description: err.message, variant: "destructive" });
+    }
+  });
+
   // Helper to open edit dialog
   const openEditOfficialConcorso = (concorso: OfficialConcorso) => {
     setEditingOfficialConcorso(concorso);
@@ -271,6 +322,23 @@ export default function AdminContentPage() {
     const now = new Date();
     const diffDays = Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     return diffDays >= 0 && diffDays <= 30;
+  };
+
+  // Handle PDF file selection for official concorso
+  const handleBandoPdfSelect = (e: React.ChangeEvent<HTMLInputElement>, concorsoId: string) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 50 * 1024 * 1024) {
+        toast({ title: "Errore", description: "File troppo grande (max 50MB)", variant: "destructive" });
+        return;
+      }
+      if (!file.type.includes('pdf')) {
+        toast({ title: "Errore", description: "Solo file PDF sono supportati", variant: "destructive" });
+        return;
+      }
+      setUploadingPdfForId(concorsoId);
+      uploadBandoPdfMutation.mutate({ id: concorsoId, file });
+    }
   };
 
   const createNormativaMutation = useMutation({
@@ -611,6 +679,7 @@ export default function AdminContentPage() {
                             <TableHead>Titolo Concorso</TableHead>
                             <TableHead>Scadenza</TableHead>
                             <TableHead>Posti</TableHead>
+                            <TableHead>PDF Bando</TableHead>
                             <TableHead>Stato</TableHead>
                             <TableHead className="text-right">Azioni</TableHead>
                           </TableRow>
@@ -618,7 +687,7 @@ export default function AdminContentPage() {
                         <TableBody>
                           {officialConcorsi.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                              <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                                 Nessun concorso nel catalogo. Aggiungi il primo!
                               </TableCell>
                             </TableRow>
@@ -671,6 +740,53 @@ export default function AdminContentPage() {
                                       <Badge variant="secondary">{c.posti}</Badge>
                                     ) : (
                                       <span className="text-muted-foreground">-</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    {/* PDF Bando Upload/Status */}
+                                    {c.bandoPdfUrl ? (
+                                      <div className="flex items-center gap-2">
+                                        <a
+                                          href={c.bandoPdfUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="flex items-center gap-1 text-sm text-green-600 hover:underline"
+                                        >
+                                          <File className="h-4 w-4" />
+                                          PDF
+                                        </a>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6 text-destructive"
+                                          onClick={() => {
+                                            if (confirm("Eliminare il PDF del bando?")) {
+                                              deleteBandoPdfMutation.mutate(c.id);
+                                            }
+                                          }}
+                                          disabled={deleteBandoPdfMutation.isPending}
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    ) : uploadingPdfForId === c.id ? (
+                                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        Caricamento...
+                                      </div>
+                                    ) : (
+                                      <label className="cursor-pointer">
+                                        <input
+                                          type="file"
+                                          accept="application/pdf"
+                                          className="hidden"
+                                          onChange={(e) => handleBandoPdfSelect(e, c.id)}
+                                        />
+                                        <span className="flex items-center gap-1 text-sm text-primary hover:underline">
+                                          <FileUp className="h-4 w-4" />
+                                          Carica
+                                        </span>
+                                      </label>
                                     )}
                                   </TableCell>
                                   <TableCell>

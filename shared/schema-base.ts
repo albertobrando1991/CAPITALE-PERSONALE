@@ -60,6 +60,7 @@ export const officialConcorsi = pgTable("official_concorsi", {
   active: boolean("active").default(true),
   bandoAnalysis: jsonb("bando_analysis"),
   imageUrl: text("image_url"),
+  bandoPdfUrl: text("bando_pdf_url"), // URL to PDF stored in Supabase Storage
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
