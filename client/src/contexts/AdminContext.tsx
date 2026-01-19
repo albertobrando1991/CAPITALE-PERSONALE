@@ -54,12 +54,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   // AdminProvider is used inside AuthProvider in App.tsx
   const auth = useAuth();
   const user = auth?.user;
-  
+
   const role = user?.role || UserRole.USER;
 
   const value = useMemo(() => {
     const permissions = ROLE_PERMISSIONS[role] || [];
-    
+
     return {
       role,
       hasPermission: (permission: string) => permissions.includes(permission),
@@ -78,8 +78,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
 export function useAdmin() {
   const context = useContext(AdminContext);
+  // Return safe defaults when used outside AdminProvider (e.g., on public pages)
   if (context === undefined) {
-    throw new Error("useAdmin must be used within an AdminProvider");
+    return {
+      role: UserRole.USER,
+      hasPermission: () => false,
+      isSuperAdmin: false,
+      isAdmin: false,
+      isStaff: false,
+    };
   }
   return context;
 }
