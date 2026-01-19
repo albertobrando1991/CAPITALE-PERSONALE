@@ -54,6 +54,7 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [concorsoToDelete, setConcorsoToDelete] = useState<Concorso | null>(null);
+  const [selectorOpen, setSelectorOpen] = useState(false);
 
   const { data: concorsi = [], isLoading: concorsiLoading } = useQuery<Concorso[]>({
     queryKey: ["/api/concorsi"],
@@ -104,7 +105,13 @@ export default function DashboardPage() {
   const hasConcorsi = !concorsiLoading && concorsi.length > 0;
   const livelloGlobale = 5;
 
-  const handleCreateConcorso = async () => {
+  // Open the selector dialog instead of creating directly
+  const handleCreateConcorso = () => {
+    setSelectorOpen(true);
+  };
+
+  // Create concorso from manual bando upload (goes to fase0 for PDF upload)
+  const handleUploadBando = async () => {
     try {
       const res = await apiRequest("POST", "/api/concorsi", {
         nome: "Nuovo Concorso",
@@ -116,6 +123,42 @@ export default function DashboardPage() {
       toast({
         title: "Errore",
         description: "Impossibile creare un nuovo concorso.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Create concorso from official catalog selection
+  const handleSelectFromCatalog = async (officialConcorso: OfficialConcorso) => {
+    try {
+      const res = await apiRequest("POST", "/api/concorsi", {
+        nome: officialConcorso.titolo,
+        officialConcorsoId: officialConcorso.id,
+        dataCreazione: new Date().toISOString(),
+      });
+      const newConcorso = await res.json();
+      setSelectorOpen(false);
+
+      // If the official concorso has bandoAnalysis, go to fase1, otherwise fase0
+      if (officialConcorso.bandoAnalysis) {
+        toast({
+          title: "Concorso aggiunto",
+          description: `${officialConcorso.titolo} è stato aggiunto con i dati pre-compilati.`,
+        });
+        setLocation(`/concorsi/${newConcorso.id}/fase1`);
+      } else {
+        toast({
+          title: "Concorso aggiunto",
+          description: "Completa il setup caricando il bando PDF.",
+        });
+        setLocation(`/concorsi/${newConcorso.id}/fase0`);
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["/api/concorsi"] });
+    } catch (error) {
+      toast({
+        title: "Errore",
+        description: "Impossibile aggiungere il concorso.",
         variant: "destructive",
       });
     }
@@ -641,6 +684,14 @@ export default function DashboardPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Official Concorso Selector Dialog */}
+      <OfficialConcorsoSelector
+        open={selectorOpen}
+        onOpenChange={setSelectorOpen}
+        onSelect={handleSelectFromCatalog}
+        onUploadBando={handleUploadBando}
+      />
     </div>
   );
 }
