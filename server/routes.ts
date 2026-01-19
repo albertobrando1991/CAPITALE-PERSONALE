@@ -1494,6 +1494,242 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
   // Quello sopra era riga 136. Quello qui sotto era riga 1026.
   // Sono identici. Rimuovo il duplicato.
 
+  // Endpoint per analizzare bando da URL (scarica PDF lato server)
+  app.post("/api/analyze-bando-from-url", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      console.log("[BANDO-URL] === INIZIO ANALISI DA URL ===");
+
+      const { pdfUrl } = req.body;
+
+      if (!pdfUrl || typeof pdfUrl !== 'string') {
+        console.log("[BANDO-URL] ERRORE: URL mancante");
+        return res.status(400).json({ error: "URL del PDF mancante" });
+      }
+
+      console.log("[BANDO-URL] Scaricando PDF da:", pdfUrl);
+
+      // Scarica il PDF dall'URL
+      const pdfResponse = await fetch(pdfUrl);
+      if (!pdfResponse.ok) {
+        console.log("[BANDO-URL] ERRORE: Impossibile scaricare PDF:", pdfResponse.status, pdfResponse.statusText);
+        return res.status(400).json({
+          error: "Impossibile scaricare il PDF",
+          details: `${pdfResponse.status} ${pdfResponse.statusText}`
+        });
+      }
+
+      const pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
+      console.log("[BANDO-URL] PDF scaricato:", pdfBuffer.length, "bytes");
+
+      if (pdfBuffer.length === 0) {
+        console.log("[BANDO-URL] ERRORE: PDF vuoto");
+        return res.status(400).json({ error: "Il PDF scaricato è vuoto" });
+      }
+
+      // Estrai testo dal PDF
+      let fileContent: string;
+      try {
+        fileContent = await extractTextFromPDF(pdfBuffer);
+        console.log(`[BANDO-URL] PDF estratto: ${fileContent.length} caratteri`);
+
+        if (!fileContent || fileContent.trim().length < 100) {
+          console.log("[BANDO-URL] ERRORE: PDF vuoto o troppo corto");
+          return res.status(400).json({
+            error: "Il PDF non contiene testo selezionabile. Assicurati che il PDF contenga testo (non sia scansionato)."
+          });
+        }
+      } catch (pdfError: any) {
+        console.error("[BANDO-URL] ERRORE estrazione PDF:", pdfError.message);
+        return res.status(400).json({
+          error: "Errore nell'estrazione del testo dal PDF",
+          details: pdfError.message || "Il PDF potrebbe essere scansionato o corrotto"
+        });
+      }
+
+      // Da qui in poi, usa lo stesso codice dell'endpoint analyze-bando
+      const systemPrompt = `Sei un esperto analista di bandi di concorsi pubblici italiani. Estrai tutte le informazioni dal bando.
+
+Restituisci SOLO un oggetto JSON valido con questa struttura:
+{
+  "titoloEnte": "Nome completo dell'ente e titolo del concorso",
+  "tipoConcorso": "Tipo (per esami, per titoli ed esami, etc.)",
+  "scadenzaDomanda": "DD/MM/YYYY",
+  "dataPresuntaEsame": "DD/MM/YYYY o 'Da definire'",
+  "posti": numero_posti_totale,
+  "profili": [
+    {
+      "nome": "Nome profilo",
+      "posti": numero_posti,
+      "titoliStudio": ["Classi di laurea con codici (es. LM-63, L-14)"],
+      "altriRequisiti": []
+    }
+  ],
+  "requisiti": [{"titolo": "Requisito", "soddisfatto": null}],
+  "prove": {
+    "tipo": "Tipo prove",
+    "descrizione": "Descrizione",
+    "hasPreselettiva": true/false,
+    "hasBancaDati": true/false,
+    "bancaDatiInfo": "Info banca dati",
+    "penalitaErrori": "Valore penalità (es. '-0.25') o null",
+    "punteggioRispostaCorretta": "Punteggio risposta corretta o null",
+    "punteggioRispostaNonData": "Punteggio risposta non data o null"
+  },
+  "materie": [
+    {
+      "nome": "Nome materia",
+      "microArgomenti": ["Tutti gli argomenti citati nel bando"],
+      "peso": percentuale_o_null,
+      "numeroDomande": numero_domande_o_null
+    }
+  ],
+  "passaggiIscrizione": [
+    {"step": 1, "descrizione": "Registrazione sul portale INPA", "completato": false, "link": "https://www.inpa.gov.it/#bandi-avvisi"},
+    {"step": 2, "descrizione": "Compilazione domanda", "completato": false},
+    {"step": 3, "descrizione": "Pagamento tassa", "completato": false},
+    {"step": 4, "descrizione": "Allegare documentazione", "completato": false}
+  ]
+}`;
+
+      const contentToSend = fileContent.substring(0, 100000);
+      const userPrompt = `Analizza questo bando di concorso pubblico italiano ed estrai tutte le informazioni richieste:\n\n${contentToSend}`;
+      console.log(`[BANDO-URL] Invio ${contentToSend.length} caratteri a AI`);
+
+      let content: string | null = null;
+      try {
+        console.log("[BANDO-URL] Invio richiesta AI per analisi bando...");
+        content = await generateWithFallback({
+          task: "generic",
+          systemPrompt,
+          userPrompt,
+          responseMode: "json",
+          jsonRoot: "object",
+          temperature: 0.2,
+        });
+        console.log("[BANDO-URL] Risposta AI ricevuta");
+      } catch (err: any) {
+        console.error("[BANDO-URL] ERRORE generazione AI:", err.message);
+        throw err;
+      }
+
+      console.log("[BANDO-URL] Parsing risposta...");
+      if (!content) {
+        console.error("[BANDO-URL] ERRORE: Nessuna risposta dall'AI");
+        throw new Error("Nessuna risposta dall'AI. Verifica le chiavi API.");
+      }
+
+      let bandoData;
+      try {
+        bandoData = JSON.parse(content);
+        console.log("[BANDO-URL] JSON parsato correttamente");
+      } catch (parseError: any) {
+        console.error("[BANDO-URL] ERRORE parsing JSON:", parseError.message);
+        try {
+          if (content.trim().startsWith("{") && !content.trim().endsWith("}")) {
+            console.log("[BANDO-URL] Tentativo di fix JSON troncato...");
+            const fixedContent = content + "}";
+            bandoData = JSON.parse(fixedContent);
+            console.log("[BANDO-URL] JSON fixato e parsato!");
+          } else {
+            throw parseError;
+          }
+        } catch (retryError) {
+          throw new Error(`Errore nel parsing della risposta AI. Il formato non è JSON valido. Dettaglio: ${parseError.message}`);
+        }
+      }
+
+      // Aggiungi dati calcolati
+      if (!bandoData.prove) {
+        bandoData.prove = {};
+      }
+
+      const mesiPreparazione = 6;
+      const oreSettimanali = 15;
+      const oggi = new Date();
+      const dataEsame = new Date(oggi);
+      dataEsame.setMonth(dataEsame.getMonth() + mesiPreparazione);
+      const giorniTotali = Math.floor((dataEsame.getTime() - oggi.getTime()) / (1000 * 60 * 60 * 24));
+      const oreTotali = Math.floor(giorniTotali / 7) * oreSettimanali;
+
+      const fasi = [
+        { nome: "Fase 0: Intelligence & Setup", percentuale: 10 },
+        { nome: "Fase 1: Apprendimento Base (SQ3R)", percentuale: 40 },
+        { nome: "Fase 2: Consolidamento e Memorizzazione", percentuale: 30 },
+        { nome: "Fase 3: Simulazione ad Alta Fedeltà", percentuale: 20 }
+      ];
+
+      let giorniUsati = 0;
+      const calendarioGenerato = fasi.map((fase) => {
+        const giorniFase = Math.floor(giorniTotali * (fase.percentuale / 100));
+        const dataInizio = new Date(oggi);
+        dataInizio.setDate(dataInizio.getDate() + giorniUsati);
+        const dataFine = new Date(dataInizio);
+        dataFine.setDate(dataFine.getDate() + giorniFase - 1);
+        giorniUsati += giorniFase;
+
+        const formatDate = (d: Date) => {
+          const day = d.getDate().toString().padStart(2, '0');
+          const month = (d.getMonth() + 1).toString().padStart(2, '0');
+          const year = d.getFullYear();
+          return `${day}/${month}/${year}`;
+        };
+
+        return {
+          fase: fase.nome,
+          dataInizio: formatDate(dataInizio),
+          dataFine: formatDate(dataFine),
+          giorniDisponibili: giorniFase,
+          oreStimate: Math.floor(oreTotali * (fase.percentuale / 100))
+        };
+      });
+
+      bandoData.calendarioInverso = calendarioGenerato;
+      bandoData.oreTotaliDisponibili = oreTotali;
+      bandoData.giorniTapering = 7;
+      bandoData.mesiPreparazione = mesiPreparazione;
+      bandoData.oreSettimanali = oreSettimanali;
+      bandoData.dataInizioStudio = oggi.toISOString();
+
+      // Calcola pesi materie
+      if (bandoData.materie && Array.isArray(bandoData.materie)) {
+        const materieConDomande = bandoData.materie.filter((m: any) => m.numeroDomande && m.numeroDomande > 0);
+        const totaleDomande = materieConDomande.reduce((sum: number, m: any) => sum + (m.numeroDomande || 0), 0);
+
+        bandoData.materie = bandoData.materie.map((materia: any) => {
+          if (materia.numeroDomande && materia.numeroDomande > 0 && totaleDomande > 0) {
+            const pesoReale = Math.round((materia.numeroDomande / totaleDomande) * 100 * 10) / 10;
+            return { ...materia, peso: pesoReale };
+          } else if (!materia.peso || materia.peso === null) {
+            const pesoTeorico = Math.round((100 / bandoData.materie.length) * 10) / 10;
+            return { ...materia, peso: pesoTeorico };
+          }
+          return materia;
+        });
+      }
+
+      // Aggiungi link INPA allo step 1
+      if (bandoData.passaggiIscrizione && Array.isArray(bandoData.passaggiIscrizione)) {
+        bandoData.passaggiIscrizione = bandoData.passaggiIscrizione.map((passaggio: any) => {
+          if (passaggio.step === 1) {
+            return { ...passaggio, link: "https://www.inpa.gov.it/#bandi-avvisi" };
+          }
+          return passaggio;
+        });
+      }
+
+      console.log(`[BANDO-URL] === ANALISI COMPLETATA: ${bandoData.titoloEnte || 'N/A'} ===`);
+      res.json(bandoData);
+    } catch (error: any) {
+      console.error("[BANDO-URL] === ERRORE GENERALE ===");
+      console.error("[BANDO-URL] Messaggio:", error?.message);
+      res.status(500).json({
+        error: "Errore durante l'analisi del bando",
+        details: error.message || "Errore sconosciuto",
+        suggestion: "Verifica che il file PDF contenga testo selezionabile e riprova."
+      });
+    }
+  });
+
   app.post("/api/analyze-bando", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
     try {
       console.log("[BANDO] === INIZIO ANALISI ===");

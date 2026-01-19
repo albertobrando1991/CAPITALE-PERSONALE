@@ -131,46 +131,39 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
     }
   };
 
-  // Analyze pre-loaded PDF from catalog URL
+  // Analyze pre-loaded PDF from catalog URL (uses server-side fetch to avoid CORS)
   const handleAnalyzeFromUrl = async (pdfUrl: string) => {
     setIsAnalyzing(true);
 
     try {
-      // Fetch the PDF from the URL
-      const pdfResponse = await fetch(pdfUrl);
-      if (!pdfResponse.ok) {
-        throw new Error("Impossibile scaricare il PDF");
-      }
+      console.log("[Fase0] Analyzing PDF from URL via server:", pdfUrl);
 
-      const pdfBlob = await pdfResponse.blob();
-      const pdfFile = new File([pdfBlob], "bando.pdf", { type: "application/pdf" });
-
-      // Use the same analyze endpoint
-      const formData = new FormData();
-      formData.append("file", pdfFile);
-
-      const response = await fetch("/api/analyze-bando", {
+      // Use the server-side endpoint that fetches the PDF directly
+      const response = await fetch("/api/analyze-bando-from-url", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pdfUrl }),
         credentials: "include",
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error("Errore durante l'analisi");
+        console.error("[Fase0] Analyze bando error:", data);
+        throw new Error(data.error || data.details || "Errore durante l'analisi");
       }
 
-      const data = await response.json();
       setBandoData(data);
 
       toast({
         title: "Analisi completata",
         description: "Il bando dal catalogo è stato analizzato con successo.",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error analyzing bando from URL:", error);
       toast({
         title: "Errore",
-        description: "Si è verificato un errore durante l'analisi del bando.",
+        description: error.message || "Si è verificato un errore durante l'analisi del bando.",
         variant: "destructive",
       });
     } finally {
