@@ -13,6 +13,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { useAdmin } from '@/contexts/AdminContext';
 import { BibliotecaNormativa } from '@/components/BibliotecaNormativa';
 import { UploadMaterial } from '@/components/UploadMaterial';
 import { MaterialCard } from '@/components/MaterialCard';
@@ -59,6 +60,9 @@ export default function LibreriaPubblicaPage() {
   // State per Materiali
   const [selectedMateria, setSelectedMateria] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+
+  // Get user role - only staff/admin can upload
+  const { isStaff } = useAdmin();
 
   // Fetch normative from API
   const { data: normativeData, isLoading: isLoadingNormative } = useQuery<Norma[]>({
@@ -1016,20 +1020,23 @@ export default function LibreriaPubblicaPage() {
                     </h4>
                   </div>
 
-                  <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Carica Documento
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-lg p-0">
-                      <UploadMaterial
-                        onUpload={handleUpload}
-                        onCancel={() => setIsUploadOpen(false)}
-                      />
-                    </DialogContent>
-                  </Dialog>
+                  {/* Upload Button - Only visible to staff/admin */}
+                  {isStaff && (
+                    <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
+                      <DialogTrigger asChild>
+                        <Button size="sm">
+                          <Plus className="h-4 w-4 mr-2" />
+                          Carica Documento
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-lg p-0">
+                        <UploadMaterial
+                          onUpload={handleUpload}
+                          onCancel={() => setIsUploadOpen(false)}
+                        />
+                      </DialogContent>
+                    </Dialog>
+                  )}
                 </div>
 
                 {/* Lista Materiali */}
@@ -1057,9 +1064,11 @@ export default function LibreriaPubblicaPage() {
                     <p className="text-muted-foreground mb-4">
                       Non hai ancora caricato materiali per {selectedMateria}.
                     </p>
-                    <Button variant="outline" onClick={() => setIsUploadOpen(true)}>
-                      Carica il primo file
-                    </Button>
+                    {isStaff && (
+                      <Button variant="outline" onClick={() => setIsUploadOpen(true)}>
+                        Carica il primo file
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>
