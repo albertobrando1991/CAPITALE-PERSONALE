@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Plus, Search, Loader2, Trash2, Layers, Library, ScrollText, Upload, ExternalLink, FolderPlus } from "lucide-react";
+import { FileText, Plus, Search, Loader2, Trash2, Layers, Library, ScrollText, Upload, ExternalLink, FolderPlus, Folder, FolderOpen, ArrowLeft } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -24,16 +24,16 @@ export default function AdminContentPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("concorsi");
   const [searchTerm, setSearchTerm] = useState("");
-  
+
   // State for Concorso Dialog
   const [isConcorsoOpen, setIsConcorsoOpen] = useState(false);
   const [concorsoForm, setConcorsoForm] = useState({ nome: "", descrizione: "", dataScadenza: "" });
 
   // State for Normativa Dialog
   const [isNormativaOpen, setIsNormativaOpen] = useState(false);
-  const [normativaForm, setNormativaForm] = useState({ 
-    titolo: "", tipo: "Legge", numero: "", anno: new Date().getFullYear().toString(), 
-    data: "", urlNormattiva: "", urn: "" 
+  const [normativaForm, setNormativaForm] = useState({
+    titolo: "", tipo: "Legge", numero: "", anno: new Date().getFullYear().toString(),
+    data: "", urlNormattiva: "", urn: ""
   });
 
   // State for Documento Dialog
@@ -46,6 +46,7 @@ export default function AdminContentPage() {
   // State for New Folder Dialog
   const [isFolderOpen, setIsFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
 
   // Fetch Concorsi
   const { data: concorsi, isLoading: isLoadingConcorsi } = useQuery({
@@ -195,6 +196,27 @@ export default function AdminContentPage() {
     }
   });
 
+  // Delete Folder Mutation
+  const deleteFolderMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/libreria/materie/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Errore eliminazione cartella');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Cartella eliminata" });
+      queryClient.invalidateQueries({ queryKey: ['materie'] });
+      queryClient.invalidateQueries({ queryKey: ['libreria', 'documenti'] });
+      setSelectedFolder(null);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Errore", description: err.message, variant: "destructive" });
+    }
+  });
+
   // All documents
   const allDocs = documenti || [];
 
@@ -245,8 +267,8 @@ export default function AdminContentPage() {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <Search className="h-4 w-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Cerca concorso..." 
+                <Input
+                  placeholder="Cerca concorso..."
                   className="w-[250px]"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -259,11 +281,11 @@ export default function AdminContentPage() {
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Nome</label>
-                      <Input value={concorsoForm.nome} onChange={(e) => setConcorsoForm({...concorsoForm, nome: e.target.value})} />
+                      <Input value={concorsoForm.nome} onChange={(e) => setConcorsoForm({ ...concorsoForm, nome: e.target.value })} />
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Descrizione</label>
-                      <Input value={concorsoForm.descrizione} onChange={(e) => setConcorsoForm({...concorsoForm, descrizione: e.target.value})} />
+                      <Input value={concorsoForm.descrizione} onChange={(e) => setConcorsoForm({ ...concorsoForm, descrizione: e.target.value })} />
                     </div>
                   </div>
                   <DialogFooter>
@@ -275,7 +297,7 @@ export default function AdminContentPage() {
                 </DialogContent>
               </Dialog>
             </div>
-            
+
             <Card>
               <CardContent className="p-0">
                 <Table>
@@ -289,9 +311,9 @@ export default function AdminContentPage() {
                         <TableCell>{c.descrizione}</TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => {
-                             if (!confirm("Eliminare?")) return;
-                             await fetch(`/api/concorsi/${c.id}`, { method: 'DELETE' });
-                             queryClient.invalidateQueries({ queryKey: ['concorsi'] });
+                            if (!confirm("Eliminare?")) return;
+                            await fetch(`/api/concorsi/${c.id}`, { method: 'DELETE' });
+                            queryClient.invalidateQueries({ queryKey: ['concorsi'] });
                           }}><Trash2 className="h-4 w-4" /></Button>
                         </TableCell>
                       </TableRow>
@@ -348,107 +370,178 @@ export default function AdminContentPage() {
                 {/* Upload File Button */}
                 <Dialog open={isDocOpen} onOpenChange={setIsDocOpen}>
                   <DialogTrigger asChild><Button><Upload className="mr-2 h-4 w-4" /> Carica Documento</Button></DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Carica Documento</DialogTitle>
-                    <DialogDescription>I documenti caricati saranno visibili nella Libreria Pubblica del sito.</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Titolo *</label>
-                      <Input value={docForm.titolo} onChange={(e) => setDocForm({...docForm, titolo: e.target.value})} placeholder="es. Costituzione Italiana Commentata" />
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Carica Documento</DialogTitle>
+                      <DialogDescription>I documenti caricati saranno visibili nella Libreria Pubblica del sito.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Titolo *</label>
+                        <Input value={docForm.titolo} onChange={(e) => setDocForm({ ...docForm, titolo: e.target.value })} placeholder="es. Costituzione Italiana Commentata" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Descrizione</label>
+                        <Input value={docForm.descrizione} onChange={(e) => setDocForm({ ...docForm, descrizione: e.target.value })} placeholder="Breve descrizione del documento" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Cartella/Materia *</label>
+                        <Select value={docForm.materia} onValueChange={(v) => setDocForm({ ...docForm, materia: v })}>
+                          <SelectTrigger><SelectValue placeholder="Seleziona cartella" /></SelectTrigger>
+                          <SelectContent>
+                            {materie.length > 0 ? (
+                              materie.map((m) => (
+                                <SelectItem key={m.id} value={m.nome}>{m.nome}</SelectItem>
+                              ))
+                            ) : (
+                              <>
+                                <SelectItem value="Diritto Amministrativo">Diritto Amministrativo</SelectItem>
+                                <SelectItem value="Diritto Costituzionale">Diritto Costituzionale</SelectItem>
+                                <SelectItem value="Diritto Civile">Diritto Civile</SelectItem>
+                                <SelectItem value="Altro">Altro</SelectItem>
+                              </>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {materie.length === 0 && (
+                          <p className="text-xs text-muted-foreground">Crea prima una cartella per organizzare i documenti.</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">File PDF *</label>
+                        <Input type="file" accept=".pdf,application/pdf" onChange={handleFileUpload} />
+                        {selectedFile && <p className="text-sm text-muted-foreground">File selezionato: {selectedFile.name}</p>}
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Descrizione</label>
-                      <Input value={docForm.descrizione} onChange={(e) => setDocForm({...docForm, descrizione: e.target.value})} placeholder="Breve descrizione del documento" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Cartella/Materia *</label>
-                      <Select value={docForm.materia} onValueChange={(v) => setDocForm({...docForm, materia: v})}>
-                        <SelectTrigger><SelectValue placeholder="Seleziona cartella" /></SelectTrigger>
-                        <SelectContent>
-                          {materie.length > 0 ? (
-                            materie.map((m) => (
-                              <SelectItem key={m.id} value={m.nome}>{m.nome}</SelectItem>
-                            ))
-                          ) : (
-                            <>
-                              <SelectItem value="Diritto Amministrativo">Diritto Amministrativo</SelectItem>
-                              <SelectItem value="Diritto Costituzionale">Diritto Costituzionale</SelectItem>
-                              <SelectItem value="Diritto Civile">Diritto Civile</SelectItem>
-                              <SelectItem value="Altro">Altro</SelectItem>
-                            </>
-                          )}
-                        </SelectContent>
-                      </Select>
-                      {materie.length === 0 && (
-                        <p className="text-xs text-muted-foreground">Crea prima una cartella per organizzare i documenti.</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">File PDF *</label>
-                      <Input type="file" accept=".pdf,application/pdf" onChange={handleFileUpload} />
-                      {selectedFile && <p className="text-sm text-muted-foreground">File selezionato: {selectedFile.name}</p>}
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsDocOpen(false)}>Annulla</Button>
-                    <Button onClick={() => createDocMutation.mutate()} disabled={createDocMutation.isPending || !selectedFile || !docForm.titolo || !docForm.materia}>
-                      {createDocMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Caricamento...</> : "Carica"}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsDocOpen(false)}>Annulla</Button>
+                      <Button onClick={() => createDocMutation.mutate()} disabled={createDocMutation.isPending || !selectedFile || !docForm.titolo || !docForm.materia}>
+                        {createDocMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Caricamento...</> : "Carica"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
                 </Dialog>
               </div>
             </div>
 
             {isLoadingDocumenti ? (
               <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
-            ) : (
+            ) : !selectedFolder ? (
+              /* FOLDER GRID VIEW */
               <Card>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Titolo</TableHead>
-                        <TableHead>Materia</TableHead>
-                        <TableHead>File</TableHead>
-                        <TableHead>Downloads</TableHead>
-                        <TableHead className="text-right">Azioni</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {allDocs.length === 0 ? (
-                        <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Nessun documento presente. Carica il primo documento!</TableCell></TableRow>
-                      ) : (
-                        allDocs.map((d: any) => (
-                          <TableRow key={d.id}>
-                            <TableCell className="font-medium">
-                              <div className="flex items-center gap-2">
-                                <FileText className="h-4 w-4 text-red-500" />
-                                <div>
-                                  <p>{d.titolo}</p>
-                                  {d.descrizione && <p className="text-xs text-muted-foreground">{d.descrizione}</p>}
-                                </div>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Folder className="h-5 w-5" />
+                    Cartelle ({materie.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {materie.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      Nessuna cartella creata. Clicca "Crea Cartella" per iniziare.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                      {materie.map((m) => {
+                        const docCount = allDocs.filter((d: any) => d.materia === m.nome).length;
+                        return (
+                          <Card
+                            key={m.id}
+                            className="cursor-pointer hover:border-primary hover:bg-muted/50 transition-all group relative"
+                            onClick={() => setSelectedFolder(m.nome)}
+                          >
+                            <CardContent className="flex flex-col items-center justify-center p-6 gap-3 text-center">
+                              <div className="p-3 bg-yellow-100 dark:bg-yellow-900/20 rounded-full group-hover:scale-110 transition-transform">
+                                <Folder className="h-8 w-8 text-yellow-600 dark:text-yellow-500 fill-yellow-600/20" />
                               </div>
-                            </TableCell>
-                            <TableCell><Badge variant="outline">{d.materia}</Badge></TableCell>
-                            <TableCell className="text-sm text-muted-foreground">{d.fileName || 'N/A'}</TableCell>
-                            <TableCell>{d.downloadCount || 0}</TableCell>
-                            <TableCell className="text-right">
-                              <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => {
-                                 if (!confirm("Eliminare documento?")) return;
-                                 await fetch(`/api/libreria/documenti/${d.id}`, { method: 'DELETE' });
-                                 queryClient.invalidateQueries({ queryKey: ['libreria', 'documenti'] });
-                              }}><Trash2 className="h-4 w-4" /></Button>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
+                              <div>
+                                <span className="font-semibold block truncate max-w-[120px]">{m.nome}</span>
+                                <span className="text-xs text-muted-foreground">{docCount} documenti</span>
+                              </div>
+                            </CardContent>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Eliminare la cartella "${m.nome}"? I documenti al suo interno non saranno eliminati.`)) {
+                                  deleteFolderMutation.mutate(m.id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
+            ) : (
+              /* INSIDE FOLDER VIEW - Documents Table */
+              <div className="space-y-4">
+                {/* Back Button */}
+                <div className="flex items-center gap-3 bg-muted/30 p-4 rounded-lg border">
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedFolder(null)}>
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Torna alle cartelle
+                  </Button>
+                  <div className="h-6 w-px bg-border" />
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <FolderOpen className="h-5 w-5 text-primary" />
+                    {selectedFolder}
+                  </h3>
+                  <Badge variant="outline" className="ml-auto">
+                    {allDocs.filter((d: any) => d.materia === selectedFolder).length} documenti
+                  </Badge>
+                </div>
+
+                {/* Documents Table */}
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Titolo</TableHead>
+                          <TableHead>File</TableHead>
+                          <TableHead>Downloads</TableHead>
+                          <TableHead className="text-right">Azioni</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {allDocs.filter((d: any) => d.materia === selectedFolder).length === 0 ? (
+                          <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Nessun documento in questa cartella. Carica il primo!</TableCell></TableRow>
+                        ) : (
+                          allDocs.filter((d: any) => d.materia === selectedFolder).map((d: any) => (
+                            <TableRow key={d.id}>
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="h-4 w-4 text-red-500" />
+                                  <div>
+                                    <p>{d.titolo}</p>
+                                    {d.descrizione && <p className="text-xs text-muted-foreground">{d.descrizione}</p>}
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">{d.fileName || 'N/A'}</TableCell>
+                              <TableCell>{d.downloadCount || 0}</TableCell>
+                              <TableCell className="text-right">
+                                <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => {
+                                  if (!confirm("Eliminare documento?")) return;
+                                  await fetch(`/api/libreria/documenti/${d.id}`, { method: 'DELETE' });
+                                  queryClient.invalidateQueries({ queryKey: ['libreria', 'documenti'] });
+                                }}><Trash2 className="h-4 w-4" /></Button>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </div>
             )}
           </TabsContent>
 
@@ -470,7 +563,7 @@ export default function AdminContentPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-sm font-medium">Tipo *</label>
-                        <Select value={normativaForm.tipo} onValueChange={(v) => setNormativaForm({...normativaForm, tipo: v})}>
+                        <Select value={normativaForm.tipo} onValueChange={(v) => setNormativaForm({ ...normativaForm, tipo: v })}>
                           <SelectTrigger><SelectValue placeholder="Seleziona tipo" /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="Legge">Legge</SelectItem>
@@ -486,20 +579,20 @@ export default function AdminContentPage() {
                       </div>
                       <div className="space-y-2">
                         <label className="text-sm font-medium">Numero</label>
-                        <Input placeholder="es. 241" value={normativaForm.numero} onChange={(e) => setNormativaForm({...normativaForm, numero: e.target.value})} />
+                        <Input placeholder="es. 241" value={normativaForm.numero} onChange={(e) => setNormativaForm({ ...normativaForm, numero: e.target.value })} />
                       </div>
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Anno *</label>
-                      <Input type="number" placeholder="es. 1990" value={normativaForm.anno} onChange={(e) => setNormativaForm({...normativaForm, anno: e.target.value})} />
+                      <Input type="number" placeholder="es. 1990" value={normativaForm.anno} onChange={(e) => setNormativaForm({ ...normativaForm, anno: e.target.value })} />
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Titolo *</label>
-                      <Input placeholder="es. Norme in materia di procedimento amministrativo" value={normativaForm.titolo} onChange={(e) => setNormativaForm({...normativaForm, titolo: e.target.value})} />
+                      <Input placeholder="es. Norme in materia di procedimento amministrativo" value={normativaForm.titolo} onChange={(e) => setNormativaForm({ ...normativaForm, titolo: e.target.value })} />
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">URL Normattiva *</label>
-                      <Input placeholder="https://www.normattiva.it/..." value={normativaForm.urlNormattiva} onChange={(e) => setNormativaForm({...normativaForm, urlNormattiva: e.target.value})} />
+                      <Input placeholder="https://www.normattiva.it/..." value={normativaForm.urlNormattiva} onChange={(e) => setNormativaForm({ ...normativaForm, urlNormattiva: e.target.value })} />
                     </div>
                   </div>
                   <DialogFooter>
@@ -551,9 +644,9 @@ export default function AdminContentPage() {
                             </TableCell>
                             <TableCell className="text-right">
                               <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => {
-                                 if (!confirm("Eliminare norma?")) return;
-                                 await fetch(`/api/norme/${n.id}`, { method: 'DELETE' });
-                                 queryClient.invalidateQueries({ queryKey: ['norme', 'search'] });
+                                if (!confirm("Eliminare norma?")) return;
+                                await fetch(`/api/norme/${n.id}`, { method: 'DELETE' });
+                                queryClient.invalidateQueries({ queryKey: ['norme', 'search'] });
                               }}><Trash2 className="h-4 w-4" /></Button>
                             </TableCell>
                           </TableRow>
