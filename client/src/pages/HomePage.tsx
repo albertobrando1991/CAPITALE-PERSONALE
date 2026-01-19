@@ -3,6 +3,7 @@ import { HowItWorksSection } from "@/components/home/HowItWorksSection";
 import { VisualGallerySection } from "@/components/home/VisualGallerySection";
 import { BenefitsSection } from "@/components/home/BenefitsSection";
 import { PricingSection } from "@/components/home/PricingSection";
+import { FAQSection } from "@/components/home/FAQSection";
 import { FinalCTASection } from "@/components/home/FinalCTASection";
 import { HomeHeader } from "@/components/home/HomeHeader";
 import { HomeFooter } from "@/components/home/HomeFooter";
@@ -20,6 +21,7 @@ export default function HomePage() {
         <HowItWorksSection />
         <BenefitsSection />
         <PricingSection />
+        <FAQSection />
         <FinalCTASection />
       </main>
 
