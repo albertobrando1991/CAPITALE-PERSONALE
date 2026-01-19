@@ -504,10 +504,49 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
     }
   });
 
+  // Public endpoint: Get active official concorsi catalog (no auth required)
+  app.get("/api/official-concorsi", async (req: Request, res: Response) => {
+    try {
+      const concorsiList = await storage.getOfficialConcorsi(true); // Only active
+      res.json(concorsiList);
+    } catch (error) {
+      console.error("Error fetching official concorsi:", error);
+      res.status(500).json({ error: "Errore nel recupero catalogo concorsi" });
+    }
+  });
+
   app.post("/api/concorsi", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
-      const data = { ...req.body, userId };
+      const { officialConcorsoId, ...restBody } = req.body;
+
+      let data: any = { ...restBody, userId };
+
+      // If creating from official catalog, pre-fill data from the official concorso
+      if (officialConcorsoId) {
+        const officialConcorso = await storage.getOfficialConcorso(officialConcorsoId);
+        if (!officialConcorso) {
+          return res.status(404).json({ error: "Concorso ufficiale non trovato" });
+        }
+
+        // Pre-fill data from official concorso
+        data = {
+          ...data,
+          nome: officialConcorso.titolo,
+          titoloEnte: officialConcorso.ente,
+          posti: officialConcorso.posti,
+          scadenzaDomanda: officialConcorso.scadenzaDomanda
+            ? new Date(officialConcorso.scadenzaDomanda).toLocaleDateString('it-IT')
+            : null,
+          dataPresuntaEsame: officialConcorso.dataProva
+            ? new Date(officialConcorso.dataProva).toLocaleDateString('it-IT')
+            : null,
+          officialConcorsoId: officialConcorsoId,
+          // Store bando analysis from official catalog if available
+          bandoAnalysis: officialConcorso.bandoAnalysis || null,
+        };
+      }
+
       const validated = insertConcorsoSchema.parse(data);
       const concorso = await storage.createConcorso(validated);
       res.status(201).json(concorso);

@@ -441,6 +441,22 @@ router.post('/:concorsoId/errors', requireAuth, async (req: Request, res: Respon
       WHERE user_id = $1 AND concorso_id = $2
     `, [userId, concorsoId]);
 
+    // --- AUTO-ENROLL IN SRS ---
+    // Se c'è un errore, vogliamo rivederlo! Aggiungiamo automaticamente al calendario SRS.
+    try {
+      await db.query(`
+            INSERT INTO fase3_srs_items (
+                user_id, concorso_id, item_type, item_id, item_reference, next_review_date
+            )
+            VALUES ($1, $2, 'error_bin', $3, $4, CURRENT_DATE + INTERVAL '1 day')
+            ON CONFLICT (user_id, concorso_id, item_type, item_id) DO NOTHING
+        `, [userId, concorsoId, errorBinId, topic_name]);
+      console.log(`[POST /errors] Auto-enrolled topic "${topic_name}" into SRS`);
+    } catch (srsError) {
+      console.error("Error auto-enrolling in SRS:", srsError);
+      // Non blocchiamo l'errore p.incipale se SRS fallisce
+    }
+
     res.status(201).json(errorResult.rows[0]);
   } catch (error) {
     console.error('Errore POST error:', error);
@@ -542,7 +558,27 @@ router.post('/:concorsoId/sync', requireAuth, async (req: Request, res: Response
     }
 
     console.log(`[SYNC] Completed. Stats updated.`);
-    res.json({ success: true, stats: s });
+
+    // 5. AUTO-ENROLL BACKFILL for SRS
+    // Se ci sono Error Bin attivi che non sono in SRS, aggiungiamoli ora (retroattività)
+    const backfillResult = await db.query(`
+        INSERT INTO fase3_srs_items (user_id, concorso_id, item_type, item_id, item_reference, next_review_date)
+        SELECT user_id, concorso_id, 'error_bin', id, topic_name, CURRENT_DATE
+        FROM fase3_error_bins eb
+        WHERE eb.user_id = $1 AND eb.concorso_id = $2
+        AND eb.is_resolved = false
+        AND NOT EXISTS (
+            SELECT 1 FROM fase3_srs_items srs 
+            WHERE srs.user_id = eb.user_id AND srs.concorso_id = eb.concorso_id 
+            AND srs.item_type = 'error_bin' AND srs.item_id = eb.id
+        )
+    `, [userId, concorsoId]);
+
+    if (backfillResult.rowCount > 0) {
+      console.log(`[SYNC] Backfilled ${backfillResult.rowCount} error bins into SRS.`);
+    }
+
+    res.json({ success: true, stats: s, backfilled_srs: backfillResult.rowCount });
 
   } catch (error) {
     console.error('Errore SYNC:', error);
@@ -1274,8 +1310,8 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
             const correctLen = correctAnswer.length;
             const isNumber = !isNaN(Number(correctAnswer));
             const isDate = /^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(correctAnswer) ||
-                           /^\d{4}$/.test(correctAnswer) || // anno
-                           /^(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{4}$/i.test(correctAnswer);
+              /^\d{4}$/.test(correctAnswer) || // anno
+              /^(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{4}$/i.test(correctAnswer);
 
             // SMART DISTRACTOR SELECTION: Filtra per tipo e lunghezza simile
             let candidateDistractors: string[] = [];

@@ -9,6 +9,7 @@ import connectPg from "connect-pg-simple";
 import createMemoryStore from "memorystore";
 import { Pool } from "pg";
 import { storage } from "./storage";
+import { sendWelcomeEmail } from "./services/emailService";
 
 const MemoryStore = createMemoryStore(session);
 
@@ -46,7 +47,7 @@ const getOidcConfig = memoize(
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
-  
+
   let store: session.Store;
   if (process.env.DATABASE_URL) {
     const PgStore = connectPg(session);
@@ -121,13 +122,13 @@ export async function setupAuth(app: Express) {
   if (!config) {
     // Local Dev Mode (or Vercel environment)
     console.log("REPL_ID not found, using local auth mode");
-    
+
     app.post("/api/login", async (req, res) => {
       try {
         const { email, password } = req.body;
-        
+
         console.log(`[LOGIN] Tentativo di login per: ${email}`);
-        
+
         if (!email) {
           console.log("[LOGIN] ERRORE: Email mancante");
           return res.status(400).json({ error: "Email required" });
@@ -142,26 +143,31 @@ export async function setupAuth(app: Express) {
         const userId = existingUser?.id ?? email.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
 
         if (!existingUser) {
-           console.log("[LOGIN] Creazione nuovo utente mock...");
-           
-           const mockUser = {
-              id: userId,
-              email: email,
-              firstName: email.split('@')[0],
-              lastName: "Dev",
-              profileImageUrl: `https://ui-avatars.com/api/?name=${email}&background=random`
-           };
-           
-           await storage.upsertUser(mockUser);
-           console.log("[LOGIN] Utente creato");
+          console.log("[LOGIN] Creazione nuovo utente mock...");
+
+          const mockUser = {
+            id: userId,
+            email: email,
+            firstName: email.split('@')[0],
+            lastName: "Dev",
+            profileImageUrl: `https://ui-avatars.com/api/?name=${email}&background=random`
+          };
+
+          await storage.upsertUser(mockUser);
+          console.log("[LOGIN] Utente creato");
+
+          // Send Welcome Email
+          sendWelcomeEmail(mockUser.email, mockUser.firstName).catch(err =>
+            console.error("[LOGIN] Errore invio email benvenuto:", err)
+          );
         }
-        
+
         // Re-fetch user to get all fields
         const user = await storage.getUser(userId);
         if (!user) {
           return res.status(500).json({ error: "User not found after login" });
         }
-        
+
         const sessionUser = {
           claims: {
             sub: user.id,
@@ -174,7 +180,7 @@ export async function setupAuth(app: Express) {
           email: user.email,
           expires_at: Math.floor(Date.now() / 1000) + 86400 * 7 // 7 days
         };
-        
+
         console.log("[LOGIN] Inizio creazione sessione...");
         req.login(sessionUser, (err) => {
           if (err) {
@@ -221,10 +227,27 @@ export async function setupAuth(app: Express) {
     tokens: any,
     verified: passport.AuthenticateCallback
   ) => {
-    const user: any = {};
-    updateUserSession(user, tokens);
-    await upsertUser(tokens.claims());
-    verified(null, user);
+    try {
+      const user: any = {};
+      const claims = tokens.claims();
+
+      updateUserSession(user, tokens);
+
+      // Check if new user
+      const existingUser = await storage.getUser(claims.sub);
+
+      await upsertUser(claims);
+      verified(null, user);
+
+      // Send welcome email if new
+      if (!existingUser && claims.email) {
+        console.log(`[AUTH] Nuovo utente registrato: ${claims.email}. Invio email benvenuto.`);
+        sendWelcomeEmail(claims.email, claims.given_name || claims.first_name || "Utente").catch(console.error);
+      }
+    } catch (error) {
+      console.error("[AUTH] Verify error:", error);
+      verified(error as Error, undefined);
+    }
   };
 
   const registeredStrategies = new Set<string>();

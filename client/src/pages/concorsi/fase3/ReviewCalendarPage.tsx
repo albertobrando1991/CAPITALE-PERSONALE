@@ -25,7 +25,7 @@ export default function ReviewCalendarPage() {
   const [, params] = useRoute("/concorsi/:concorsoId/fase3/review");
   const concorsoId = params?.concorsoId;
   const [, setLocation] = useLocation();
-  const { srsItemsDueToday, fetchSRSItemsDueToday, reviewSRSItem, refreshAll } = useFase3();
+  const { srsItemsDueToday, fetchSRSItemsDueToday, reviewSRSItem, refreshAll, forceSync } = useFase3();
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
   const [calendarData, setCalendarData] = useState<any[]>([]);
@@ -120,9 +120,8 @@ export default function ReviewCalendarPage() {
                     {next7Days.map((day, index) => (
                       <div
                         key={index}
-                        className={`p-3 border rounded-lg text-center ${
-                          day.count > 0 ? 'border-blue-500 bg-blue-50 dark:bg-blue-950' : 'border-border'
-                        }`}
+                        className={`p-3 border rounded-lg text-center ${day.count > 0 ? 'border-blue-500 bg-blue-50 dark:bg-blue-950' : 'border-border'
+                          }`}
                       >
                         <div className="text-xs text-muted-foreground mb-1">
                           {day.date.toLocaleDateString('it-IT', { weekday: 'short' })}
@@ -142,6 +141,12 @@ export default function ReviewCalendarPage() {
               <Button size="lg" onClick={handleBackToDashboard}>
                 Torna alla Dashboard
               </Button>
+
+              <div className="mt-4">
+                <Button variant="outline" size="sm" onClick={() => forceSync(concorsoId || '')}>
+                  🔄 Sincronizza e Analizza Pregresso
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

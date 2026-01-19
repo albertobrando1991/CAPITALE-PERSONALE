@@ -44,7 +44,8 @@ import { useBenessere } from "@/contexts/BenessereContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ProssimeRevisioniWidget } from "@/components/ProssimeRevisioniWidget";
-import type { Concorso, Simulazione } from "@shared/schema";
+import { OfficialConcorsoSelector } from "@/components/OfficialConcorsoSelector";
+import type { Concorso, Simulazione, OfficialConcorso } from "@shared/schema";
 
 export default function DashboardPage() {
   const { user } = useAuth();
