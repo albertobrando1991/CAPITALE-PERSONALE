@@ -132,7 +132,7 @@ export default function AdminPodcastPage() {
             formData.append('argomento', uploadForm.argomento);
             formData.append('durata', uploadForm.durata);
 
-            const res = await fetch('/api/podcast/upload', {
+            const res = await fetch('/api/admin/podcast/upload', {
                 method: 'POST',
                 body: formData,
             });
