@@ -7,6 +7,7 @@ import { isAdmin, isStaff } from './utils/auth-helpers';
 import { getUserId } from './middleware/auth';
 import multer from 'multer';
 import { z } from 'zod';
+import { storage } from './storage';
 
 const router = Router();
 
@@ -898,6 +899,194 @@ router.get('/users/:id', requireAdmin, async (req, res) => {
   } catch (error: any) {
     console.error('❌ Errore dettaglio utente:', error);
     res.status(500).json({ error: 'Errore recupero utente' });
+  }
+});
+
+// ============================================
+// OFFICIAL CONCORSI CATALOG (ADMIN-MANAGED)
+// ============================================
+
+// Zod validation schema for official concorso
+const officialConcorsoInputSchema = z.object({
+  titolo: z.string().min(3, 'Titolo troppo corto'),
+  ente: z.string().min(2, 'Ente obbligatorio'),
+  descrizione: z.string().optional().nullable(),
+  scadenzaDomanda: z.string().optional().nullable(),
+  dataProva: z.string().optional().nullable(),
+  posti: z.number().int().positive().optional().nullable(),
+  linkBando: z.string().url('URL bando non valido').optional().nullable().or(z.literal('')),
+  linkPaginaUfficiale: z.string().url('URL pagina non valido').optional().nullable().or(z.literal('')),
+  active: z.boolean().optional(),
+  bandoAnalysis: z.any().optional().nullable(),
+  imageUrl: z.string().url('URL immagine non valido').optional().nullable().or(z.literal('')),
+});
+
+// GET /api/admin/official-concorsi - List all official concorsi
+router.get('/official-concorsi', requireAdmin, async (req, res) => {
+  try {
+    const concorsiList = await storage.getOfficialConcorsi(false);
+    console.log(`✅ Lista concorsi ufficiali: ${concorsiList.length} elementi`);
+    res.json(concorsiList);
+  } catch (error: any) {
+    console.error('❌ Errore recupero concorsi ufficiali:', error);
+    res.status(500).json({ error: 'Errore recupero concorsi ufficiali' });
+  }
+});
+
+// POST /api/admin/official-concorsi - Create new official concorso
+router.post('/official-concorsi', requireAdmin, async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const parsed = officialConcorsoInputSchema.parse(req.body);
+
+    // Transform dates if provided
+    const data: any = {
+      titolo: parsed.titolo,
+      ente: parsed.ente,
+      descrizione: parsed.descrizione || null,
+      posti: parsed.posti || null,
+      linkBando: parsed.linkBando || null,
+      linkPaginaUfficiale: parsed.linkPaginaUfficiale || null,
+      active: parsed.active ?? true,
+      bandoAnalysis: parsed.bandoAnalysis || null,
+      imageUrl: parsed.imageUrl || null,
+    };
+
+    // Parse dates if provided
+    if (parsed.scadenzaDomanda) {
+      data.scadenzaDomanda = new Date(parsed.scadenzaDomanda);
+    }
+    if (parsed.dataProva) {
+      data.dataProva = new Date(parsed.dataProva);
+    }
+
+    const newConcorso = await storage.createOfficialConcorso(data);
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: 'create_official_concorso',
+      entityType: 'official_concorso',
+      entityId: newConcorso.id,
+      details: { titolo: newConcorso.titolo, ente: newConcorso.ente },
+    });
+
+    console.log(`✅ Concorso ufficiale creato: ${newConcorso.titolo} (${newConcorso.ente})`);
+    res.json(newConcorso);
+  } catch (error: any) {
+    console.error('❌ Errore creazione concorso ufficiale:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors[0].message });
+    }
+    res.status(500).json({ error: 'Errore creazione concorso ufficiale' });
+  }
+});
+
+// GET /api/admin/official-concorsi/:id - Get single official concorso
+router.get('/official-concorsi/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const concorso = await storage.getOfficialConcorso(id);
+
+    if (!concorso) {
+      return res.status(404).json({ error: 'Concorso ufficiale non trovato' });
+    }
+
+    res.json(concorso);
+  } catch (error: any) {
+    console.error('❌ Errore recupero concorso ufficiale:', error);
+    res.status(500).json({ error: 'Errore recupero concorso ufficiale' });
+  }
+});
+
+// PATCH /api/admin/official-concorsi/:id - Update official concorso
+router.patch('/official-concorsi/:id', requireAdmin, async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const { id } = req.params;
+    const parsed = officialConcorsoInputSchema.partial().parse(req.body);
+
+    // Check if exists
+    const existing = await storage.getOfficialConcorso(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Concorso ufficiale non trovato' });
+    }
+
+    // Transform the update data
+    const updateData: any = {};
+
+    if (parsed.titolo !== undefined) updateData.titolo = parsed.titolo;
+    if (parsed.ente !== undefined) updateData.ente = parsed.ente;
+    if (parsed.descrizione !== undefined) updateData.descrizione = parsed.descrizione || null;
+    if (parsed.posti !== undefined) updateData.posti = parsed.posti || null;
+    if (parsed.linkBando !== undefined) updateData.linkBando = parsed.linkBando || null;
+    if (parsed.linkPaginaUfficiale !== undefined) updateData.linkPaginaUfficiale = parsed.linkPaginaUfficiale || null;
+    if (parsed.active !== undefined) updateData.active = parsed.active;
+    if (parsed.bandoAnalysis !== undefined) updateData.bandoAnalysis = parsed.bandoAnalysis || null;
+    if (parsed.imageUrl !== undefined) updateData.imageUrl = parsed.imageUrl || null;
+
+    // Parse dates if provided
+    if (parsed.scadenzaDomanda !== undefined) {
+      updateData.scadenzaDomanda = parsed.scadenzaDomanda ? new Date(parsed.scadenzaDomanda) : null;
+    }
+    if (parsed.dataProva !== undefined) {
+      updateData.dataProva = parsed.dataProva ? new Date(parsed.dataProva) : null;
+    }
+
+    const updated = await storage.updateOfficialConcorso(id, updateData);
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: 'update_official_concorso',
+      entityType: 'official_concorso',
+      entityId: id,
+      details: { changes: Object.keys(updateData) },
+    });
+
+    console.log(`✅ Concorso ufficiale aggiornato: ${updated?.titolo}`);
+    res.json(updated);
+  } catch (error: any) {
+    console.error('❌ Errore aggiornamento concorso ufficiale:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors[0].message });
+    }
+    res.status(500).json({ error: 'Errore aggiornamento concorso ufficiale' });
+  }
+});
+
+// DELETE /api/admin/official-concorsi/:id - Delete official concorso
+router.delete('/official-concorsi/:id', requireAdmin, async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const { id } = req.params;
+
+    // Check if exists
+    const existing = await storage.getOfficialConcorso(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Concorso ufficiale non trovato' });
+    }
+
+    const deleted = await storage.deleteOfficialConcorso(id);
+
+    if (!deleted) {
+      return res.status(500).json({ error: 'Errore eliminazione concorso ufficiale' });
+    }
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: 'delete_official_concorso',
+      entityType: 'official_concorso',
+      entityId: id,
+      details: { titolo: existing.titolo, ente: existing.ente },
+    });
+
+    console.log(`✅ Concorso ufficiale eliminato: ${existing.titolo}`);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('❌ Errore eliminazione concorso ufficiale:', error);
+    res.status(500).json({ error: 'Errore eliminazione concorso ufficiale' });
   }
 });
 

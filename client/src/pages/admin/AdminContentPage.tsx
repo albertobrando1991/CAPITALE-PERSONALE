@@ -1,17 +1,20 @@
-
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Plus, Search, Loader2, Trash2, Layers, Library, ScrollText, Upload, ExternalLink, FolderPlus, Folder, FolderOpen, ArrowLeft } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { FileText, Plus, Search, Loader2, Trash2, Layers, Library, ScrollText, Upload, ExternalLink, FolderPlus, Folder, FolderOpen, ArrowLeft, Building2, Calendar, Users, Pencil, Globe } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import type { OfficialConcorso } from "@shared/schema";
 
 interface Materia {
   id: string;
@@ -19,15 +22,35 @@ interface Materia {
   ordine: number;
 }
 
+// Initial form state for official concorso
+const initialOfficialConcorsoForm = {
+  titolo: "",
+  ente: "",
+  descrizione: "",
+  scadenzaDomanda: "",
+  dataProva: "",
+  posti: "",
+  linkBando: "",
+  linkPaginaUfficiale: "",
+  imageUrl: "",
+  active: true,
+};
+
 export default function AdminContentPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("concorsi");
+  const [concorsiSubTab, setConcorsiSubTab] = useState<"catalogo" | "utenti">("catalogo");
   const [searchTerm, setSearchTerm] = useState("");
 
-  // State for Concorso Dialog
+  // State for Concorso Dialog (user concorsi)
   const [isConcorsoOpen, setIsConcorsoOpen] = useState(false);
   const [concorsoForm, setConcorsoForm] = useState({ nome: "", descrizione: "", dataScadenza: "" });
+
+  // State for Official Concorso Dialog
+  const [isOfficialConcorsoOpen, setIsOfficialConcorsoOpen] = useState(false);
+  const [officialConcorsoForm, setOfficialConcorsoForm] = useState(initialOfficialConcorsoForm);
+  const [editingOfficialConcorso, setEditingOfficialConcorso] = useState<OfficialConcorso | null>(null);
 
   // State for Normativa Dialog
   const [isNormativaOpen, setIsNormativaOpen] = useState(false);
@@ -48,12 +71,22 @@ export default function AdminContentPage() {
   const [newFolderName, setNewFolderName] = useState("");
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
 
-  // Fetch Concorsi
+  // Fetch Concorsi (user concorsi)
   const { data: concorsi, isLoading: isLoadingConcorsi } = useQuery({
     queryKey: ['concorsi'],
     queryFn: async () => {
       const res = await fetch('/api/concorsi');
       if (!res.ok) throw new Error('Errore caricamento concorsi');
+      return res.json();
+    }
+  });
+
+  // Fetch Official Concorsi (admin catalog)
+  const { data: officialConcorsi = [], isLoading: isLoadingOfficialConcorsi } = useQuery<OfficialConcorso[]>({
+    queryKey: ['official-concorsi'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/official-concorsi');
+      if (!res.ok) throw new Error('Errore caricamento catalogo concorsi');
       return res.json();
     }
   });
@@ -106,6 +139,139 @@ export default function AdminContentPage() {
       queryClient.invalidateQueries({ queryKey: ['concorsi'] });
     }
   });
+
+  // Official Concorsi Mutations
+  const createOfficialConcorsoMutation = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        ...officialConcorsoForm,
+        posti: officialConcorsoForm.posti ? parseInt(officialConcorsoForm.posti) : null,
+        scadenzaDomanda: officialConcorsoForm.scadenzaDomanda || null,
+        dataProva: officialConcorsoForm.dataProva || null,
+        linkBando: officialConcorsoForm.linkBando || null,
+        linkPaginaUfficiale: officialConcorsoForm.linkPaginaUfficiale || null,
+        imageUrl: officialConcorsoForm.imageUrl || null,
+      };
+      const res = await fetch('/api/admin/official-concorsi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Errore creazione concorso ufficiale');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Concorso ufficiale creato", description: "Il concorso è stato aggiunto al catalogo." });
+      setIsOfficialConcorsoOpen(false);
+      setOfficialConcorsoForm(initialOfficialConcorsoForm);
+      queryClient.invalidateQueries({ queryKey: ['official-concorsi'] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Errore", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const updateOfficialConcorsoMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingOfficialConcorso) throw new Error('Nessun concorso selezionato');
+      const payload = {
+        ...officialConcorsoForm,
+        posti: officialConcorsoForm.posti ? parseInt(officialConcorsoForm.posti) : null,
+        scadenzaDomanda: officialConcorsoForm.scadenzaDomanda || null,
+        dataProva: officialConcorsoForm.dataProva || null,
+        linkBando: officialConcorsoForm.linkBando || null,
+        linkPaginaUfficiale: officialConcorsoForm.linkPaginaUfficiale || null,
+        imageUrl: officialConcorsoForm.imageUrl || null,
+      };
+      const res = await fetch(`/api/admin/official-concorsi/${editingOfficialConcorso.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Errore aggiornamento concorso');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Concorso aggiornato", description: "Le modifiche sono state salvate." });
+      setIsOfficialConcorsoOpen(false);
+      setOfficialConcorsoForm(initialOfficialConcorsoForm);
+      setEditingOfficialConcorso(null);
+      queryClient.invalidateQueries({ queryKey: ['official-concorsi'] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Errore", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const deleteOfficialConcorsoMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/official-concorsi/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Errore eliminazione concorso');
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Concorso eliminato" });
+      queryClient.invalidateQueries({ queryKey: ['official-concorsi'] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Errore", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const toggleOfficialConcorsoActiveMutation = useMutation({
+    mutationFn: async ({ id, active }: { id: string; active: boolean }) => {
+      const res = await fetch(`/api/admin/official-concorsi/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active })
+      });
+      if (!res.ok) throw new Error('Errore aggiornamento stato');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['official-concorsi'] });
+    }
+  });
+
+  // Helper to open edit dialog
+  const openEditOfficialConcorso = (concorso: OfficialConcorso) => {
+    setEditingOfficialConcorso(concorso);
+    setOfficialConcorsoForm({
+      titolo: concorso.titolo,
+      ente: concorso.ente,
+      descrizione: concorso.descrizione || "",
+      scadenzaDomanda: concorso.scadenzaDomanda ? new Date(concorso.scadenzaDomanda).toISOString().split('T')[0] : "",
+      dataProva: concorso.dataProva ? new Date(concorso.dataProva).toISOString().split('T')[0] : "",
+      posti: concorso.posti?.toString() || "",
+      linkBando: concorso.linkBando || "",
+      linkPaginaUfficiale: concorso.linkPaginaUfficiale || "",
+      imageUrl: concorso.imageUrl || "",
+      active: concorso.active ?? true,
+    });
+    setIsOfficialConcorsoOpen(true);
+  };
+
+  // Helper to format date for display
+  const formatDate = (date: string | Date | null | undefined) => {
+    if (!date) return "-";
+    const d = new Date(date);
+    return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
+
+  // Check if deadline is close (within 30 days)
+  const isDeadlineClose = (date: string | Date | null | undefined) => {
+    if (!date) return false;
+    const d = new Date(date);
+    const now = new Date();
+    const diffDays = Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 30;
+  };
 
   const createNormativaMutation = useMutation({
     mutationFn: async () => {
@@ -262,66 +428,388 @@ export default function AdminContentPage() {
             <TabsTrigger value="normativa" className="flex gap-2"><ScrollText className="h-4 w-4" /> Normativa</TabsTrigger>
           </TabsList>
 
-          {/* TAB CONCORSI */}
+          {/* TAB CONCORSI - With Sub-tabs */}
           <TabsContent value="concorsi" className="space-y-4 mt-4">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Cerca concorso..."
-                  className="w-[250px]"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              <Dialog open={isConcorsoOpen} onOpenChange={setIsConcorsoOpen}>
-                <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4" /> Nuovo Concorso</Button></DialogTrigger>
-                <DialogContent>
-                  <DialogHeader><DialogTitle>Crea Nuovo Concorso</DialogTitle></DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Nome</label>
-                      <Input value={concorsoForm.nome} onChange={(e) => setConcorsoForm({ ...concorsoForm, nome: e.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Descrizione</label>
-                      <Input value={concorsoForm.descrizione} onChange={(e) => setConcorsoForm({ ...concorsoForm, descrizione: e.target.value })} />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsConcorsoOpen(false)}>Annulla</Button>
-                    <Button onClick={() => createConcorsoMutation.mutate()} disabled={createConcorsoMutation.isPending}>
-                      {createConcorsoMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Crea
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+            {/* Sub-tabs Toggle */}
+            <div className="flex items-center gap-4 border-b pb-4">
+              <Button
+                variant={concorsiSubTab === "catalogo" ? "default" : "ghost"}
+                onClick={() => setConcorsiSubTab("catalogo")}
+                className="flex items-center gap-2"
+              >
+                <Globe className="h-4 w-4" />
+                Catalogo Ufficiale
+              </Button>
+              <Button
+                variant={concorsiSubTab === "utenti" ? "default" : "ghost"}
+                onClick={() => setConcorsiSubTab("utenti")}
+                className="flex items-center gap-2"
+              >
+                <Users className="h-4 w-4" />
+                Concorsi Utenti
+              </Button>
             </div>
 
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow><TableHead>Nome</TableHead><TableHead>Descrizione</TableHead><TableHead>Azioni</TableHead></TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {concorsi?.map((c: any) => (
-                      <TableRow key={c.id}>
-                        <TableCell className="font-medium">{c.nome}</TableCell>
-                        <TableCell>{c.descrizione}</TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => {
-                            if (!confirm("Eliminare?")) return;
-                            await fetch(`/api/concorsi/${c.id}`, { method: 'DELETE' });
-                            queryClient.invalidateQueries({ queryKey: ['concorsi'] });
-                          }}><Trash2 className="h-4 w-4" /></Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+            {/* VIEW A: Catalogo Ufficiale */}
+            {concorsiSubTab === "catalogo" && (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <Search className="h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Cerca nel catalogo..."
+                      className="w-[250px]"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <Dialog open={isOfficialConcorsoOpen} onOpenChange={(open) => {
+                    setIsOfficialConcorsoOpen(open);
+                    if (!open) {
+                      setEditingOfficialConcorso(null);
+                      setOfficialConcorsoForm(initialOfficialConcorsoForm);
+                    }
+                  }}>
+                    <DialogTrigger asChild>
+                      <Button><Plus className="mr-2 h-4 w-4" /> Nuovo Concorso</Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>{editingOfficialConcorso ? "Modifica Concorso" : "Nuovo Concorso Ufficiale"}</DialogTitle>
+                        <DialogDescription>
+                          {editingOfficialConcorso
+                            ? "Modifica i dati del concorso nel catalogo ufficiale."
+                            : "Aggiungi un nuovo concorso al catalogo ufficiale. Sarà visibile a tutti gli utenti."}
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Titolo Concorso *</label>
+                            <Input
+                              value={officialConcorsoForm.titolo}
+                              onChange={(e) => setOfficialConcorsoForm({ ...officialConcorsoForm, titolo: e.target.value })}
+                              placeholder="es. Concorso 500 Funzionari"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Ente *</label>
+                            <Input
+                              value={officialConcorsoForm.ente}
+                              onChange={(e) => setOfficialConcorsoForm({ ...officialConcorsoForm, ente: e.target.value })}
+                              placeholder="es. Agenzia delle Entrate"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Descrizione</label>
+                          <Textarea
+                            value={officialConcorsoForm.descrizione}
+                            onChange={(e) => setOfficialConcorsoForm({ ...officialConcorsoForm, descrizione: e.target.value })}
+                            placeholder="Breve descrizione del concorso e delle posizioni"
+                            rows={3}
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Scadenza Domanda</label>
+                            <Input
+                              type="date"
+                              value={officialConcorsoForm.scadenzaDomanda}
+                              onChange={(e) => setOfficialConcorsoForm({ ...officialConcorsoForm, scadenzaDomanda: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Data Prova</label>
+                            <Input
+                              type="date"
+                              value={officialConcorsoForm.dataProva}
+                              onChange={(e) => setOfficialConcorsoForm({ ...officialConcorsoForm, dataProva: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Posti Disponibili</label>
+                            <Input
+                              type="number"
+                              value={officialConcorsoForm.posti}
+                              onChange={(e) => setOfficialConcorsoForm({ ...officialConcorsoForm, posti: e.target.value })}
+                              placeholder="es. 500"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Link Bando (PDF)</label>
+                            <Input
+                              value={officialConcorsoForm.linkBando}
+                              onChange={(e) => setOfficialConcorsoForm({ ...officialConcorsoForm, linkBando: e.target.value })}
+                              placeholder="https://..."
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Link Pagina Ufficiale (inPA)</label>
+                            <Input
+                              value={officialConcorsoForm.linkPaginaUfficiale}
+                              onChange={(e) => setOfficialConcorsoForm({ ...officialConcorsoForm, linkPaginaUfficiale: e.target.value })}
+                              placeholder="https://www.inpa.gov.it/..."
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">URL Logo/Immagine</label>
+                          <Input
+                            value={officialConcorsoForm.imageUrl}
+                            onChange={(e) => setOfficialConcorsoForm({ ...officialConcorsoForm, imageUrl: e.target.value })}
+                            placeholder="https://..."
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={officialConcorsoForm.active}
+                            onCheckedChange={(checked) => setOfficialConcorsoForm({ ...officialConcorsoForm, active: checked })}
+                          />
+                          <label className="text-sm font-medium">Concorso Attivo</label>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => {
+                          setIsOfficialConcorsoOpen(false);
+                          setEditingOfficialConcorso(null);
+                          setOfficialConcorsoForm(initialOfficialConcorsoForm);
+                        }}>Annulla</Button>
+                        <Button
+                          onClick={() => editingOfficialConcorso
+                            ? updateOfficialConcorsoMutation.mutate()
+                            : createOfficialConcorsoMutation.mutate()
+                          }
+                          disabled={
+                            createOfficialConcorsoMutation.isPending ||
+                            updateOfficialConcorsoMutation.isPending ||
+                            !officialConcorsoForm.titolo ||
+                            !officialConcorsoForm.ente
+                          }
+                        >
+                          {(createOfficialConcorsoMutation.isPending || updateOfficialConcorsoMutation.isPending) && (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          )}
+                          {editingOfficialConcorso ? "Salva Modifiche" : "Crea Concorso"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+
+                {isLoadingOfficialConcorsi ? (
+                  <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
+                ) : (
+                  <Card>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Ente</TableHead>
+                            <TableHead>Titolo Concorso</TableHead>
+                            <TableHead>Scadenza</TableHead>
+                            <TableHead>Posti</TableHead>
+                            <TableHead>Stato</TableHead>
+                            <TableHead className="text-right">Azioni</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {officialConcorsi.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                                Nessun concorso nel catalogo. Aggiungi il primo!
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            officialConcorsi
+                              .filter(c =>
+                                !searchTerm ||
+                                c.titolo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                c.ente.toLowerCase().includes(searchTerm.toLowerCase())
+                              )
+                              .map((c) => (
+                                <TableRow key={c.id}>
+                                  <TableCell>
+                                    <div className="flex items-center gap-2">
+                                      <Avatar className="h-8 w-8">
+                                        {c.imageUrl ? (
+                                          <AvatarImage src={c.imageUrl} alt={c.ente} />
+                                        ) : null}
+                                        <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                                          {c.ente.substring(0, 2).toUpperCase()}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <span className="font-medium">{c.ente}</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div>
+                                      <p className="font-medium">{c.titolo}</p>
+                                      {c.descrizione && (
+                                        <p className="text-xs text-muted-foreground line-clamp-1">{c.descrizione}</p>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    {c.scadenzaDomanda ? (
+                                      <span className={isDeadlineClose(c.scadenzaDomanda) ? "text-orange-600 font-medium" : ""}>
+                                        {formatDate(c.scadenzaDomanda)}
+                                        {isDeadlineClose(c.scadenzaDomanda) && (
+                                          <Badge variant="outline" className="ml-2 text-orange-600 border-orange-600">
+                                            Scade presto
+                                          </Badge>
+                                        )}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground">-</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    {c.posti ? (
+                                      <Badge variant="secondary">{c.posti}</Badge>
+                                    ) : (
+                                      <span className="text-muted-foreground">-</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Switch
+                                      checked={c.active ?? true}
+                                      onCheckedChange={(checked) =>
+                                        toggleOfficialConcorsoActiveMutation.mutate({ id: c.id, active: checked })
+                                      }
+                                    />
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <div className="flex justify-end gap-1">
+                                      {c.linkPaginaUfficiale && (
+                                        <Button variant="ghost" size="icon" asChild>
+                                          <a href={c.linkPaginaUfficiale} target="_blank" rel="noreferrer">
+                                            <ExternalLink className="h-4 w-4" />
+                                          </a>
+                                        </Button>
+                                      )}
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => openEditOfficialConcorso(c)}
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="text-destructive"
+                                        onClick={() => {
+                                          if (confirm(`Eliminare il concorso "${c.titolo}"?`)) {
+                                            deleteOfficialConcorsoMutation.mutate(c.id);
+                                          }
+                                        }}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+
+            {/* VIEW B: Concorsi Utenti */}
+            {concorsiSubTab === "utenti" && (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <Search className="h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Cerca concorso utente..."
+                      className="w-[250px]"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <Dialog open={isConcorsoOpen} onOpenChange={setIsConcorsoOpen}>
+                    <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4" /> Nuovo Concorso</Button></DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader><DialogTitle>Crea Nuovo Concorso</DialogTitle></DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Nome</label>
+                          <Input value={concorsoForm.nome} onChange={(e) => setConcorsoForm({ ...concorsoForm, nome: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Descrizione</label>
+                          <Input value={concorsoForm.descrizione} onChange={(e) => setConcorsoForm({ ...concorsoForm, descrizione: e.target.value })} />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsConcorsoOpen(false)}>Annulla</Button>
+                        <Button onClick={() => createConcorsoMutation.mutate()} disabled={createConcorsoMutation.isPending}>
+                          {createConcorsoMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Crea
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      Concorsi creati dagli utenti ({concorsi?.length || 0})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>Descrizione</TableHead>
+                          <TableHead>Creato il</TableHead>
+                          <TableHead className="text-right">Azioni</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {!concorsi || concorsi.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                              Nessun concorso creato dagli utenti.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          concorsi
+                            .filter((c: any) =>
+                              !searchTerm ||
+                              c.nome?.toLowerCase().includes(searchTerm.toLowerCase())
+                            )
+                            .map((c: any) => (
+                              <TableRow key={c.id}>
+                                <TableCell className="font-medium">{c.nome}</TableCell>
+                                <TableCell>{c.descrizione || "-"}</TableCell>
+                                <TableCell>{formatDate(c.createdAt)}</TableCell>
+                                <TableCell className="text-right">
+                                  <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => {
+                                    if (!confirm("Eliminare?")) return;
+                                    await fetch(`/api/concorsi/${c.id}`, { method: 'DELETE' });
+                                    queryClient.invalidateQueries({ queryKey: ['concorsi'] });
+                                  }}><Trash2 className="h-4 w-4" /></Button>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
           </TabsContent>
 
           {/* TAB LIBRERIA PUBBLICA */}

@@ -34,6 +34,7 @@ export const concorsi = pgTable("concorsi", {
   oreSettimanali: integer("ore_settimanali"),
   dataInizioStudio: text("data_inizio_studio"), // Changed to text to match DB potential mismatch
   bandoAnalysis: jsonb("bando_analysis"),
+  officialConcorsoId: varchar("official_concorso_id"), // Link to official catalog
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -41,3 +42,28 @@ export const concorsi = pgTable("concorsi", {
 export const insertConcorsoSchema = createInsertSchema(concorsi).omit({ id: true, createdAt: true, updatedAt: true });
 export type Concorso = typeof concorsi.$inferSelect;
 export type InsertConcorso = typeof concorsi.$inferInsert;
+
+// ============================================
+// OFFICIAL CONCORSI CATALOG (ADMIN-MANAGED)
+// ============================================
+
+export const officialConcorsi = pgTable("official_concorsi", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  titolo: text("titolo").notNull(),
+  ente: text("ente").notNull(),
+  descrizione: text("descrizione"),
+  scadenzaDomanda: timestamp("scadenza_domanda"),
+  dataProva: timestamp("data_prova"),
+  posti: integer("posti"),
+  linkBando: text("link_bando"),
+  linkPaginaUfficiale: text("link_pagina_ufficiale"),
+  active: boolean("active").default(true),
+  bandoAnalysis: jsonb("bando_analysis"),
+  imageUrl: text("image_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOfficialConcorsoSchema = createInsertSchema(officialConcorsi).omit({ id: true, createdAt: true, updatedAt: true });
+export type OfficialConcorso = typeof officialConcorsi.$inferSelect;
+export type InsertOfficialConcorso = typeof officialConcorsi.$inferInsert;

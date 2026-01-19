@@ -1,7 +1,7 @@
-import { 
-  type User, 
-  type UpsertUser, 
-  type Concorso, 
+import {
+  type User,
+  type UpsertUser,
+  type Concorso,
   type InsertConcorso,
   type UserProgress,
   type InsertUserProgress,
@@ -12,9 +12,11 @@ import {
   type Simulazione,
   type InsertSimulazione,
   type CalendarEventItem,
-  type InsertCalendarEvent
+  type InsertCalendarEvent,
+  type OfficialConcorso,
+  type InsertOfficialConcorso
 } from "../shared/schema";
-import { users, concorsi, userProgress, materials, flashcards, simulazioni, calendarEvents } from "../shared/schema";
+import { users, concorsi, userProgress, materials, flashcards, simulazioni, calendarEvents, officialConcorsi } from "../shared/schema";
 import { db } from "./db";
 import { eq, and, desc, or } from "drizzle-orm";
 
@@ -50,6 +52,13 @@ export interface IStorage {
   createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEventItem>;
   updateCalendarEvent(id: string, userId: string, data: Partial<InsertCalendarEvent>): Promise<CalendarEventItem | undefined>;
   deleteCalendarEvent(id: string, userId: string): Promise<boolean>;
+
+  // Official Concorsi (Admin Catalog)
+  getOfficialConcorsi(activeOnly?: boolean): Promise<OfficialConcorso[]>;
+  getOfficialConcorso(id: string): Promise<OfficialConcorso | undefined>;
+  createOfficialConcorso(data: InsertOfficialConcorso): Promise<OfficialConcorso>;
+  updateOfficialConcorso(id: string, data: Partial<InsertOfficialConcorso>): Promise<OfficialConcorso | undefined>;
+  deleteOfficialConcorso(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -383,6 +392,54 @@ export class DatabaseStorage implements IStorage {
     const [deleted] = await db
       .delete(calendarEvents)
       .where(and(eq(calendarEvents.id, id), eq(calendarEvents.userId, userId)))
+      .returning();
+    return !!deleted;
+  }
+
+  // Official Concorsi (Admin Catalog) Implementation
+  async getOfficialConcorsi(activeOnly: boolean = false): Promise<OfficialConcorso[]> {
+    if (activeOnly) {
+      return await db
+        .select()
+        .from(officialConcorsi)
+        .where(eq(officialConcorsi.active, true))
+        .orderBy(desc(officialConcorsi.createdAt));
+    }
+    return await db
+      .select()
+      .from(officialConcorsi)
+      .orderBy(desc(officialConcorsi.createdAt));
+  }
+
+  async getOfficialConcorso(id: string): Promise<OfficialConcorso | undefined> {
+    const [concorso] = await db
+      .select()
+      .from(officialConcorsi)
+      .where(eq(officialConcorsi.id, id));
+    return concorso;
+  }
+
+  async createOfficialConcorso(data: InsertOfficialConcorso): Promise<OfficialConcorso> {
+    const [newConcorso] = await db
+      .insert(officialConcorsi)
+      .values(data)
+      .returning();
+    return newConcorso;
+  }
+
+  async updateOfficialConcorso(id: string, data: Partial<InsertOfficialConcorso>): Promise<OfficialConcorso | undefined> {
+    const [updated] = await db
+      .update(officialConcorsi)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(officialConcorsi.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteOfficialConcorso(id: string): Promise<boolean> {
+    const [deleted] = await db
+      .delete(officialConcorsi)
+      .where(eq(officialConcorsi.id, id))
       .returning();
     return !!deleted;
   }
