@@ -2,7 +2,7 @@
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Users, FileText, CreditCard, BarChart2, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, FileText, CreditCard, BarChart2, Settings, LogOut, Headphones } from "lucide-react";
 
 export function AdminSidebar() {
   const { logout } = useAuth();
@@ -13,6 +13,7 @@ export function AdminSidebar() {
     { title: "Overview", icon: LayoutDashboard, path: "/admin/overview" },
     { title: "Utenti", icon: Users, path: "/admin/users" },
     { title: "Contenuti", icon: FileText, path: "/admin/content" },
+    { title: "Podcast", icon: Headphones, path: "/admin/podcast" },
     { title: "Abbonamenti", icon: CreditCard, path: "/admin/subscriptions" },
     { title: "Analytics", icon: BarChart2, path: "/admin/analytics" },
     { title: "Impostazioni", icon: Settings, path: "/admin/settings" },
@@ -28,7 +29,7 @@ export function AdminSidebar() {
           <span className="font-bold text-lg group-data-[collapsible=icon]:hidden">Admin Panel</span>
         </div>
       </SidebarHeader>
-      
+
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>Menu</SidebarGroupLabel>
@@ -36,8 +37,8 @@ export function AdminSidebar() {
             <SidebarMenu>
               {menuItems.map((item) => (
                 <SidebarMenuItem key={item.path}>
-                  <SidebarMenuButton 
-                    asChild 
+                  <SidebarMenuButton
+                    asChild
                     isActive={location === item.path || location.startsWith(item.path + "/")}
                     tooltip={item.title}
                     onClick={() => setOpenMobile(false)}

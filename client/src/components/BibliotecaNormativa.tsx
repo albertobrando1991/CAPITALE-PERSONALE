@@ -99,9 +99,8 @@ export function BibliotecaNormativa({
       </CardHeader>
       <CardContent className="space-y-4">
         <div
-          className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
-            isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/25"
-          } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+          className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/25"
+            } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -158,9 +157,7 @@ export function BibliotecaNormativa({
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs">
-                        {norm.articoliAnalizzati} art.
-                      </Badge>
+
                       {norm.url && (
                         <Button
                           variant="ghost"

@@ -35,7 +35,7 @@ const multerStorage = multer.diskStorage({
   },
 });
 
-const upload = multer({ 
+const upload = multer({
   storage: multerStorage,
   limits: {
     fileSize: 500 * 1024 * 1024, // 500MB max (per video/audio)
@@ -46,7 +46,7 @@ const upload = multer({
       mimetype: file.mimetype,
       fieldname: file.fieldname
     });
-    
+
     const allowedMimes = [
       // Documenti
       'application/pdf',
@@ -61,11 +61,11 @@ const upload = multer({
       'audio/mpeg3',
       'audio/x-mpeg-3',
     ];
-    
+
     // Controlla anche l'estensione del file come fallback
     const fileExt = file.originalname.split('.').pop()?.toLowerCase();
     const allowedExts = ['pdf', 'doc', 'docx', 'mp4', 'mp3', 'avi'];
-    
+
     if (allowedMimes.includes(file.mimetype) || (fileExt && allowedExts.includes(fileExt))) {
       console.log("[MULTER] File accettato");
       cb(null, true);
@@ -93,6 +93,7 @@ function getUserId(req: Request): string {
 import { registerEdisesRoutes } from "./routes-edises";
 import { registerNormativaRoutes } from './routes-normativa';
 import { registerPodcastRoutes } from './routes-podcast';
+import { registerPodcastAdminRoutes } from './routes-podcast-admin';
 import { registerSubscriptionRoutes } from './routes-subscription';
 import { registerAdminRoutes } from './routes-admin';
 
@@ -100,7 +101,7 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
+
   await setupAuth(app);
 
   console.log("Registering routes...");
@@ -112,22 +113,23 @@ export async function registerRoutes(
   registerEdisesRoutes(app);
   registerNormativaRoutes(app);
   registerPodcastRoutes(app);
+  registerPodcastAdminRoutes(app);
   registerSubscriptionRoutes(app);
   registerAdminRoutes(app);
   app.post('/api/flashcards/:id/spiega', isAuthenticated, async (req, res) => {
     try {
       const { id } = req.params;
       const userId = getUserId(req);
-      
+
       console.log(`💡 POST /api/flashcards/${id}/spiega`);
-      
+
       // Controlla se esiste già una spiegazione in cache
       // Nota: db.query non è disponibile qui, usiamo storage o implementiamo query diretta se necessario
       // Per semplicità ora, generiamo sempre (ma potremmo aggiungere cache su storage.ts)
-      
+
       // Ottieni la flashcard
       const flashcard = await storage.getFlashcard(id, userId);
-      
+
       if (!flashcard) {
         return res.status(404).json({ error: 'Flashcard non trovata' });
       }
@@ -135,19 +137,19 @@ export async function registerRoutes(
       if (!flashcard.concorsoId) {
         return res.status(400).json({ error: "Flashcard senza concorso associato" });
       }
-      
+
       // Ottieni il concorso per contesto
       const concorso = await storage.getConcorso(flashcard.concorsoId, userId);
-      
+
       if (!concorso) {
         return res.status(404).json({ error: 'Concorso non trovato' });
       }
-      
+
       console.log('📚 Generazione spiegazione per:', {
         materia: flashcard.materia,
         domanda: flashcard.fronte.substring(0, 50) + '...'
       });
-      
+
       const retroRaw = (flashcard.retro || "").trim();
       const retroNoEvidence = retroRaw
         .split(/\n\s*\nEvidenza:\s*/i)[0]
@@ -204,16 +206,16 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         // Rilancia l'errore per farlo catturare dal catch generale
         throw new Error(`Errore generazione AI: ${err.message}`);
       }
-      
+
       if (!spiegazione) {
         throw new Error('Nessuna spiegazione ricevuta da AI (risposta vuota)');
       }
-      
+
       console.log('✅ Spiegazione generata:', spiegazione.substring(0, 100) + '...');
-      
+
       // Salva la spiegazione in cache (opzionale)
       // Puoi creare una tabella spiegazioni_cache per non rigenerare le stesse
-      
+
       res.json({
         success: true,
         spiegazione,
@@ -223,7 +225,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
           materia: flashcard.materia
         }
       });
-      
+
     } catch (error: any) {
       console.error('❌ Errore generazione spiegazione:', error);
       const message = error instanceof Error ? error.message : "Errore sconosciuto";
@@ -244,23 +246,23 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
     try {
       console.log("[TEST-AI] Ricevuta richiesta test connessione AI");
       const { task = "flashcard" } = req.body;
-      
+
       const result = await generateWithFallback({
         task: task as any,
         userPrompt: "Dimmi 'Ciao, la connessione funziona!' se mi senti.",
         temperature: 0.7
       });
-      
-      res.json({ 
-        success: true, 
-        message: "Connessione AI funzionante", 
+
+      res.json({
+        success: true,
+        message: "Connessione AI funzionante",
         response: result,
-        provider: "OpenRouter" 
+        provider: "OpenRouter"
       });
     } catch (error: any) {
       console.error("[TEST-AI] Errore:", error);
-      res.status(500).json({ 
-        success: false, 
+      res.status(500).json({
+        success: false,
         error: error.message,
         details: "Verifica che OPENROUTER_API_KEY sia impostata correttamente."
       });
@@ -301,7 +303,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         process.env.OPEN_ROUTER
       );
       const hasDatabaseUrl = !!process.env.DATABASE_URL;
-      
+
       // Test OpenRouter client creation
       let openrouterTest = false;
       let openrouterError = null;
@@ -311,7 +313,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       } catch (error: any) {
         openrouterError = error.message;
       }
-      
+
       // Test PDF extraction (with a dummy buffer)
       let pdfTest = false;
       let pdfError = null;
@@ -326,7 +328,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       } catch (error: any) {
         pdfError = error.message;
       }
-      
+
       res.json({
         hasOpenRouterKey,
         hasDatabaseUrl,
@@ -343,18 +345,18 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       res.status(500).json({ error: error.message });
     }
   });
-  
+
   // Test endpoint per testare l'analisi con un PDF di esempio
   app.post("/api/test-analyze", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
     try {
       console.log("=== TEST ANALISI BANDO ===");
-      
+
       if (!req.file) {
         return res.status(400).json({ error: "Nessun file caricato" });
       }
-      
+
       console.log("1. File ricevuto:", req.file.originalname, req.file.size, "bytes");
-      
+
       // Test OpenRouter client
       console.log("2. Test creazione client OpenRouter...");
       let openrouter;
@@ -363,12 +365,12 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         console.log("   ✓ Client OpenRouter creato");
       } catch (error: any) {
         console.error("   ✗ Errore creazione client:", error.message);
-        return res.status(500).json({ 
+        return res.status(500).json({
           step: "openrouter_client",
-          error: error.message 
+          error: error.message
         });
       }
-      
+
       // Test PDF extraction
       console.log("3. Test estrazione PDF...");
       let fileContent: string;
@@ -382,20 +384,20 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         }
       } catch (error: any) {
         console.error("   ✗ Errore estrazione PDF:", error.message);
-        return res.status(500).json({ 
+        return res.status(500).json({
           step: "pdf_extraction",
-          error: error.message 
+          error: error.message
         });
       }
-      
+
       if (!fileContent || fileContent.trim().length < 100) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           step: "pdf_content",
           error: "File vuoto o troppo corto",
           contentLength: fileContent?.length || 0
         });
       }
-      
+
       // Test OpenRouter API call (with minimal content)
       console.log("4. Test chiamata API OpenRouter...");
       const testContent = fileContent.substring(0, 1000);
@@ -409,7 +411,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
           max_tokens: 50,
         });
         console.log("   ✓ API OpenRouter risponde correttamente");
-        res.json({ 
+        res.json({
           success: true,
           message: "Tutti i test passati",
           steps: {
@@ -421,7 +423,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         });
       } catch (error: any) {
         console.error("   ✗ Errore chiamata API:", error.message);
-        return res.status(500).json({ 
+        return res.status(500).json({
           step: "openrouter_api",
           error: error.message,
           details: error.response?.data || "Nessun dettaglio disponibile"
@@ -442,9 +444,9 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
     try {
       const userId = getUserId(req);
       console.log("Fetching user with ID:", userId);
-      
+
       let user = await storage.getUser(userId);
-      
+
       // If user doesn't exist, create it (mock mode)
       if (!user) {
         console.log("User not found, creating admin user");
@@ -455,7 +457,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
           lastName: "User",
         });
       }
-      
+
       res.json(user);
     } catch (error: any) {
       console.error("Error fetching user:", error);
@@ -483,7 +485,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
     } catch (error: any) {
       console.error("Error fetching concorsi:", error);
       console.error("Error stack:", error?.stack);
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Errore nel recupero concorsi",
         details: error?.message || "Errore sconosciuto"
       });
@@ -603,14 +605,14 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
     try {
       const userId = getUserId(req);
       const data = { ...req.body, userId };
-      
+
       const validated = insertMaterialSchema.parse(data);
-      
+
       const concorso = await storage.getConcorso(validated.concorsoId, userId);
       if (!concorso) {
         return res.status(403).json({ error: "Concorso non trovato o non autorizzato" });
       }
-      
+
       const material = await storage.createMaterial(validated);
       res.status(201).json(material);
     } catch (error: any) {
@@ -698,7 +700,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
     console.log("[UPLOAD-MATERIAL] === MIDDLEWARE MULTER ===");
     console.log("[UPLOAD-MATERIAL] Content-Type:", req.headers['content-type']);
     console.log("[UPLOAD-MATERIAL] Body keys:", Object.keys(req.body || {}));
-    
+
     upload.single("file")(req as any, res, async (err: any) => {
       if (err) {
         console.error("[UPLOAD-MATERIAL] Errore multer:", err.message);
@@ -711,9 +713,9 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         }
         return res.status(400).json({ error: "Errore nel caricamento file", details: err.message });
       }
-      
+
       console.log("[UPLOAD-MATERIAL] Multer completato, file:", (req as MulterRequest).file ? "PRESENTE" : "NON PRESENTE");
-      
+
       // Se non ci sono errori, procedi con l'handler
       try {
         const reqWithFile = req as MulterRequest;
@@ -722,7 +724,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         const concorsoId = reqWithFile.body.concorsoId;
         const materia = reqWithFile.body.materia || "Generale";
         const tipoMateriale = reqWithFile.body.tipo || "libro";
-        
+
         console.log("[UPLOAD-MATERIAL] UserId:", userId);
         console.log("[UPLOAD-MATERIAL] ConcorsoId:", concorsoId);
         console.log("[UPLOAD-MATERIAL] Materia:", materia);
@@ -733,7 +735,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
           size: reqWithFile.file.size,
           filename: reqWithFile.file.filename
         } : "NON PRESENTE");
-        
+
         if (!reqWithFile.file || !concorsoId) {
           console.log("[UPLOAD-MATERIAL] ERRORE: File o concorsoId mancante");
           return res.status(400).json({ error: "File e concorsoId richiesti" });
@@ -750,11 +752,11 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         // Salva il file e ottieni il percorso
         const fileUrl = `/uploads/materials/${reqWithFile.file.filename}`;
         console.log("[UPLOAD-MATERIAL] FileUrl:", fileUrl);
-        
+
         // Estrai contenuto solo per PDF e Word (per generare flashcard)
         let contenuto: string | undefined = undefined;
         const mimeType = reqWithFile.file.mimetype;
-        
+
         if (mimeType === "application/pdf") {
           console.log("[UPLOAD-MATERIAL] Estrazione testo da PDF...");
           try {
@@ -768,7 +770,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
             // Continua comunque, il file è salvato
           }
         } else if (
-          mimeType === "application/msword" || 
+          mimeType === "application/msword" ||
           mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ) {
           // Per Word, per ora salviamo solo il file (estrazione testo Word richiede librerie aggiuntive)
@@ -795,7 +797,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
           ...materialData,
           contenuto: contenuto ? `${contenuto.length} caratteri` : undefined
         });
-        
+
         const material = await storage.createMaterial(materialData);
         console.log("[UPLOAD-MATERIAL] Materiale creato con successo:", material.id);
 
@@ -812,7 +814,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         if (error?.errors) {
           console.error("[UPLOAD-MATERIAL] Validation errors:", JSON.stringify(error.errors, null, 2));
         }
-        res.status(500).json({ 
+        res.status(500).json({
           error: "Errore nel caricamento materiale",
           details: error?.message || "Errore sconosciuto"
         });
@@ -917,7 +919,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
           seen.add(key);
           out.push({ fronte, retro, evidenza });
         };
-        
+
         // 1. Cerca definizioni esplicite: "X è Y", "X sono Y", "X consiste in Y"
         // Regex cattura: (Soggetto) (verbo) (Definizione)
         // Limita lunghezza soggetto (10-100 chars) e definizione (20-300 chars)
@@ -956,7 +958,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         runDefinitionRegex(definitionRegex, "def");
         runDefinitionRegex(intendePerRegex, "intende");
         runDefinitionRegex(perIntendeRegex, "intende");
-        
+
         // 2. Cerca elenchi o punti chiave se servono ancora card
         if (out.length < count) {
           const lines = text.split(/\r?\n/);
@@ -1000,7 +1002,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
 
       // Se l'AI fallisce, usa il fallback intelligente
       const groundedFallbackFromText = (text: string) => {
-          return smartRegexFallback(text, 15); // Tenta di estrarne fino a 15
+        return smartRegexFallback(text, 15); // Tenta di estrarne fino a 15
       };
 
       const rawText = material.contenuto;
@@ -1010,7 +1012,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       const totalWords = normalizeForMatch(contentToAnalyze).split(" ").filter(Boolean).length;
       const desiredCount = Math.max(20, Math.min(100, Math.round(totalWords / 120)));
 
-      
+
       console.log(
         `[GEN-FLASHCARDS] Analisi testo (chars=${contentToAnalyze.length}, primi 500): ${contentToAnalyze.substring(0, 500)}...`
       );
@@ -1120,8 +1122,8 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
         chunks.length <= maxChunksToProcess
           ? chunks.map((_, i) => i)
           : Array.from({ length: maxChunksToProcess }, (_, i) =>
-              Math.floor((i * (chunks.length - 1)) / (maxChunksToProcess - 1))
-            ).filter((v, i, arr) => arr.indexOf(v) === i);
+            Math.floor((i * (chunks.length - 1)) / (maxChunksToProcess - 1))
+          ).filter((v, i, arr) => arr.indexOf(v) === i);
 
       const perChunkTarget = Math.max(
         12,
@@ -1231,21 +1233,21 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
         });
 
       const evidenceVerified: any[] = preEvidence.filter((f) => {
-          const ev = normalizeForMatch(f.evidenza);
-          if (f.chunkNormalized && f.chunkNormalized.includes(ev)) return true;
-          if (normalizedText.includes(ev)) return true;
+        const ev = normalizeForMatch(f.evidenza);
+        if (f.chunkNormalized && f.chunkNormalized.includes(ev)) return true;
+        if (normalizedText.includes(ev)) return true;
 
-          const evTokens = ev.split(" ").filter((t) => t.length >= 3);
-          if (evTokens.length < 6) return false;
+        const evTokens = ev.split(" ").filter((t) => t.length >= 3);
+        if (evTokens.length < 6) return false;
 
-          let found = 0;
-          for (const t of evTokens) {
-            if (f.chunkTokens?.has(t) || textTokens.has(t)) found++;
-          }
-          const required = Math.max(3, Math.ceil(evTokens.length * 0.55));
-          return found >= required;
-        });
-      
+        let found = 0;
+        for (const t of evTokens) {
+          if (f.chunkTokens?.has(t) || textTokens.has(t)) found++;
+        }
+        const required = Math.max(3, Math.ceil(evTokens.length * 0.55));
+        return found >= required;
+      });
+
       const cleaned = evidenceVerified;
       const canUseLoose = preEvidence.length > 0 && cleaned.length < Math.min(12, desiredCount);
       const looseWarning = canUseLoose
@@ -1286,7 +1288,7 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
       // Inizializza parametri SM-2 per nuove flashcard
       const sm2Initial = initializeSM2();
       const now = new Date();
-      
+
       await storage.deleteFlashcardsByMaterialId(userId, materialId);
 
       const flashcardsToInsert = cleaned.map((f) => ({
@@ -1306,8 +1308,8 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
       }));
 
       const created = await storage.createFlashcards(flashcardsToInsert);
-      await storage.updateMaterial(materialId, userId, { 
-        flashcardGenerate: created.length 
+      await storage.updateMaterial(materialId, userId, {
+        flashcardGenerate: created.length
       });
 
       res.json({ count: created.length, flashcards: created, warning: looseWarning });
@@ -1330,36 +1332,36 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
     try {
       const userId = getUserId(req);
       const { id } = req.params;
-      
+
       // Accetta sia quality che livelloSRS per retrocompatibilità
       // IMPORTANTE: gestire correttamente il caso in cui il valore sia 0
       let quality: number | undefined;
-      
+
       if (req.body.quality !== undefined) {
         quality = req.body.quality;
       } else if (req.body.livelloSRS !== undefined) {
         quality = req.body.livelloSRS;
       }
-      
+
       console.log(`[PATCH FLASHCARD] id=${id}, body=${JSON.stringify(req.body)}, quality=${quality}`);
-      
+
       if (quality === undefined || typeof quality !== "number" || !Number.isInteger(quality)) {
         console.error(`[PATCH FLASHCARD] Valore non valido per quality/livelloSRS: ${quality}`);
         return res.status(400).json({ error: "livelloSRS o quality (numero intero) richiesto" });
       }
-      
+
       // Valori accettati: 0 (Non Ricordo) o 3 (Facile)
       if (quality !== 0 && quality !== 3) {
         console.error(`[PATCH FLASHCARD] Valore non accettato per quality/livelloSRS: ${quality}`);
         return res.status(400).json({ error: "livelloSRS/quality deve essere 0 (Non Ricordo) o 3 (Facile)" });
       }
-      
+
       // Ottieni flashcard corrente
       const flashcard = await storage.getFlashcard(id, userId);
       if (!flashcard) {
         return res.status(404).json({ error: "Flashcard non trovata" });
       }
-      
+
       // Calcola nuovi valori con SM-2 (quality è già 0 o 3)
       const sm2Result = calculateSM2(
         quality,
@@ -1367,11 +1369,11 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
         flashcard.intervalloGiorni || 0,
         flashcard.numeroRipetizioni || 0
       );
-      
+
       // Determina se è masterata (almeno 3 ripetizioni consecutive OPPURE se l'utente ha segnato "Facile" (quality=3))
       // Se l'utente segna "Facile", consideriamola masterata per l'interfaccia utente
       const masterate = quality === 3 || sm2Result.numeroRipetizioni >= 3;
-      
+
       // Aggiorna flashcard
       const updated = await storage.updateFlashcard(id, userId, {
         livelloSRS: quality,
@@ -1383,20 +1385,20 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
         prossimoRipasso: sm2Result.prossimoRipasso,
         prossimRevisione: sm2Result.prossimoRipasso, // Retrocompatibilità
         tentativiTotali: (flashcard.tentativiTotali || 0) + 1,
-        tentativiCorretti: quality === 3 
-          ? (flashcard.tentativiCorretti || 0) + 1 
+        tentativiCorretti: quality === 3
+          ? (flashcard.tentativiCorretti || 0) + 1
           : (flashcard.tentativiCorretti || 0)
       });
-      
+
       if (!updated) {
         return res.status(404).json({ error: "Flashcard non trovata" });
       }
-      
+
       // Ricalcola count masterate
       if (updated.concorsoId) {
         const allFlashcards = await storage.getFlashcards(userId, updated.concorsoId);
         const flashcardMasterate = allFlashcards.filter(f => f.masterate).length;
-        
+
         await storage.upsertUserProgress({
           userId,
           concorsoId: updated.concorsoId,
@@ -1404,7 +1406,7 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
           flashcardTotali: allFlashcards.length
         });
       }
-      
+
       res.json(updated);
     } catch (error: any) {
       console.error("Error updating flashcard:", error);
@@ -1416,13 +1418,13 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
     try {
       const userId = getUserId(req);
       const { concorsoId, materia } = req.body;
-      
+
       if (!concorsoId || !materia) {
         return res.status(400).json({ error: "concorsoId e materia richiesti" });
       }
 
       const count = await storage.deleteFlashcardsByMateria(userId, concorsoId, materia);
-      
+
       res.json({ success: true, count, message: `${count} flashcard eliminate` });
     } catch (error: any) {
       console.error("Error deleting flashcards by materia:", error);
@@ -1439,17 +1441,17 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
     try {
       const userId = getUserId(req);
       const { concorsoId } = req.body;
-      
+
       if (!concorsoId) {
         return res.status(400).json({ error: "concorsoId richiesto" });
       }
-      
+
       // Ottieni tutte le flashcard del concorso
       const allFlashcards = await storage.getFlashcards(userId, concorsoId);
-      
+
       // Reset di tutte le flashcard (inclusi parametri SM-2)
       const sm2Initial = initializeSM2();
-      const resetPromises = allFlashcards.map(flashcard => 
+      const resetPromises = allFlashcards.map(flashcard =>
         storage.updateFlashcard(flashcard.id, userId, {
           livelloSRS: 0,
           masterate: false,
@@ -1464,9 +1466,9 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
           prossimRevisione: new Date(),
         })
       );
-      
+
       await Promise.all(resetPromises);
-      
+
       // Aggiorna userProgress con i nuovi count (tutti a 0)
       await storage.upsertUserProgress({
         userId,
@@ -1474,11 +1476,11 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
         flashcardMasterate: 0,
         flashcardTotali: allFlashcards.length,
       });
-      
-      res.json({ 
-        success: true, 
+
+      res.json({
+        success: true,
         message: "Flashcard resettate con successo",
-        count: allFlashcards.length 
+        count: allFlashcards.length
       });
     } catch (error: any) {
       console.error("Error resetting flashcards:", error);
@@ -1495,7 +1497,7 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
   app.post("/api/analyze-bando", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
     try {
       console.log("[BANDO] === INIZIO ANALISI ===");
-      
+
       // 1. Verifica file
       if (!req.file) {
         console.log("[BANDO] ERRORE: Nessun file");
@@ -1524,14 +1526,14 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
           console.log(`[BANDO] PDF estratto: ${fileContent.length} caratteri`);
           if (!fileContent || fileContent.trim().length < 100) {
             console.log("[BANDO] ERRORE: PDF vuoto o troppo corto");
-            return res.status(400).json({ 
-              error: "Il PDF non contiene testo selezionabile. Assicurati di caricare un PDF con testo (non scansionato)." 
+            return res.status(400).json({
+              error: "Il PDF non contiene testo selezionabile. Assicurati di caricare un PDF con testo (non scansionato)."
             });
           }
         } catch (pdfError: any) {
           console.error("[BANDO] ERRORE estrazione PDF:", pdfError.message);
           console.error("[BANDO] Stack:", pdfError.stack);
-          return res.status(400).json({ 
+          return res.status(400).json({
             error: "Errore nell'estrazione del testo dal PDF",
             details: pdfError.message || "Il PDF potrebbe essere scansionato o corrotto"
           });
@@ -1602,12 +1604,12 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
       try {
         console.log("Invio richiesta AI per analisi bando...");
         content = await generateWithFallback({
-           task: "generic",
-           systemPrompt,
-           userPrompt,
-           responseMode: "json",
-           jsonRoot: "object",
-           temperature: 0.2,
+          task: "generic",
+          systemPrompt,
+          userPrompt,
+          responseMode: "json",
+          jsonRoot: "object",
+          temperature: 0.2,
         });
         console.log("Risposta AI ricevuta");
       } catch (err: any) {
@@ -1621,7 +1623,7 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
         console.error("[BANDO] ERRORE: Nessuna risposta dall'AI");
         throw new Error("Nessuna risposta dall'AI. Verifica le chiavi API.");
       }
-      
+
       // Log primi 100 caratteri per debug
       console.log(`[BANDO] Contenuto da parsare (primi 100 chars): ${content.substring(0, 100)}...`);
 
@@ -1632,19 +1634,19 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
       } catch (parseError: any) {
         console.error("[BANDO] ERRORE parsing JSON:", parseError.message);
         console.error("[BANDO] Contenuto completo che ha causato l'errore:", content);
-        
+
         // Tentativo di recupero: se il JSON è troncato, prova a chiuderlo (molto basilare)
         try {
-            if (content.trim().startsWith("{") && !content.trim().endsWith("}")) {
-                console.log("[BANDO] Tentativo di fix JSON troncato...");
-                const fixedContent = content + "}";
-                bandoData = JSON.parse(fixedContent);
-                console.log("[BANDO] JSON fixato e parsato!");
-            } else {
-                throw parseError;
-            }
+          if (content.trim().startsWith("{") && !content.trim().endsWith("}")) {
+            console.log("[BANDO] Tentativo di fix JSON troncato...");
+            const fixedContent = content + "}";
+            bandoData = JSON.parse(fixedContent);
+            console.log("[BANDO] JSON fixato e parsato!");
+          } else {
+            throw parseError;
+          }
         } catch (retryError) {
-            throw new Error(`Errore nel parsing della risposta AI. Il formato non è JSON valido. Dettaglio: ${parseError.message}`);
+          throw new Error(`Errore nel parsing della risposta AI. Il formato non è JSON valido. Dettaglio: ${parseError.message}`);
         }
       }
 
@@ -1704,7 +1706,7 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
       if (bandoData.materie && Array.isArray(bandoData.materie)) {
         const materieConDomande = bandoData.materie.filter((m: any) => m.numeroDomande && m.numeroDomande > 0);
         const totaleDomande = materieConDomande.reduce((sum: number, m: any) => sum + (m.numeroDomande || 0), 0);
-        
+
         bandoData.materie = bandoData.materie.map((materia: any) => {
           if (materia.numeroDomande && materia.numeroDomande > 0 && totaleDomande > 0) {
             // Calcola peso reale in base al numero di domande
@@ -1717,7 +1719,7 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
           }
           return materia;
         });
-        
+
         console.log("[BANDO] Pesi materie calcolati:", bandoData.materie.map((m: any) => `${m.nome}: ${m.peso}%`));
       }
 
@@ -1743,7 +1745,7 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
       console.error("[BANDO] Nome:", error?.name);
       console.error("[BANDO] Messaggio:", error?.message);
       console.error("[BANDO] Stack:", error?.stack);
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Errore durante l'analisi del bando",
         details: error.message || "Errore sconosciuto",
         suggestion: "Verifica che il file PDF contenga testo selezionabile e riprova."
@@ -1755,7 +1757,7 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
     try {
       const userId = getUserId(req);
       console.log("[QUIZ-GEN] === INIZIO GENERAZIONE DA FILE ===");
-      
+
       if (!req.file) {
         return res.status(400).json({ error: "Nessun file caricato" });
       }
@@ -1772,9 +1774,9 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
           return res.status(500).json({ error: "Errore lettura PDF" });
         }
       } else {
-         // Fallback per file testo se necessario
-         const filePath = join(uploadDir, req.file.filename);
-         fileContent = readFileSync(filePath, "utf-8");
+        // Fallback per file testo se necessario
+        const filePath = join(uploadDir, req.file.filename);
+        fileContent = readFileSync(filePath, "utf-8");
       }
 
       if (!fileContent || fileContent.trim().length < 100) {
@@ -1806,12 +1808,12 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
       try {
         console.log("[QUIZ-GEN] Invio richiesta AI...");
         questionsJson = await generateWithFallback({
-           task: "quiz_generate",
-           systemPrompt,
-           userPrompt,
-           responseMode: "json",
-           jsonRoot: "array",
-           temperature: 0.3,
+          task: "quiz_generate",
+          systemPrompt,
+          userPrompt,
+          responseMode: "json",
+          jsonRoot: "array",
+          temperature: 0.3,
         });
       } catch (err: any) {
         console.error("[QUIZ-GEN] ERRORE AI:", err.message);
@@ -1842,9 +1844,9 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
     try {
       const userId = getUserId(req);
       const { concorsoId, ...bandoData } = req.body;
-      
+
       let concorso: Concorso;
-      
+
       if (concorsoId) {
         // Aggiorna concorso esistente
         console.log("Updating existing concorso:", concorsoId);
@@ -1859,11 +1861,11 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
           oreSettimanali: bandoData.oreSettimanali || 15,
           bandoAnalysis: bandoData,
         });
-        
+
         if (!updated) {
           return res.status(404).json({ error: "Concorso non trovato o non autorizzato" });
         }
-        
+
         concorso = updated;
         console.log("Phase 1 completed, concorso updated:", concorso.id);
       } else {
@@ -1883,21 +1885,21 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
         });
         console.log("Phase 1 completed, concorso created:", concorso.id);
       }
-      
+
       await storage.upsertUserProgress({
         userId,
         concorsoId: concorso.id,
         fase1Completata: true,
         faseCorrente: 2,
       });
-      
+
       res.json({ success: true, concorsoId: concorso.id, message: "Fase 1 completata" });
     } catch (error: any) {
       console.error("Error completing phase 1:", error);
       console.error("Error stack:", error.stack);
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Errore nel completamento della fase 1",
-        details: error.message 
+        details: error.message
       });
     }
   });
@@ -1916,14 +1918,14 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
       console.log("POST /api/simulazioni - Request body:", req.body);
       const userId = getUserId(req);
       console.log("POST /api/simulazioni - UserId:", userId);
-      
+
       if (!userId) {
         console.error("getUserId returned undefined. req.user:", req.user);
         return res.status(401).json({ error: "Utente non autenticato" });
       }
-      
+
       const { concorsoId, numeroDomande = 40, durataMinuti = 60, tipoSimulazione = "completa", materieFiltrate = [] } = req.body;
-      
+
       console.log("POST /api/simulazioni - Creating simulazione with:", {
         concorsoId,
         numeroDomande,
@@ -1944,7 +1946,7 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
 
       // Recupera tutte le flashcards del concorso
       let flashcards = await storage.getFlashcards(userId, concorsoId);
-      
+
       if (flashcards.length === 0) {
         return res.status(400).json({ error: "Nessuna flashcard disponibile per questo concorso" });
       }
@@ -1959,8 +1961,8 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
 
       // Verifica che ci siano abbastanza flashcards
       if (flashcards.length < 4) {
-        return res.status(400).json({ 
-          error: `Non ci sono abbastanza flashcards per generare una simulazione. Minimo richiesto: 4. Disponibili: ${flashcards.length}` 
+        return res.status(400).json({
+          error: `Non ci sono abbastanza flashcards per generare una simulazione. Minimo richiesto: 4. Disponibili: ${flashcards.length}`
         });
       }
 
@@ -1969,7 +1971,7 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
         console.log(`[SIMULAZIONE] Richieste ${numeroDomande} domande, ma disponibili solo ${flashcards.length}. Adatto il numero.`);
         // Non modifichiamo la variabile const numeroDomande, ma useremo flashcards.length per il slice
       }
-      
+
       const numeroDomandeEffettivo = Math.min(numeroDomande, flashcards.length);
 
       // Seleziona flashcards random
@@ -1984,27 +1986,27 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
       const domandeERisposte: DomandaSimulazione[] = flashcardsSelezionate.map((flashcard, index) => {
         // Trova altre flashcards per generare risposte sbagliate
         const altreFlashcards = flashcards.filter(fc => fc.id !== flashcard.id);
-        
+
         // Se abbiamo meno di 3 altre flashcards, prendiamo tutte quelle disponibili e duplichiamo se necessario
         let risposteSbagliateCandidates = altreFlashcards.sort(() => Math.random() - 0.5);
-        
+
         // Assicurati di avere sempre 3 risposte sbagliate
         let risposteSbagliate: string[] = [];
         if (risposteSbagliateCandidates.length >= 3) {
-           risposteSbagliate = risposteSbagliateCandidates.slice(0, 3).map(fc => fc.retro);
+          risposteSbagliate = risposteSbagliateCandidates.slice(0, 3).map(fc => fc.retro);
         } else {
-           // Se non abbiamo abbastanza candidate uniche, riusiamo quelle che abbiamo
-           // Questo caso limite accade solo se abbiamo < 4 flashcards totali, che abbiamo già bloccato sopra
-           // Ma per sicurezza:
-           const disponibili = risposteSbagliateCandidates.map(fc => fc.retro);
-           while (risposteSbagliate.length < 3) {
-             risposteSbagliate.push(...disponibili);
-             if (risposteSbagliate.length < 3 && disponibili.length === 0) {
-               // Fallback estremo se non ci sono altre flashcards
-               risposteSbagliate.push("Risposta errata " + (risposteSbagliate.length + 1));
-             }
-           }
-           risposteSbagliate = risposteSbagliate.slice(0, 3);
+          // Se non abbiamo abbastanza candidate uniche, riusiamo quelle che abbiamo
+          // Questo caso limite accade solo se abbiamo < 4 flashcards totali, che abbiamo già bloccato sopra
+          // Ma per sicurezza:
+          const disponibili = risposteSbagliateCandidates.map(fc => fc.retro);
+          while (risposteSbagliate.length < 3) {
+            risposteSbagliate.push(...disponibili);
+            if (risposteSbagliate.length < 3 && disponibili.length === 0) {
+              // Fallback estremo se non ci sono altre flashcards
+              risposteSbagliate.push("Risposta errata " + (risposteSbagliate.length + 1));
+            }
+          }
+          risposteSbagliate = risposteSbagliate.slice(0, 3);
         }
 
         // Crea array di 4 opzioni: una corretta + 3 sbagliate
@@ -2044,7 +2046,7 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
     } catch (error: any) {
       console.error("Error creating simulazione:", error);
       console.error("Error stack:", error.stack);
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Errore nella creazione della simulazione",
         message: error.message || "Errore sconosciuto"
       });
@@ -2067,7 +2069,7 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
     } catch (error: any) {
       console.error("Error fetching simulazioni:", error);
       console.error("Error stack:", error?.stack);
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Errore nel recupero delle simulazioni",
         details: error?.message || "Errore sconosciuto"
       });
@@ -2143,7 +2145,7 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
       // Processa ogni domanda
       const domandeAggiornate = (domandeERisposte || simulazione.domandeERisposte as DomandaSimulazione[]).map((domanda: any) => {
         const materia = domanda.materia || "Generale";
-        
+
         if (!dettagliPerMateria[materia]) {
           dettagliPerMateria[materia] = {
             corrette: 0,
@@ -2161,7 +2163,7 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
         }
 
         const corretta = domanda.rispostaUtente.toUpperCase() === domanda.rispostaCorretta.toUpperCase();
-        
+
         if (corretta) {
           corrette++;
           dettagliPerMateria[materia].corrette++;
@@ -2180,7 +2182,7 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
 
       // Calcola penalità per materia basata sui pesi nel bandoAnalysis
       let punteggioFinale = percentualeCorrette;
-      
+
       materie.forEach((materia: any) => {
         const dettagli = dettagliPerMateria[materia.nome];
         if (dettagli) {
@@ -2274,18 +2276,18 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
    * POST /api/specialista/spiega
    * Chiedi spiegazione di un concetto allo specialista AI
    */
-  
+
   // Rate limiting in-memory per utente
   const rateLimitMap = new Map<string, number>();
 
   function checkRateLimit(userId: string): boolean {
     const now = Date.now();
     const lastRequest = rateLimitMap.get(userId) || 0;
-    
+
     if (now - lastRequest < 3000) {
       return false; // Troppo veloce (meno di 3 secondi)
     }
-    
+
     rateLimitMap.set(userId, now);
     return true;
   }
@@ -2321,7 +2323,7 @@ IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`jso
 
       // SYSTEM HYBRID: Use Gemini -> Vercel -> OpenAI
       let spiegazione: string | null = null;
-      
+
       const systemPrompt = `Sei uno specialista esperto in concorsi pubblici italiani, con focus su: ${materieConcorso}.
 
 Il tuo compito è spiegare concetti in modo CHIARO, SEMPLICE e DIRETTO.
@@ -2364,25 +2366,25 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
 
     } catch (error: any) {
       console.error("[SPECIALISTA] Errore:", error?.message || error);
-      
+
       // Gestisci errori specifici di OpenAI
       if (error?.response?.status === 429) {
-        return res.status(429).json({ 
+        return res.status(429).json({
           error: "Troppe richieste. Riprova tra qualche minuto.",
-          details: error?.message 
+          details: error?.message
         });
       }
-      
+
       if (error?.response?.status === 401) {
-        return res.status(500).json({ 
+        return res.status(500).json({
           error: "Errore di configurazione AI",
           details: "Chiave API non valida"
         });
       }
 
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Errore nel generare la spiegazione",
-        details: error?.message 
+        details: error?.message
       });
     }
   });
@@ -2391,7 +2393,7 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
   app.get("/api/stats", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
-      
+
       // 1. Ottieni progressi generali
       let progress;
       try {
@@ -2400,7 +2402,7 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
         console.error("Error fetching user progress:", err);
         progress = null;
       }
-      
+
       // 2. Ottieni ultime simulazioni completate
       let completedSimulations: Simulazione[] = [];
       try {
@@ -2413,14 +2415,14 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
         console.error("Error fetching simulations:", err);
       }
 
-        
+
       // 3. Calcola precisione media
       let averageAccuracy = 0;
       if (completedSimulations.length > 0) {
         const totalAccuracy = completedSimulations.reduce((sum, sim) => sum + (sim.percentualeCorrette || 0), 0);
         averageAccuracy = Math.round(totalAccuracy / completedSimulations.length);
       }
-      
+
       // 4. Formatta cronologia quiz
       const quizHistory = completedSimulations.map(sim => {
         // Cerca di ottenere il titolo del concorso se possibile, altrimenti usa ID o tipo
@@ -2428,8 +2430,8 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
         // Per ora usiamo il tipo simulazione o "Simulazione"
         return {
           id: sim.id,
-          title: sim.tipoSimulazione === "completa" ? "Simulazione Completa" : 
-                 sim.tipoSimulazione === "materia" ? "Test Materia" : "Allenamento",
+          title: sim.tipoSimulazione === "completa" ? "Simulazione Completa" :
+            sim.tipoSimulazione === "materia" ? "Test Materia" : "Allenamento",
           score: Math.round(sim.percentualeCorrette || 0),
           questions: sim.numeroDomande,
           date: sim.dataCompletamento ? new Date(sim.dataCompletamento).toLocaleDateString('it-IT') : "N/A"
@@ -2447,7 +2449,7 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
         { day: "Sab", hours: 0 },
         { day: "Dom", hours: 0 },
       ];
-      
+
       res.json({
         studyTime: progress?.oreStudioTotali || 0,
         flashcardsMastered: progress?.flashcardMasterate || 0,
@@ -2456,7 +2458,7 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
         quizHistory,
         weeklyTrend
       });
-      
+
     } catch (error: any) {
       console.error("Error fetching stats:", error);
       res.status(500).json({ error: "Errore nel recupero statistiche", details: error.message });
@@ -2490,12 +2492,12 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
       if (!userId) {
         return res.status(401).json({ error: "Utente non autenticato" });
       }
-      
+
       console.log("[CALENDAR] POST /events - Body:", req.body);
-      
+
       // Ensure date is parsed correctly if sent as string
-      const data = { 
-        ...req.body, 
+      const data = {
+        ...req.body,
         userId,
         date: new Date(req.body.date),
         // Se concorsoId è stringa vuota o undefined, impostalo a null o undefined
@@ -2503,21 +2505,21 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
         // Assicurati che description sia stringa o undefined (no null se schema non lo vuole, anche se DB lo accetta)
         description: req.body.description || undefined
       };
-      
+
       console.log("[CALENDAR] Validating data:", data);
-      
+
       const validated = insertCalendarEventSchema.parse(data);
       console.log("[CALENDAR] Validation successful");
-      
+
       const event = await storage.createCalendarEvent(validated);
       console.log("[CALENDAR] Event created:", event.id);
-      
+
       res.status(201).json(event);
     } catch (error: any) {
       console.error("Error creating calendar event:", error);
       if (error.name === "ZodError") {
-         console.error("Zod Validation Errors:", JSON.stringify(error.errors, null, 2));
-         return res.status(400).json({ error: "Dati non validi", details: error.errors });
+        console.error("Zod Validation Errors:", JSON.stringify(error.errors, null, 2));
+        return res.status(400).json({ error: "Dati non validi", details: error.errors });
       }
       res.status(400).json({ error: error.message || "Errore creazione evento" });
     }
@@ -2530,7 +2532,7 @@ IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi
       if (data.date) {
         data.date = new Date(data.date);
       }
-      
+
       const updated = await storage.updateCalendarEvent(req.params.id, userId, data);
       if (!updated) {
         return res.status(404).json({ error: "Evento non trovato" });

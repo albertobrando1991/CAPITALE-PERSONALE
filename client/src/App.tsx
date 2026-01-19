@@ -41,6 +41,7 @@ import AdminOverviewPage from "@/pages/admin/OverviewPage";
 import AdminUsersPage from "@/pages/admin/AdminUsersPage";
 import AdminContentPage from "@/pages/admin/AdminContentPage";
 import AdminLibraryPage from "@/pages/admin/AdminLibraryPage";
+import AdminPodcastPage from "@/pages/admin/AdminPodcastPage";
 import AdminRegulationsPage from "@/pages/admin/AdminRegulationsPage";
 import AdminSubscriptionsPage from "@/pages/admin/AdminSubscriptionsPage";
 import AdminAnalyticsPage from "@/pages/admin/AdminAnalyticsPage";
@@ -126,6 +127,7 @@ function ProtectedRoutes() {
               <Route path="/admin/users" component={AdminUsersPage} />
               <Route path="/admin/content" component={AdminContentPage} />
               <Route path="/admin/library" component={AdminLibraryPage} />
+              <Route path="/admin/podcast" component={AdminPodcastPage} />
               <Route path="/admin/regulations" component={AdminRegulationsPage} />
               <Route path="/admin/subscriptions" component={AdminSubscriptionsPage} />
               <Route path="/admin/analytics" component={AdminAnalyticsPage} />
@@ -165,28 +167,28 @@ function Router() {
         <PomodoroProvider>
           <Fase3Provider>
             <Switch>
-            <Route path="/">
-            <HomePage />
-          </Route>
-          <Route path="/login">
-            {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
-          </Route>
-          <Route path="/register">
-            {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
-          </Route>
-          <Route path="/dashboard">
-            <ProtectedRoutes />
-          </Route>
-          <Route>
-            <ProtectedRoutes />
-          </Route>
-        </Switch>
-        
-        {/* Widget Pomodoro Globale (solo se autenticato) */}
-        {isAuthenticated && location !== '/pomodoro' && <PomodoroWidget />}
-        {isAuthenticated && <BenessereWidget />}
-        {isAuthenticated && <HydrationReminder />}
-        </Fase3Provider>
+              <Route path="/">
+                <HomePage />
+              </Route>
+              <Route path="/login">
+                {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
+              </Route>
+              <Route path="/register">
+                {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
+              </Route>
+              <Route path="/dashboard">
+                <ProtectedRoutes />
+              </Route>
+              <Route>
+                <ProtectedRoutes />
+              </Route>
+            </Switch>
+
+            {/* Widget Pomodoro Globale (solo se autenticato) */}
+            {isAuthenticated && location !== '/pomodoro' && <PomodoroWidget />}
+            {isAuthenticated && <BenessereWidget />}
+            {isAuthenticated && <HydrationReminder />}
+          </Fase3Provider>
         </PomodoroProvider>
       </BenessereProvider>
     </ErrorBoundary>
