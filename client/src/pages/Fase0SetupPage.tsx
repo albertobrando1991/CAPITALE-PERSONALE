@@ -16,13 +16,13 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
   const { concorsoId } = params;
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [bandoData, setBandoData] = useState<BandoData | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedRef = useRef<string>("");
-  
+
   const { data: existingConcorso, isLoading: isLoadingConcorso } = useQuery<Concorso>({
     queryKey: ["/api/concorsi", concorsoId],
     queryFn: async () => {
@@ -44,7 +44,7 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
     },
     enabled: !!existingConcorso?.officialConcorsoId,
   });
-  
+
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
@@ -52,14 +52,14 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
       }
     };
   }, []);
-  
+
   useEffect(() => {
     if (existingConcorso?.bandoAnalysis && !bandoData) {
       setBandoData(existingConcorso.bandoAnalysis as BandoData);
       lastSavedRef.current = JSON.stringify(existingConcorso.bandoAnalysis);
     }
   }, [existingConcorso, bandoData]);
-  
+
   const saveMutation = useMutation({
     mutationFn: async (data: Partial<Concorso>) => {
       if (!concorsoId) return;
@@ -69,17 +69,17 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
       queryClient.invalidateQueries({ queryKey: ["/api/concorsi"] });
     },
   });
-  
+
   const debouncedSave = useCallback((newBandoData: BandoData) => {
     if (!concorsoId) return;
-    
+
     const currentDataStr = JSON.stringify(newBandoData);
     if (currentDataStr === lastSavedRef.current) return;
-    
+
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
-    
+
     setIsSaving(true);
     saveTimeoutRef.current = setTimeout(async () => {
       try {
@@ -105,6 +105,7 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
       const response = await fetch("/api/analyze-bando", {
         method: "POST",
         body: formData,
+        credentials: "include",
       });
 
       if (!response.ok) {
@@ -151,6 +152,7 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
       const response = await fetch("/api/analyze-bando", {
         method: "POST",
         body: formData,
+        credentials: "include",
       });
 
       if (!response.ok) {
@@ -202,41 +204,41 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
 
   const handleUpdateCalendario = (mesi: number, ore: number) => {
     if (!bandoData) return;
-    
-    const oggi = bandoData.dataInizioStudio 
-      ? new Date(bandoData.dataInizioStudio) 
+
+    const oggi = bandoData.dataInizioStudio
+      ? new Date(bandoData.dataInizioStudio)
       : new Date();
     const dataEsame = new Date(oggi);
     dataEsame.setMonth(dataEsame.getMonth() + mesi);
-    
+
     const giorniTotali = Math.floor((dataEsame.getTime() - oggi.getTime()) / (1000 * 60 * 60 * 24));
     const settimane = giorniTotali / 7;
     const oreTotali = Math.round(settimane * ore);
-    
+
     const fasiConfig = [
       { nome: "Fase 0: Intelligence & Setup", percentuale: 10 },
       { nome: "Fase 1: Apprendimento Base (SQ3R)", percentuale: 40 },
       { nome: "Fase 2: Consolidamento e Memorizzazione", percentuale: 30 },
       { nome: "Fase 3: Simulazione ad Alta Fedeltà", percentuale: 20 }
     ];
-    
+
     const giorniPerFase = fasiConfig.map(f => Math.floor(giorniTotali * (f.percentuale / 100)));
     const giorniAssegnati = giorniPerFase.reduce((a, b) => a + b, 0);
     const giorniRimanenti = giorniTotali - giorniAssegnati;
     giorniPerFase[giorniPerFase.length - 1] += giorniRimanenti;
-    
+
     const orePerFase = fasiConfig.map(f => Math.floor(oreTotali * (f.percentuale / 100)));
     const oreAssegnate = orePerFase.reduce((a, b) => a + b, 0);
     const oreRimanenti = oreTotali - oreAssegnate;
     orePerFase[orePerFase.length - 1] += oreRimanenti;
-    
+
     const formatDate = (d: Date) => {
       const day = d.getDate().toString().padStart(2, '0');
       const month = (d.getMonth() + 1).toString().padStart(2, '0');
       const year = d.getFullYear();
       return `${day}/${month}/${year}`;
     };
-    
+
     let giorniUsati = 0;
     const nuovoCalendario = fasiConfig.map((fase, index) => {
       const giorniFase = giorniPerFase[index];
@@ -245,7 +247,7 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
       const dataFine = new Date(dataInizio);
       dataFine.setDate(dataFine.getDate() + giorniFase - 1);
       giorniUsati += giorniFase;
-      
+
       return {
         fase: fase.nome,
         dataInizio: formatDate(dataInizio),
@@ -254,7 +256,7 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
         oreStimate: orePerFase[index]
       };
     });
-    
+
     const newData = {
       ...bandoData,
       mesiPreparazione: mesi,
@@ -273,20 +275,20 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(bandoData),
       });
-      
+
       if (!response.ok) {
         throw new Error("Errore nel completamento");
       }
-      
+
       const result = await response.json();
-      
+
       queryClient.invalidateQueries({ queryKey: ["/api/concorsi"] });
-      
+
       toast({
         title: "Fase 0 completata!",
         description: "Ora puoi accedere alla Fase 1: Apprendimento Base (SQ3R).",
       });
-      
+
       setLocation(`/concorsi/${concorsoId}/fase1`);
     } catch (error) {
       console.error("Error completing phase 0:", error);
@@ -323,8 +325,8 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
               FASE 0: Intelligence & Setup
             </h1>
             <p className="text-muted-foreground mt-1">
-              {concorsoId && existingConcorso 
-                ? existingConcorso.nome 
+              {concorsoId && existingConcorso
+                ? existingConcorso.nome
                 : "Decodifica del bando e configurazione del motore di studio"}
             </p>
           </div>

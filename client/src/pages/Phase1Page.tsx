@@ -17,13 +17,13 @@ export default function Phase1Page() {
   const searchString = useSearch();
   const params = new URLSearchParams(searchString);
   const concorsoId = params.get("id");
-  
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [bandoData, setBandoData] = useState<BandoData | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedRef = useRef<string>("");
-  
+
   const { data: existingConcorso, isLoading: isLoadingConcorso } = useQuery<Concorso>({
     queryKey: ["/api/concorsi", concorsoId],
     queryFn: async () => {
@@ -33,7 +33,7 @@ export default function Phase1Page() {
     },
     enabled: !!concorsoId,
   });
-  
+
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
@@ -41,14 +41,14 @@ export default function Phase1Page() {
       }
     };
   }, []);
-  
+
   useEffect(() => {
     if (existingConcorso?.bandoAnalysis && !bandoData) {
       setBandoData(existingConcorso.bandoAnalysis as BandoData);
       lastSavedRef.current = JSON.stringify(existingConcorso.bandoAnalysis);
     }
   }, [existingConcorso, bandoData]);
-  
+
   const saveMutation = useMutation({
     mutationFn: async (data: Partial<Concorso>) => {
       if (!concorsoId) return;
@@ -58,17 +58,17 @@ export default function Phase1Page() {
       queryClient.invalidateQueries({ queryKey: ["/api/concorsi"] });
     },
   });
-  
+
   const debouncedSave = useCallback((newBandoData: BandoData) => {
     if (!concorsoId) return;
-    
+
     const currentDataStr = JSON.stringify(newBandoData);
     if (currentDataStr === lastSavedRef.current) return;
-    
+
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
-    
+
     setIsSaving(true);
     saveTimeoutRef.current = setTimeout(async () => {
       try {
@@ -86,23 +86,24 @@ export default function Phase1Page() {
 
   const handleAnalyze = async (file: File) => {
     setIsAnalyzing(true);
-    
+
     try {
       const formData = new FormData();
       formData.append("file", file);
-      
+
       const response = await fetch("/api/analyze-bando", {
         method: "POST",
         body: formData,
+        credentials: "include",
       });
-      
+
       if (!response.ok) {
         throw new Error("Errore durante l'analisi");
       }
-      
+
       const data = await response.json();
       setBandoData(data);
-      
+
       toast({
         title: "Analisi completata",
         description: "Il bando e stato analizzato con successo.",
@@ -145,41 +146,41 @@ export default function Phase1Page() {
 
   const handleUpdateCalendario = (mesi: number, ore: number) => {
     if (!bandoData) return;
-    
-    const oggi = bandoData.dataInizioStudio 
-      ? new Date(bandoData.dataInizioStudio) 
+
+    const oggi = bandoData.dataInizioStudio
+      ? new Date(bandoData.dataInizioStudio)
       : new Date();
     const dataEsame = new Date(oggi);
     dataEsame.setMonth(dataEsame.getMonth() + mesi);
-    
+
     const giorniTotali = Math.floor((dataEsame.getTime() - oggi.getTime()) / (1000 * 60 * 60 * 24));
     const settimane = giorniTotali / 7;
     const oreTotali = Math.round(settimane * ore);
-    
+
     const fasiConfig = [
       { nome: "Fase 1: Intelligence & Setup", percentuale: 10 },
       { nome: "Fase 2: Acquisizione Strategica", percentuale: 40 },
       { nome: "Fase 3: Consolidamento e Memorizzazione", percentuale: 30 },
       { nome: "Fase 4: Simulazione ad Alta Fedelta", percentuale: 20 }
     ];
-    
+
     const giorniPerFase = fasiConfig.map(f => Math.floor(giorniTotali * (f.percentuale / 100)));
     const giorniAssegnati = giorniPerFase.reduce((a, b) => a + b, 0);
     const giorniRimanenti = giorniTotali - giorniAssegnati;
     giorniPerFase[giorniPerFase.length - 1] += giorniRimanenti;
-    
+
     const orePerFase = fasiConfig.map(f => Math.floor(oreTotali * (f.percentuale / 100)));
     const oreAssegnate = orePerFase.reduce((a, b) => a + b, 0);
     const oreRimanenti = oreTotali - oreAssegnate;
     orePerFase[orePerFase.length - 1] += oreRimanenti;
-    
+
     const formatDate = (d: Date) => {
       const day = d.getDate().toString().padStart(2, '0');
       const month = (d.getMonth() + 1).toString().padStart(2, '0');
       const year = d.getFullYear();
       return `${day}/${month}/${year}`;
     };
-    
+
     let giorniUsati = 0;
     const nuovoCalendario = fasiConfig.map((fase, index) => {
       const giorniFase = giorniPerFase[index];
@@ -188,7 +189,7 @@ export default function Phase1Page() {
       const dataFine = new Date(dataInizio);
       dataFine.setDate(dataFine.getDate() + giorniFase - 1);
       giorniUsati += giorniFase;
-      
+
       return {
         fase: fase.nome,
         dataInizio: formatDate(dataInizio),
@@ -197,7 +198,7 @@ export default function Phase1Page() {
         oreStimate: orePerFase[index]
       };
     });
-    
+
     const newData = {
       ...bandoData,
       mesiPreparazione: mesi,
@@ -216,20 +217,20 @@ export default function Phase1Page() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(bandoData),
       });
-      
+
       if (!response.ok) {
         throw new Error("Errore nel completamento");
       }
-      
+
       const result = await response.json();
-      
+
       queryClient.invalidateQueries({ queryKey: ["/api/concorsi"] });
-      
+
       toast({
         title: "Fase 1 completata!",
         description: "Ora puoi accedere alla Fase 2: Acquisizione Strategica.",
       });
-      
+
       setLocation("/");
     } catch (error) {
       console.error("Error completing phase 1:", error);
@@ -266,8 +267,8 @@ export default function Phase1Page() {
               FASE 1: Intelligence & Setup
             </h1>
             <p className="text-muted-foreground mt-1">
-              {concorsoId && existingConcorso 
-                ? existingConcorso.nome 
+              {concorsoId && existingConcorso
+                ? existingConcorso.nome
                 : "Decodifica del bando e configurazione del motore di studio"}
             </p>
           </div>
@@ -304,8 +305,8 @@ export default function Phase1Page() {
                         Differenza col metodo universitario
                       </h3>
                       <p className="text-muted-foreground mt-1">
-                        All'universita il programma e dato. Qui devi costruirlo tu 
-                        decodificando il bando. Non studiare nulla prima di aver 
+                        All'universita il programma e dato. Qui devi costruirlo tu
+                        decodificando il bando. Non studiare nulla prima di aver
                         estratto tutti i dati necessari.
                       </p>
                     </div>
