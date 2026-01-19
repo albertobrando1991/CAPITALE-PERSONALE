@@ -98,6 +98,42 @@ const upload = multer({
 // DASHBOARD STATS
 // ============================================
 
+// Stats for AdminDashboard cards (podcasts, requests, users)
+router.get('/stats', requireStaff, async (req, res) => {
+  try {
+    const [
+      podcastsTotal,
+      requestsPending,
+      requestsTotal,
+      usersTotal,
+      usersPremium
+    ] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(podcastDatabase),
+      db.select({ count: sql<number>`count(*)` }).from(podcastRequests).where(eq(podcastRequests.status, 'pending')),
+      db.select({ count: sql<number>`count(*)` }).from(podcastRequests),
+      db.select({ count: sql<number>`count(*)` }).from(users),
+      db.select({ count: sql<number>`count(*)` }).from(userSubscriptions).where(and(eq(userSubscriptions.status, 'active'), or(eq(userSubscriptions.tier, 'premium'), eq(userSubscriptions.tier, 'enterprise'))))
+    ]);
+
+    res.json({
+      podcasts: {
+        total: Number(podcastsTotal[0]?.count || 0)
+      },
+      requests: {
+        pending: Number(requestsPending[0]?.count || 0),
+        total: Number(requestsTotal[0]?.count || 0)
+      },
+      users: {
+        total: Number(usersTotal[0]?.count || 0),
+        premium: Number(usersPremium[0]?.count || 0)
+      }
+    });
+  } catch (error: any) {
+    console.error('❌ Errore recupero stats:', error);
+    res.status(500).json({ error: 'Errore recupero statistiche' });
+  }
+});
+
 router.get('/stats/overview', requireAdmin, async (req, res) => {
   try {
     const today = new Date();
