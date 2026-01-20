@@ -63,8 +63,12 @@ const navItems = [
 
 export function AppSidebar({ userName, userLevel, onLogout }: AppSidebarProps) {
   const [location] = useLocation();
-  
-  // Fetch subscription status
+
+  // Use Auth Context for role/subscription status (Source of Truth)
+  const { user } = useAuth();
+
+  // Also fetch subscription for specific details (like usage limits) if needed, 
+  // but rely on user object for core UI flags
   const { data: subscription } = useQuery({
     queryKey: ['user-subscription'],
     queryFn: async () => {
@@ -72,10 +76,12 @@ export function AppSidebar({ userName, userLevel, onLogout }: AppSidebarProps) {
       if (!res.ok) return null;
       return res.json();
     },
+    enabled: !!user,
   });
 
-  const isAdmin = subscription?.isAdmin;
-  const isPremium = subscription?.tier === 'premium' || subscription?.tier === 'enterprise' || isAdmin;
+  // Priority: AuthContext User > Subscription API > Fallback
+  const isAdmin = user?.isAdmin || subscription?.isAdmin || false;
+  const isPremium = user?.isPremium || subscription?.tier === 'premium' || subscription?.tier === 'enterprise' || isAdmin;
 
   const { data: concorsi } = useQuery({
     queryKey: ['concorsi'],
@@ -88,8 +94,8 @@ export function AppSidebar({ userName, userLevel, onLogout }: AppSidebarProps) {
 
   const pathParts = location.split('/');
   const concorsoIndex = pathParts.indexOf('concorsi');
-  let activeConcorsoId = concorsoIndex !== -1 && pathParts.length > concorsoIndex + 1 
-    ? pathParts[concorsoIndex + 1] 
+  let activeConcorsoId = concorsoIndex !== -1 && pathParts.length > concorsoIndex + 1
+    ? pathParts[concorsoIndex + 1]
     : 'default';
 
   // Smart selection: if no active concorso in URL, try to use the first available one
