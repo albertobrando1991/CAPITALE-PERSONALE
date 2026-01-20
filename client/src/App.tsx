@@ -11,6 +11,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/LoginPage";
 import AuthCallbackPage from "@/pages/AuthCallbackPage";
+import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
+import UpdatePasswordPage from "@/pages/UpdatePasswordPage";
 import DashboardPage from "@/pages/DashboardPage";
 import MaterialsPage from "@/pages/MaterialsPage";
 import FlashcardsPage from "@/pages/FlashcardsPage";
@@ -178,6 +180,8 @@ function Router() {
                 {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
               </Route>
               <Route path="/auth/callback" component={AuthCallbackPage} />
+              <Route path="/auth/reset-password" component={UpdatePasswordPage} />
+              <Route path="/forgot-password" component={ForgotPasswordPage} />
               <Route path="/dashboard">
                 <ProtectedRoutes />
               </Route>
