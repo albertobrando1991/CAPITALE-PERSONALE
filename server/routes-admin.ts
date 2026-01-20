@@ -14,6 +14,7 @@ import {
   isSupabaseStorageConfigured,
   ensureBucketExists
 } from './services/supabase-storage';
+import { sendInvitationEmail } from './services/email';
 
 const router = Router();
 
@@ -678,8 +679,13 @@ router.post('/invite', requireAdmin, async (req, res) => {
 
     console.log(`✅ Utente invitato: ${parsed.email} come ${parsed.role}`);
 
-    // TODO: Send invitation email
-    // await sendInvitationEmail(parsed.email, parsed.role);
+    // Send invitation email
+    try {
+      await sendInvitationEmail(parsed.email, parsed.role);
+    } catch (emailErr) {
+      console.error("Failed to send invitation email:", emailErr);
+      // Don't fail the request, just log it
+    }
 
     res.json({
       success: true,
