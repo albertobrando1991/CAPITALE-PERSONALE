@@ -6,9 +6,9 @@ const connectionString = process.env.DATABASE_URL;
 
 export const pool: pg.Pool | null = connectionString
   ? new pg.Pool({
-      connectionString,
-      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
-    })
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+  })
   : null;
 
 // Add error handler to prevent app crash on connection loss
