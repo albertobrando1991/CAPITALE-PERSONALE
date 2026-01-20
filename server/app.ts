@@ -23,6 +23,44 @@ declare module "http" {
   }
 }
 
+// CORS Configuration for cross-origin requests (Vercel frontend → Railway backend)
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://capitalepersonale.it",
+  "https://www.capitalepersonale.it",
+  "https://capitale-personale.vercel.app",
+  // Allow all Vercel preview deployments
+];
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  // Allow requests with no origin (like mobile apps or curl)
+  if (!origin) {
+    return next();
+  }
+
+  // Check if origin is allowed or is a Vercel preview URL
+  const isAllowed = allowedOrigins.includes(origin) ||
+    origin.includes(".vercel.app") ||
+    origin.includes("vercel.app");
+
+  if (isAllowed) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  }
+
+  // Handle preflight requests
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  next();
+});
+
 app.use(
   express.json({
     limit: "50mb",
