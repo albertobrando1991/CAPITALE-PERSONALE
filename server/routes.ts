@@ -4,6 +4,7 @@ import { createServer, type Server } from "http";
 import { storage, simulazioniStorage } from "./storage";
 import { registerSQ3RRoutes } from './routes-sq3r';
 import { registerLibreriaRoutes } from './routes-libreria';
+import { authRoutes } from './routes-auth';
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertConcorsoSchema, insertMaterialSchema, insertCalendarEventSchema, userRoles, userSubscriptions, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "../shared/schema";
 import { db } from "./db";
@@ -445,6 +446,9 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       });
     }
   });
+
+  // Register Auth Management Routes
+  app.use('/api/auth', isAuthenticated, authRoutes);
 
   app.get("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
     try {
