@@ -51,6 +51,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSupabaseUpload } from "@/hooks/useSupabaseUpload";
 import type { Concorso, Material, Flashcard } from "@shared/schema";
 
 interface BandoData {
@@ -61,7 +62,7 @@ export default function Phase2Page() {
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
-  
+
   // Support both new route param and old query param
   const [match, params] = useRoute("/concorsi/:concorsoId/fase2");
   const searchString = useSearch();
@@ -77,7 +78,7 @@ export default function Phase2Page() {
     materia: "",
     contenuto: "",
   });
-  
+
   const [deleteMateriaDialogOpen, setDeleteMateriaDialogOpen] = useState(false);
   const [materiaToDelete, setMateriaToDelete] = useState<string | null>(null);
 
@@ -211,7 +212,7 @@ export default function Phase2Page() {
                 try {
                   const data = await ocrRes.json();
                   msg = data?.error || data?.details || msg;
-                } catch {}
+                } catch { }
                 throw new Error(msg);
               }
 
@@ -251,35 +252,49 @@ export default function Phase2Page() {
         return res.json();
       }
 
-      const maxUploadBytes = 4 * 1024 * 1024;
-      if (file.size > maxUploadBytes) {
-        throw new Error(
-          "File troppo grande per l'upload su Vercel. Usa un PDF/TXT più piccolo oppure incolla il testo come appunti."
-        );
-      }
-
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("concorsoId", concorsoId || "");
-      formData.append("nome", newMaterial.nome);
-      formData.append("tipo", newMaterial.tipo);
-      formData.append("materia", newMaterial.materia);
-
-      const res = await fetch("/api/upload-material", {
-        method: "POST",
-        body: formData,
-        credentials: "include",
+      // For video/audio files, upload directly to Supabase Storage
+      // This bypasses the server and avoids Vercel/server timeouts
+      const signedUrlRes = await fetch('/api/storage/signed-upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          filename: file.name,
+          contentType: file.type,
+          bucket: 'materials',
+          concorsoId: concorsoId,
+        }),
       });
 
-      if (!res.ok) {
-        if (res.status === 413) {
-          throw new Error(
-            "File troppo grande per l'upload su Vercel. Usa un PDF/TXT più piccolo oppure incolla il testo come appunti."
-          );
-        }
-        throw new Error("Impossibile caricare il file");
+      if (!signedUrlRes.ok) {
+        const errData = await signedUrlRes.json().catch(() => ({}));
+        throw new Error(errData.error || 'Impossibile ottenere URL di upload');
       }
-      return res.json();
+
+      const { signedUrl, path } = await signedUrlRes.json();
+
+      // Upload directly to Supabase Storage
+      const uploadRes = await fetch(signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`Upload fallito (${uploadRes.status})`);
+      }
+
+      // Save material metadata to DB (with storage path instead of local fileUrl)
+      const dbRes = await apiRequest("POST", "/api/materials", {
+        concorsoId,
+        nome: newMaterial.nome || file.name,
+        tipo: newMaterial.tipo,
+        materia: newMaterial.materia,
+        fileUrl: path, // Store Supabase path, not local path
+        estratto: false, // No content extracted for video/audio
+      });
+
+      return dbRes.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/materials", concorsoId] });
@@ -316,7 +331,7 @@ export default function Phase2Page() {
       toast({ title: "Materiale eliminato" });
     },
   });
-  
+
   const deleteMateriaFlashcardsMutation = useMutation({
     mutationFn: async (materia: string) => {
       return apiRequest("DELETE", "/api/flashcards/materia", {
@@ -367,7 +382,7 @@ export default function Phase2Page() {
           try {
             const text = await res.text();
             if (text) message = text;
-          } catch {}
+          } catch { }
         }
         throw new Error(message);
       }
@@ -392,7 +407,7 @@ export default function Phase2Page() {
     },
   });
 
-  
+
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -402,7 +417,7 @@ export default function Phase2Page() {
 
   const bandoData = concorso?.bandoAnalysis as BandoData | null;
   const materie = bandoData?.materie || [];
-  
+
   // Lista predefinita di materie per concorsi pubblici
   const DEFAULT_MATERIE = [
     "Diritto costituzionale",
@@ -848,18 +863,18 @@ export default function Phase2Page() {
                   <Card key={materia}>
                     <CardContent className="p-4 relative group">
                       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <Button 
-                           variant="ghost" 
-                           size="icon" 
-                           className="h-6 w-6 text-destructive hover:bg-destructive/10"
-                           onClick={(e) => {
-                             e.preventDefault();
-                             setMateriaToDelete(materia);
-                             setDeleteMateriaDialogOpen(true);
-                           }}
-                         >
-                           <Trash2 className="h-3 w-3" />
-                         </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-destructive hover:bg-destructive/10"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setMateriaToDelete(materia);
+                            setDeleteMateriaDialogOpen(true);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
                       </div>
                       <p className="text-sm text-muted-foreground truncate pr-6">{materia}</p>
                       <p className="text-2xl font-bold">{count}</p>
