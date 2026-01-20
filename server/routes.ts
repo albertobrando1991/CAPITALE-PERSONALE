@@ -6,6 +6,7 @@ import { registerSQ3RRoutes } from './routes-sq3r';
 import { registerLibreriaRoutes } from './routes-libreria';
 import { authRoutes } from './routes-auth';
 import { setupAuth, isAuthenticated } from "./replitAuth";
+import { isAdmin } from "./utils/auth-helpers";
 import { insertConcorsoSchema, insertMaterialSchema, insertCalendarEventSchema, userRoles, userSubscriptions, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "../shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
@@ -479,17 +480,21 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
           .where(eq(userSubscriptions.userId, user.id))
           .limit(1);
 
-        const isAdmin = roleData?.role === 'admin' || roleData?.role === 'super_admin';
-        const isPremium = subData?.tier === 'premium' || subData?.tier === 'enterprise';
+        const isAdminFromDb = roleData?.role === 'admin' || roleData?.role === 'super_admin';
+        const isAdminFromEnv = isAdmin(user.email || undefined); // Check ADMIN_EMAILS env var
+        const isUserAdmin = isAdminFromDb || isAdminFromEnv;
+        const isPremium = subData?.tier === 'premium' || subData?.tier === 'enterprise' || isUserAdmin; // Admins are always premium
+
+        console.log(`[AUTH] User ${user.email}: isAdminFromDb=${isAdminFromDb}, isAdminFromEnv=${isAdminFromEnv}, final=${isUserAdmin}`);
 
         // Return enriched user matching AuthContext expectations
         res.json({
           ...user,
           name: [user.firstName, user.lastName].filter(Boolean).join(" ") || "Utente",
-          level: isAdmin ? 100 : 0, // Mock level: Admins get 100, others 0 for now (until level logic linked)
-          isAdmin,
+          level: isUserAdmin ? 100 : 0, // Mock level: Admins get 100, others 0 for now (until level logic linked)
+          isAdmin: isUserAdmin,
           isPremium,
-          tier: subData?.tier || 'free'
+          tier: subData?.tier || (isUserAdmin ? 'premium' : 'free')
         });
       } else {
         // Fallback for purely mock or really broken state
