@@ -1,6 +1,8 @@
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { useState } from "react";
+import { UserProfileDialog } from "./UserProfileDialog";
 import {
   Sidebar,
   SidebarContent,
@@ -35,7 +37,8 @@ import {
   Calendar as CalendarIcon,
   Lightbulb,
   Wind,
-  Zap
+  Zap,
+  Settings
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -223,21 +226,34 @@ export function AppSidebar({ userName, userLevel, onLogout }: AppSidebarProps) {
 
       <SidebarFooter className="p-4">
         <div className="flex items-center gap-3">
-          <UserAvatar name={userName} size="sm" />
+          <UserAvatar name={displayUserName} size="sm" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{userName}</p>
+            <p className="text-sm font-medium truncate">{displayUserName}</p>
             {isAdmin && <p className="text-xs text-yellow-600 font-semibold">Amministratore</p>}
           </div>
           <Button
             size="icon"
             variant="ghost"
+            onClick={() => setShowProfileDialog(true)}
+            title="Impostazioni Account"
+          >
+            <Settings className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
             onClick={onLogout}
             data-testid="button-logout"
+            title="Logout"
           >
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </SidebarFooter>
+      <UserProfileDialog
+        open={showProfileDialog}
+        onOpenChange={setShowProfileDialog}
+      />
     </Sidebar>
   );
 }
