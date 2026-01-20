@@ -85,45 +85,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [queryClient]);
 
-  // Legacy session auth fallback
-  const { data: legacyUser, isLoading: legacyLoading } = useQuery<User>({
+  // Fetch user data from backend (Source of Truth for level, isAdmin, etc.)
+  const { data: dbUser, isLoading: dbUserLoading } = useQuery<User>({
     queryKey: ["/api/auth/user"],
     retry: false,
     staleTime: 5 * 60 * 1000,
-    enabled: !isSupabaseConfigured() || !supabaseSession, // Only fetch if no Supabase session
+    // Fetch if legacy mode OR if we have a Supabase token
+    enabled: !isSupabaseConfigured() || (!!supabaseSession && !!currentAccessToken),
   });
 
-  // Determine which auth system is active and get the user
+  // Determine which auth system is active
   const isSupabaseAuth = isSupabaseConfigured() && !!supabaseSession;
-  const isLoading = isSupabaseLoading || (legacyLoading && !isSupabaseAuth);
 
-  // Transform Supabase user to app user format
-  const transformedSupabaseUser: User | null = supabaseUser ? {
+  // Loading state
+  const isLoading = isSupabaseLoading || dbUserLoading;
+
+  // Use the DB user as the primary user object (it contains level, isAdmin, etc.)
+  // Fallback to Supabase metadata only if DB fetch fails but session exists (rare edge case)
+  const user = dbUser || (supabaseUser ? {
     id: supabaseUser.id,
     email: supabaseUser.email ?? null,
-    firstName: supabaseUser.user_metadata?.first_name ||
-      supabaseUser.user_metadata?.full_name?.split(' ')[0] ||
-      supabaseUser.email?.split('@')[0] || null,
-    lastName: supabaseUser.user_metadata?.last_name ||
-      supabaseUser.user_metadata?.full_name?.split(' ').slice(1).join(' ') || null,
-    profileImageUrl: supabaseUser.user_metadata?.avatar_url ||
-      supabaseUser.user_metadata?.picture || null,
-    name: supabaseUser.user_metadata?.full_name ||
-      [supabaseUser.user_metadata?.first_name, supabaseUser.user_metadata?.last_name].filter(Boolean).join(' ') ||
-      supabaseUser.email?.split('@')[0] ||
-      'Utente',
-    level: 0,
-  } : null;
-
-  // Transform legacy user
-  const transformedLegacyUser = legacyUser ? {
-    ...legacyUser,
-    name: [legacyUser.firstName, legacyUser.lastName].filter(Boolean).join(" ") || legacyUser.email || "Utente",
-    level: 0,
-  } : null;
-
-  // Use Supabase user if available, otherwise legacy
-  const user = isSupabaseAuth ? transformedSupabaseUser : transformedLegacyUser;
+    firstName: supabaseUser.user_metadata?.first_name || null,
+    lastName: supabaseUser.user_metadata?.last_name || null,
+    profileImageUrl: supabaseUser.user_metadata?.avatar_url || null,
+    name: supabaseUser.user_metadata?.full_name || 'Utente',
+    level: 0, // Fallback level
+  } : null);
   const isAuthenticated = !!user;
 
   // Login with email/password
