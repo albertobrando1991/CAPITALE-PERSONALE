@@ -22,9 +22,10 @@ export default function ForgotPasswordPage() {
         try {
             await resetPassword(email);
             setIsSubmitted(true);
+            const redirectUrl = `${window.location.origin}/auth/reset-password`;
             toast({
                 title: "Email inviata",
-                description: "Controlla la tua casella di posta per il link di reset.",
+                description: `DEBUG: Redirect richiesto a: ${redirectUrl}`,
             });
         } catch (error: any) {
             toast({
