@@ -6,7 +6,9 @@
       "Bash(npx tsc:*)",
       "Bash(git push:*)",
       "Bash(npm run check:*)",
-      "Bash(node run-migration.js:*)"
+      "Bash(node run-migration.js:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: disable SSL verification globally to fix Supabase auth issues\n\nMove NODE_TLS_REJECT_UNAUTHORIZED=0 to app.ts entry point to ensure\nit''s set before any imports that might make HTTPS requests.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

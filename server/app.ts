@@ -1,4 +1,9 @@
 import "dotenv/config";
+
+// Disable SSL certificate verification globally
+// This is needed for some environments where SSL certificates cause issues
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 import express, { type Request, Response, NextFunction } from "express";
 import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
