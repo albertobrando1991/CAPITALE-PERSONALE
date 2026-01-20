@@ -1,17 +1,11 @@
 {
-  "buildCommand": "npm run build:full",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "installCommand": "npm install",
   "framework": "vite",
-  "functions": {
-    "api/index.ts": {
-      "includeFiles": "dist-server/**"
-    }
-  },
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/index"
+      "destination": "https://capitale-personale-production.up.railway.app/api/$1"
     },
     {
       "source": "/(.*)",
