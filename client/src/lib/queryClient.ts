@@ -8,10 +8,42 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || "";
  * Get full API URL - prepends base URL for production
  */
 export function getApiUrl(path: string): string {
-  if (API_BASE_URL && path.startsWith("/api")) {
-    return `${API_BASE_URL}${path}`;
+  // Handle both /api/... and api/... formats
+  if (API_BASE_URL && (path.startsWith("/api") || path.startsWith("api/"))) {
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    return `${API_BASE_URL}${normalizedPath}`;
   }
   return path;
+}
+
+/**
+ * Wrapper for fetch that automatically prepends API_BASE_URL for /api routes
+ * and adds authentication headers
+ */
+export async function apiFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  let url = typeof input === "string" ? input : input.toString();
+
+  // Transform URL if it's an API call
+  if (url.startsWith("/api") || url.startsWith("api/")) {
+    url = getApiUrl(url);
+  }
+
+  // Get auth headers
+  const token = await getAccessToken();
+  const headers = new Headers(init?.headers);
+
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  return fetch(url, {
+    ...init,
+    headers,
+    credentials: init?.credentials ?? "include",
+  });
 }
 
 async function throwIfResNotOk(res: Response) {

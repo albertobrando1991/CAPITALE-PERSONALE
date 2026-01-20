@@ -1,3 +1,6 @@
+// Setup fetch interceptor first (before any other imports that might use fetch)
+import "./lib/setupFetch";
+
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
