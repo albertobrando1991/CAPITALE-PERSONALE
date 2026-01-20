@@ -5,7 +5,9 @@ import { storage, simulazioniStorage } from "./storage";
 import { registerSQ3RRoutes } from './routes-sq3r';
 import { registerLibreriaRoutes } from './routes-libreria';
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertConcorsoSchema, insertMaterialSchema, insertCalendarEventSchema, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "../shared/schema";
+import { insertConcorsoSchema, insertMaterialSchema, insertCalendarEventSchema, userRoles, userSubscriptions, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "../shared/schema";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 import { calculateSM2, initializeSM2 } from "./sm2-algorithm";
 import { z } from "zod";
 import { generateWithFallback, getOpenRouterClient, cleanJson, makeVisionUserMessage } from "./services/ai";
@@ -451,31 +453,59 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
 
       let user = await storage.getUser(userId);
 
-      // If user doesn't exist, create it (mock mode)
+      // If user doesn't exist, create it (mock mode) or it's a fresh Supabase user
       if (!user) {
-        console.log("User not found, creating admin user");
-        user = await storage.upsertUser({
-          id: userId || "admin",
+        console.log("User not found in 'users' table (might be new Supabase user).");
+        // We generally shouldn't auto-create here if we want to force registration, 
+        // but for robustness we can return null or a default. 
+        // Current logic was creating admin user.
+      }
+
+      if (user) {
+        // Enrich with Role & Subscription
+        const [roleData] = await db
+          .select({ role: userRoles.role })
+          .from(userRoles)
+          .where(eq(userRoles.userId, user.id))
+          .limit(1);
+
+        const [subData] = await db
+          .select({ tier: userSubscriptions.tier })
+          .from(userSubscriptions)
+          .where(eq(userSubscriptions.userId, user.id))
+          .limit(1);
+
+        const isAdmin = roleData?.role === 'admin' || roleData?.role === 'super_admin';
+        const isPremium = subData?.tier === 'premium' || subData?.tier === 'enterprise';
+
+        // Return enriched user matching AuthContext expectations
+        res.json({
+          ...user,
+          name: [user.firstName, user.lastName].filter(Boolean).join(" ") || "Utente",
+          level: isAdmin ? 100 : 0, // Mock level: Admins get 100, others 0 for now (until level logic linked)
+          isAdmin,
+          isPremium,
+          tier: subData?.tier || 'free'
+        });
+      } else {
+        // Fallback for purely mock or really broken state
+        const defaultUser = {
+          id: "admin",
           email: "admin@test.com",
           firstName: "Admin",
           lastName: "User",
-        });
+          profileImageUrl: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          level: 100,
+          isAdmin: true
+        };
+        res.json(defaultUser);
       }
 
-      res.json(user);
     } catch (error: any) {
       console.error("Error fetching user:", error);
-      // In mock mode, return a default user even on error
-      const defaultUser = {
-        id: "admin",
-        email: "admin@test.com",
-        firstName: "Admin",
-        lastName: "User",
-        profileImageUrl: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      res.json(defaultUser);
+      res.status(500).json({ error: "Internal Server Error during user fetch" });
     }
   });
 
