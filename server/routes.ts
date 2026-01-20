@@ -1529,17 +1529,31 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
       // Estrai testo dal PDF
       let fileContent: string;
       try {
+        // Verifica che il buffer sia un PDF valido (inizia con %PDF)
+        const pdfHeader = pdfBuffer.slice(0, 5).toString('ascii');
+        console.log(`[BANDO-URL] PDF header check: "${pdfHeader}"`);
+
+        if (!pdfHeader.startsWith('%PDF')) {
+          console.log("[BANDO-URL] ERRORE: Il file non è un PDF valido");
+          return res.status(400).json({
+            error: "Il file scaricato non è un PDF valido",
+            details: `Header: ${pdfHeader}`
+          });
+        }
+
         fileContent = await extractTextFromPDF(pdfBuffer);
         console.log(`[BANDO-URL] PDF estratto: ${fileContent.length} caratteri`);
 
         if (!fileContent || fileContent.trim().length < 100) {
-          console.log("[BANDO-URL] ERRORE: PDF vuoto o troppo corto");
+          console.log("[BANDO-URL] ERRORE: PDF vuoto o troppo corto, testo estratto:", fileContent?.substring(0, 200));
           return res.status(400).json({
-            error: "Il PDF non contiene testo selezionabile. Assicurati che il PDF contenga testo (non sia scansionato)."
+            error: "Il PDF non contiene testo selezionabile. Assicurati che il PDF contenga testo (non sia scansionato).",
+            details: `Caratteri estratti: ${fileContent?.length || 0}`
           });
         }
       } catch (pdfError: any) {
-        console.error("[BANDO-URL] ERRORE estrazione PDF:", pdfError.message);
+        console.error("[BANDO-URL] ERRORE estrazione PDF:", pdfError);
+        console.error("[BANDO-URL] Stack:", pdfError.stack);
         return res.status(400).json({
           error: "Errore nell'estrazione del testo dal PDF",
           details: pdfError.message || "Il PDF potrebbe essere scansionato o corrotto"
