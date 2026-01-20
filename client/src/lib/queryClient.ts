@@ -1,5 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { getStoredAccessToken } from "@/contexts/AuthContext";
+import { getAccessToken } from "./supabase";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -11,7 +11,7 @@ async function throwIfResNotOk(res: Response) {
 /**
  * Get headers with Authorization if available
  */
-function getAuthHeaders(hasBody: boolean = false): HeadersInit {
+async function getAuthHeaders(hasBody: boolean = false): Promise<HeadersInit> {
   const headers: HeadersInit = {};
 
   if (hasBody) {
@@ -19,9 +19,16 @@ function getAuthHeaders(hasBody: boolean = false): HeadersInit {
   }
 
   // Add JWT token if available
-  const token = getStoredAccessToken();
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+  try {
+    const token = await getAccessToken();
+    if (token) {
+      // console.log("[API] Attaching Bearer token");
+      headers["Authorization"] = `Bearer ${token}`;
+    } else {
+      console.warn("[API] No access token found (session might be missing or expired)");
+    }
+  } catch (err) {
+    console.error("[API] Error retrieving access token:", err);
   }
 
   return headers;
@@ -32,9 +39,10 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const headers = await getAuthHeaders(!!data);
   const res = await fetch(url, {
     method,
-    headers: getAuthHeaders(!!data),
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include", // Keep for legacy session support
   });
@@ -49,8 +57,9 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
     async ({ queryKey }) => {
+      const headers = await getAuthHeaders();
       const res = await fetch(queryKey.join("/") as string, {
-        headers: getAuthHeaders(),
+        headers,
         credentials: "include",
       });
 

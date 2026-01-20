@@ -10,6 +10,7 @@ import { PhaseProgress, defaultPhases } from "@/components/PhaseProgress";
 import { ArrowLeft, Sparkles, BookOpen, Target, Calendar, Brain, Loader2, Save, FileText, ExternalLink, Wand2, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getAccessToken } from "@/lib/supabase";
 import type { Concorso, OfficialConcorso } from "@shared/schema";
 
 export default function Fase0SetupPage({ params }: { params: { concorsoId: string } }) {
@@ -95,6 +96,8 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
     }, 1500);
   }, [concorsoId, saveMutation]);
 
+
+
   const handleAnalyze = async (file: File) => {
     setIsAnalyzing(true);
 
@@ -102,10 +105,17 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
       const formData = new FormData();
       formData.append("file", file);
 
+      const token = await getAccessToken();
+      const headers: HeadersInit = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const response = await fetch("/api/analyze-bando", {
         method: "POST",
+        headers, // Add headers here
         body: formData,
-        credentials: "include",
+        // credentials: "include", // Removed as we are using Bearer token now, though keeping it doesn't hurt, it's not the primary auth anymore. Keeping it for session compat if needed, but Bearer is primary.
       });
 
       if (!response.ok) {
@@ -138,12 +148,19 @@ export default function Fase0SetupPage({ params }: { params: { concorsoId: strin
     try {
       console.log("[Fase0] Analyzing PDF from URL via server:", pdfUrl);
 
+      const token = await getAccessToken();
+      const headers: HeadersInit = {
+        "Content-Type": "application/json"
+      };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       // Use the server-side endpoint that fetches the PDF directly
       const response = await fetch("/api/analyze-bando-from-url", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ pdfUrl }),
-        credentials: "include",
       });
 
       const data = await response.json();

@@ -101,13 +101,18 @@ export async function getOrCreateAppUser(supabaseUser: { id: string; email?: str
 export const verifySupabaseAuth: RequestHandler = async (req: Request, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
 
+    console.log(`[SupabaseAuth] Verifying request: ${req.method} ${req.path}`);
+
     // Check for Bearer token
     if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.substring(7);
+        console.log("[SupabaseAuth] Bearer token found (length:", token.length, ")");
 
         try {
             const supabaseUser = await verifySupabaseToken(token);
+            console.log("[SupabaseAuth] Token verified for user:", supabaseUser.email);
             const appUser = await getOrCreateAppUser(supabaseUser);
+            console.log("[SupabaseAuth] App user found/created:", appUser.id);
 
             // Set user on request for downstream handlers
             (req as any).user = {
@@ -128,14 +133,18 @@ export const verifySupabaseAuth: RequestHandler = async (req: Request, res: Resp
             console.error("[SupabaseAuth] Token verification failed:", error.message);
             return res.status(401).json({ message: "Invalid or expired token" });
         }
+    } else {
+        console.log("[SupabaseAuth] No/Invalid Auth Header:", authHeader ? "Present but not Bearer" : "Missing");
     }
 
     // No Bearer token - fall back to session auth (existing behavior)
     // This allows gradual migration
     if (req.isAuthenticated && req.isAuthenticated()) {
+        console.log("[SupabaseAuth] Session auth active for user:", (req.user as any)?.id);
         return next();
     }
 
+    console.warn("[SupabaseAuth] Request unauthorized - No valid token or session");
     return res.status(401).json({ message: "Unauthorized" });
 };
 
@@ -153,8 +162,10 @@ export const isAuthenticatedHybrid: RequestHandler = async (req: Request, res: R
 
     // Fall back to existing session auth
     if (req.isAuthenticated && req.isAuthenticated()) {
+        // console.log(`[AuthHybrid] Session authenticated: ${(req.user as any)?.id}`);
         return next();
     }
 
+    console.warn(`[AuthHybrid] Unauthorized request to ${req.path}`);
     return res.status(401).json({ message: "Unauthorized" });
 };

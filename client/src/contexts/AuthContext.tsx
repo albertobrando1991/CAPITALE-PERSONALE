@@ -69,14 +69,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Get initial session
     getSession().then((session) => {
+      console.log("[AuthProvider] Initial session load:", session ? "FOUND" : "NULL");
       setSupabaseSession(session);
       setSupabaseUser(session?.user ?? null);
       currentAccessToken = session?.access_token ?? null;
+      if (session?.access_token) {
+        console.log("[AuthProvider] Access token set.");
+      } else {
+        console.warn("[AuthProvider] No access token in initial session.");
+      }
       setIsSupabaseLoading(false);
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log(`[AuthProvider] Auth change event: ${_event}`);
       setSupabaseSession(session);
       setSupabaseUser(session?.user ?? null);
       currentAccessToken = session?.access_token ?? null;

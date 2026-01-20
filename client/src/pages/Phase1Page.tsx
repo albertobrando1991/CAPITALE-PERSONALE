@@ -9,6 +9,7 @@ import { PhaseProgress, defaultPhases } from "@/components/PhaseProgress";
 import { ArrowLeft, Sparkles, BookOpen, Target, Calendar, Brain, Loader2, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getAccessToken } from "@/lib/supabase";
 import type { Concorso } from "@shared/schema";
 
 export default function Phase1Page() {
@@ -84,6 +85,7 @@ export default function Phase1Page() {
     }, 1500);
   }, [concorsoId, saveMutation]);
 
+
   const handleAnalyze = async (file: File) => {
     setIsAnalyzing(true);
 
@@ -91,10 +93,16 @@ export default function Phase1Page() {
       const formData = new FormData();
       formData.append("file", file);
 
+      const token = await getAccessToken();
+      const headers: HeadersInit = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const response = await fetch("/api/analyze-bando", {
         method: "POST",
+        headers,
         body: formData,
-        credentials: "include",
       });
 
       if (!response.ok) {
