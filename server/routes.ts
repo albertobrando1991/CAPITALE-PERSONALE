@@ -454,9 +454,11 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
   app.get("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
-      console.log("Fetching user with ID:", userId);
+      console.log("[AUTH-USER] Fetching user with ID:", userId);
+      console.log("[AUTH-USER] req.user:", JSON.stringify(req.user, null, 2));
 
       let user = await storage.getUser(userId);
+      console.log("[AUTH-USER] storage.getUser result:", user ? `Found: ${user.id} (${user.email})` : "NOT FOUND");
 
       // If user doesn't exist, create it (mock mode) or it's a fresh Supabase user
       if (!user) {
@@ -480,12 +482,15 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
           .where(eq(userSubscriptions.userId, user.id))
           .limit(1);
 
+        console.log(`[AUTH-USER] roleData from DB:`, roleData);
+        console.log(`[AUTH-USER] subData from DB:`, subData);
+
         const isAdminFromDb = roleData?.role === 'admin' || roleData?.role === 'super_admin';
         const isAdminFromEnv = isAdmin(user.email || undefined); // Check ADMIN_EMAILS env var
         const isUserAdmin = isAdminFromDb || isAdminFromEnv;
         const isPremium = subData?.tier === 'premium' || subData?.tier === 'enterprise' || isUserAdmin; // Admins are always premium
 
-        console.log(`[AUTH] User ${user.email}: isAdminFromDb=${isAdminFromDb}, isAdminFromEnv=${isAdminFromEnv}, final=${isUserAdmin}`);
+        console.log(`[AUTH-USER] User ${user.email}: roleFromDb=${roleData?.role}, isAdminFromDb=${isAdminFromDb}, isAdminFromEnv=${isAdminFromEnv}, final isAdmin=${isUserAdmin}`);
 
         // Return enriched user matching AuthContext expectations
         res.json({
