@@ -70,6 +70,8 @@ export function AppSidebar({ userName, userLevel, onLogout }: AppSidebarProps) {
 
   // Use Auth Context for role/subscription status (Source of Truth)
   const { user } = useAuth();
+  const [showProfileDialog, setShowProfileDialog] = useState(false);
+  const displayUserName = user?.name || userName;
 
   // Also fetch subscription for specific details (like usage limits) if needed, 
   // but rely on user object for core UI flags
