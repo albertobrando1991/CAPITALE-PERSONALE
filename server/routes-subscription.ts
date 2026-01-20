@@ -12,84 +12,51 @@ export function registerSubscriptionRoutes(app: Express) {
   app.get('/api/subscription/status', async (req, res) => {
     try {
       const user = req.user as any;
-      // Get email from multiple possible locations
       const userEmail = user?.email || user?.claims?.email;
-      const userId = user?.id || user?.claims?.sub;
+      const userId = user?.id || user?.claims?.sub; // Ensure we get the ID correctly
 
       console.log('[SUBSCRIPTION] Checking status for user:', { userId, userEmail });
 
       if (!userId) {
-        console.log('[SUBSCRIPTION] No user ID, returning free tier');
-        return res.json({ tier: 'free', status: 'none' });
+        return res.json({ tier: 'free', status: 'none', isAdmin: false });
       }
 
-      // 🔥 CHECK EMAIL-BASED ADMIN FIRST (before DB query)
-      const isPremiumByEmail = isAlwaysPremium(userEmail);
-      console.log('[SUBSCRIPTION] isPremiumByEmail:', isPremiumByEmail, 'for email:', userEmail);
+      // 1. Check Role in DB (Source of Truth for Admin)
+      const [roleData] = await db
+        .select({ role: userRoles.role })
+        .from(userRoles)
+        .where(eq(userRoles.userId, userId))
+        .limit(1);
 
-      if (isPremiumByEmail) {
-        console.log(`👑 Admin by email ${userEmail} → Force Premium`);
-        return res.json({
-          userId: userId,
-          tier: 'premium',
-          status: 'active',
-          isAdmin: true,
-          role: 'admin',
-          sintesiUsate: 0,
-          sintesiLimite: null, // Illimitato
-          startDate: new Date(),
-          endDate: null,
-        });
-      }
+      const isDbAdmin = roleData?.role === 'admin' || roleData?.role === 'super_admin' || roleData?.role === 'staff';
 
-      // Check DB role (with graceful fallback if table doesn't exist)
-      let userRole = null;
-      let isDbAdmin = false;
-      try {
-        const [role] = await db
-          .select()
-          .from(userRoles)
-          .where(eq(userRoles.userId, userId));
-        userRole = role;
-        isDbAdmin = userRole?.role === 'admin' || userRole?.role === 'super_admin' || userRole?.role === 'staff';
-        console.log('[SUBSCRIPTION] DB role for user:', userRole);
-      } catch (dbError: any) {
-        // Table might not exist yet - that's OK, we'll use email-based check only
-        console.log('[SUBSCRIPTION] DB role check failed (table may not exist):', dbError.message);
-      }
-
-      // 🔥 ADMIN BY DB ROLE
-      if (isDbAdmin) {
-        console.log(`👑 Admin/Staff by DB role ${userEmail} → Force Premium`);
-        return res.json({
-          userId: userId,
-          tier: 'premium',
-          status: 'active',
-          isAdmin: true,
-          role: userRole?.role || 'admin',
-          sintesiUsate: 0,
-          sintesiLimite: null, // Illimitato
-          startDate: new Date(),
-          endDate: null,
-        });
-      }
-
+      // 2. Check Subscription in DB
       let [subscription] = await db.select()
         .from(userSubscriptions)
         .where(eq(userSubscriptions.userId, userId));
 
-      // Crea subscription free di default se non esiste
-      if (!subscription) {
-        [subscription] = await db.insert(userSubscriptions).values({
-          userId: userId,
-          tier: 'free',
-          status: 'active',
-          sintesiLimite: 5,
-          sintesiUsate: 0,
-        }).returning();
-      }
+      // 3. Construct response
+      const tier = subscription?.tier || (isDbAdmin ? 'enterprise' : 'free');
+      const status = subscription?.status || (isDbAdmin ? 'active' : 'active');
+      const isPremium = tier === 'premium' || tier === 'enterprise' || isDbAdmin;
 
-      res.json(subscription);
+      const response = {
+        userId,
+        tier,
+        status,
+        isAdmin: isDbAdmin,
+        role: roleData?.role || 'user',
+        isPremium,
+        // Admin gets unlimited synthesis
+        sintesiUsate: subscription?.sintesiUsate || 0,
+        sintesiLimite: isDbAdmin ? null : (subscription?.sintesiLimite || 5),
+        startDate: subscription?.startDate || new Date(),
+        endDate: subscription?.endDate,
+      };
+
+      console.log(`[SUBSCRIPTION] Returning status for ${userEmail}:`, { tier, isAdmin: isDbAdmin });
+      res.json(response);
+
     } catch (error) {
       console.error('❌ Errore status subscription:', error);
       res.status(500).json({ error: 'Errore recupero subscription' });
