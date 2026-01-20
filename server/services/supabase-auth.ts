@@ -60,23 +60,32 @@ export async function verifySupabaseToken(token: string) {
  * This links Supabase Auth users to our existing users table
  */
 export async function getOrCreateAppUser(supabaseUser: { id: string; email?: string; user_metadata?: any }) {
+    console.log(`[getOrCreateAppUser] Looking up user for Supabase ID: ${supabaseUser.id}, Email: ${supabaseUser.email}`);
+
     // First, try to find by supabase_auth_id
     const existingByAuthId = await storage.getUserBySupabaseAuthId(supabaseUser.id);
+    console.log(`[getOrCreateAppUser] getUserBySupabaseAuthId result:`, existingByAuthId ? `Found user ${existingByAuthId.id} (${existingByAuthId.email})` : 'NOT FOUND');
+
     if (existingByAuthId) {
+        console.log(`[getOrCreateAppUser] Returning existing user by AuthId: ${existingByAuthId.id}`);
         return existingByAuthId;
     }
 
     // Try to find by email (for migrating existing users)
     if (supabaseUser.email) {
         const existingByEmail = await storage.getUserByEmail(supabaseUser.email);
+        console.log(`[getOrCreateAppUser] getUserByEmail result:`, existingByEmail ? `Found user ${existingByEmail.id}` : 'NOT FOUND');
+
         if (existingByEmail) {
             // Link the existing user to Supabase Auth
+            console.log(`[getOrCreateAppUser] Linking user ${existingByEmail.id} to Supabase Auth ID ${supabaseUser.id}`);
             await storage.linkUserToSupabaseAuth(existingByEmail.id, supabaseUser.id);
             return { ...existingByEmail, supabaseAuthId: supabaseUser.id };
         }
     }
 
     // Create new user
+    console.log(`[getOrCreateAppUser] Creating NEW user with Supabase ID as primary ID`);
     const newUser = await storage.upsertUser({
         id: supabaseUser.id, // Use Supabase Auth ID as primary ID for new users
         email: supabaseUser.email || null,
@@ -90,6 +99,7 @@ export async function getOrCreateAppUser(supabaseUser: { id: string; email?: str
             `https://ui-avatars.com/api/?name=${supabaseUser.email}&background=random`,
         supabaseAuthId: supabaseUser.id,
     });
+    console.log(`[getOrCreateAppUser] Created new user: ${newUser.id}`);
 
     return newUser;
 }
