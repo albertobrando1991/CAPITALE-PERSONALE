@@ -1,0 +1,9 @@
+[build]
+builder = "nixpacks"
+
+[build.nixpacks]
+installCmd = "npm install --legacy-peer-deps"
+buildCmd = "npm run build"
+
+[deploy]
+startCommand = "npm run start"
