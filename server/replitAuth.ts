@@ -299,26 +299,4 @@ export async function setupAuth(app: Express) {
   });
 }
 
-export const isAuthenticated: RequestHandler = async (req, res, next) => {
-  const user = req.user as any;
-
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-
-  // If local dev (no config), just check authentication
-  if (!process.env.REPL_ID) {
-    return next();
-  }
-
-  if (!user.expires_at) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-  if (now <= user.expires_at) {
-    return next();
-  }
-
-  return res.status(401).json({ message: "Unauthorized" });
-};
+export { isAuthenticatedHybrid as isAuthenticated } from "./services/supabase-auth";

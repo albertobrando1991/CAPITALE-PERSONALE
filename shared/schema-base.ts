@@ -12,6 +12,7 @@ export const users = pgTable("users", {
   firstName: text("first_name"),
   lastName: text("last_name"),
   profileImageUrl: text("profile_image_url"),
+  supabaseAuthId: varchar("supabase_auth_id").unique(), // Link to Supabase Auth user
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -65,6 +66,14 @@ export const officialConcorsi = pgTable("official_concorsi", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Keep session table to prevent Drizzle from deleting it (managed by connect-pg-simple)
+export const sessions = pgTable("sessions", {
+  sid: varchar("sid").primaryKey(),
+  sess: jsonb("sess").notNull(),
+  expire: timestamp("expire", { precision: 6 }).notNull(),
+});
+
 export const insertOfficialConcorsoSchema = createInsertSchema(officialConcorsi).omit({ id: true, createdAt: true, updatedAt: true });
 export type OfficialConcorso = typeof officialConcorsi.$inferSelect;
 export type InsertOfficialConcorso = typeof officialConcorsi.$inferInsert;
+

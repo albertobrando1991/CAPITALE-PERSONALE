@@ -23,8 +23,10 @@ import { eq, and, desc, or } from "drizzle-orm";
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
-  upsertUser(user: UpsertUser): Promise<User>;
-  
+  getUserBySupabaseAuthId(supabaseAuthId: string): Promise<User | undefined>;
+  linkUserToSupabaseAuth(userId: string, supabaseAuthId: string): Promise<void>;
+  upsertUser(user: UpsertUser & { supabaseAuthId?: string }): Promise<User>;
+
   getConcorsi(userId: string): Promise<Concorso[]>;
   getConcorso(id: string, userId: string): Promise<Concorso | undefined>;
   createConcorso(concorso: InsertConcorso): Promise<Concorso>;
@@ -70,6 +72,15 @@ export class DatabaseStorage implements IStorage {
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email));
     return user;
+  }
+
+  async getUserBySupabaseAuthId(supabaseAuthId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.supabaseAuthId, supabaseAuthId));
+    return user;
+  }
+
+  async linkUserToSupabaseAuth(userId: string, supabaseAuthId: string): Promise<void> {
+    await db.update(users).set({ supabaseAuthId }).where(eq(users.id, userId));
   }
 
   async upsertUser(user: UpsertUser): Promise<User> {
@@ -144,7 +155,7 @@ export class DatabaseStorage implements IStorage {
 
   async getUserProgress(userId: string, concorsoId?: string): Promise<UserProgress | undefined> {
     let query = db.select().from(userProgress).where(eq(userProgress.userId, userId));
-    
+
     if (concorsoId) {
       query = db
         .select()
@@ -156,7 +167,7 @@ export class DatabaseStorage implements IStorage {
       // In futuro potremmo volere un record 'globale' o aggregare i dati
       return (await query.orderBy(desc(userProgress.updatedAt)).limit(1))[0];
     }
-    
+
     const [progress] = await query;
     return progress;
   }
@@ -164,7 +175,7 @@ export class DatabaseStorage implements IStorage {
   async upsertUserProgress(progress: Partial<UserProgress> & { userId: string }): Promise<UserProgress> {
     // Cerca se esiste già un record per questo utente (e concorso se specificato)
     let existing;
-    
+
     if (progress.concorsoId) {
       [existing] = await db
         .select()
@@ -176,7 +187,7 @@ export class DatabaseStorage implements IStorage {
       // Per semplicità, richiediamo concorsoId per creare nuovi record specifici, 
       // o usiamo una logica diversa.
       // Qui: se manca concorsoId, cerchiamo l'ultimo modificato
-       [existing] = await db
+      [existing] = await db
         .select()
         .from(userProgress)
         .where(eq(userProgress.userId, progress.userId))
@@ -213,7 +224,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(materials.userId, userId), eq(materials.concorsoId, concorsoId)))
       .orderBy(desc(materials.createdAt));
   }
-  
+
   async getMaterial(id: string, userId: string): Promise<Material | undefined> {
     const [material] = await db
       .select()
@@ -245,24 +256,24 @@ export class DatabaseStorage implements IStorage {
       .delete(materials)
       .where(and(eq(materials.id, id), eq(materials.userId, userId)))
       .returning();
-      
+
     // 4. Update progress stats (recalculate totals for the concorso)
     if (deleted && material.concorsoId) {
-        // Get remaining flashcards for this concorso
-        const allFlashcards = await this.getFlashcards(userId, material.concorsoId);
-        const flashcardMasterate = allFlashcards.filter(f => f.masterate).length;
-        
-        await this.upsertUserProgress({
-            userId,
-            concorsoId: material.concorsoId,
-            flashcardTotali: allFlashcards.length,
-            flashcardMasterate
-        });
+      // Get remaining flashcards for this concorso
+      const allFlashcards = await this.getFlashcards(userId, material.concorsoId);
+      const flashcardMasterate = allFlashcards.filter(f => f.masterate).length;
+
+      await this.upsertUserProgress({
+        userId,
+        concorsoId: material.concorsoId,
+        flashcardTotali: allFlashcards.length,
+        flashcardMasterate
+      });
     }
 
     return !!deleted;
   }
-  
+
   async updateMaterial(id: string, userId: string, data: Partial<InsertMaterial>): Promise<Material | undefined> {
     const [updated] = await db
       .update(materials)
@@ -299,7 +310,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(flashcards.userId, userId))
       .orderBy(desc(flashcards.createdAt));
   }
-  
+
   async getFlashcard(id: string, userId: string): Promise<Flashcard | undefined> {
     const [flashcard] = await db
       .select()
@@ -307,7 +318,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)));
     return flashcard;
   }
-  
+
   async updateFlashcard(id: string, userId: string, data: Partial<InsertFlashcard>): Promise<Flashcard | undefined> {
     const [updated] = await db
       .update(flashcards)
@@ -316,7 +327,7 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return updated;
   }
-  
+
   async deleteFlashcard(id: string, userId: string): Promise<boolean> {
     const [deleted] = await db
       .delete(flashcards)
@@ -337,28 +348,28 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .returning();
-      
+
     // 2. Update materials stats (reset flashcardGenerate count for materials of this subject)
     if (deleted.length > 0) {
       await db.update(materials)
         .set({ flashcardGenerate: 0 })
         .where(
           and(
-             eq(materials.userId, userId),
-             eq(materials.concorsoId, concorsoId),
-             eq(materials.materia, materia)
+            eq(materials.userId, userId),
+            eq(materials.concorsoId, concorsoId),
+            eq(materials.materia, materia)
           )
         );
 
       // 3. Update user progress
       const allFlashcards = await this.getFlashcards(userId, concorsoId);
       const flashcardMasterate = allFlashcards.filter(f => f.masterate).length;
-      
+
       await this.upsertUserProgress({
-          userId,
-          concorsoId,
-          flashcardTotali: allFlashcards.length,
-          flashcardMasterate
+        userId,
+        concorsoId,
+        flashcardTotali: allFlashcards.length,
+        flashcardMasterate
       });
     }
 

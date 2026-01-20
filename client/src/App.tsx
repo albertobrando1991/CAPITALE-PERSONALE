@@ -10,6 +10,7 @@ import AppHeader from "@/components/AppHeader";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/LoginPage";
+import AuthCallbackPage from "@/pages/AuthCallbackPage";
 import DashboardPage from "@/pages/DashboardPage";
 import MaterialsPage from "@/pages/MaterialsPage";
 import FlashcardsPage from "@/pages/FlashcardsPage";
@@ -176,6 +177,7 @@ function Router() {
               <Route path="/register">
                 {isAuthenticated ? <Redirect to="/dashboard" /> : <LoginPage />}
               </Route>
+              <Route path="/auth/callback" component={AuthCallbackPage} />
               <Route path="/dashboard">
                 <ProtectedRoutes />
               </Route>
