@@ -9,6 +9,7 @@ import { insertConcorsoSchema, insertMaterialSchema, insertCalendarEventSchema, 
 import { calculateSM2, initializeSM2 } from "./sm2-algorithm";
 import { z } from "zod";
 import { generateWithFallback, getOpenRouterClient, cleanJson, makeVisionUserMessage } from "./services/ai";
+import { extractTextFromPDFRobust } from "./services/pdf-extraction";
 import multer from "multer";
 import { readFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
@@ -76,10 +77,11 @@ const upload = multer({
   },
 });
 
+// Use robust PDF extraction with pdf.js + OCR fallback
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  const pdfParse = await import("pdf-parse");
-  const pdfData = await pdfParse.default(buffer);
-  return pdfData.text || "";
+  const result = await extractTextFromPDFRobust(buffer);
+  console.log(`[PDF] Text extracted using method: ${result.method}, pages: ${result.pageCount}${result.confidence ? `, confidence: ${result.confidence.toFixed(1)}%` : ''}`);
+  return result.text;
 }
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -1556,7 +1558,7 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
         console.error("[BANDO-URL] Stack:", pdfError.stack);
         return res.status(400).json({
           error: "Errore nell'estrazione del testo dal PDF",
-          details: pdfError.message || "Il PDF potrebbe essere scansionato o corrotto"
+          details: pdfError.message || "Il PDF potrebbe essere protetto, corrotto o non contenere testo estraibile. Sono stati provati: pdf.js, pdf-parse e OCR."
         });
       }
 

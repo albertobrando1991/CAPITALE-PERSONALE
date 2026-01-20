@@ -9,6 +9,7 @@ import multer from 'multer';
 import { join } from 'path';
 import { readFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
 import { generateWithFallback } from './services/ai';
+import { extractTextFromPDFRobust } from './services/pdf-extraction';
 
 const router = express.Router();
 
@@ -39,11 +40,11 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB
 });
 
-// Helper functions (duplicated from routes.ts for isolation)
+// Helper functions - Use robust PDF extraction with pdf.js + OCR fallback
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  const pdfParse = await import("pdf-parse");
-  const pdfData = await pdfParse.default(buffer);
-  return pdfData.text || "";
+  const result = await extractTextFromPDFRobust(buffer);
+  console.log(`[FASE3][PDF] Text extracted using method: ${result.method}, pages: ${result.pageCount}${result.confidence ? `, confidence: ${result.confidence.toFixed(1)}%` : ''}`);
+  return result.text;
 }
 
 function cleanJson(text: string): string {
