@@ -9,10 +9,23 @@
  * that are not available in Vercel Serverless Functions.
  */
 
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+// Use dynamic import to avoid bundling issues on Vercel
+let pdfjsLib: any = null;
 
-// Disable worker for Node.js environment
-pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+async function getPdfJs() {
+  if (!pdfjsLib) {
+    try {
+      // Try legacy build first (better Node.js compatibility)
+      pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+    } catch (e) {
+      // Fallback to standard build
+      pdfjsLib = await import('pdfjs-dist');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+    }
+  }
+  return pdfjsLib;
+}
 
 interface ExtractionResult {
   text: string;
@@ -29,11 +42,14 @@ async function extractWithPdfJs(buffer: Buffer): Promise<ExtractionResult | null
   try {
     console.log('[PDF-EXTRACTION] Attempting pdf.js extraction...');
 
+    // Get pdf.js library (lazy loaded)
+    const pdfjs = await getPdfJs();
+
     // Convert Buffer to Uint8Array
     const uint8Array = new Uint8Array(buffer);
 
     // Load the PDF document
-    const loadingTask = pdfjsLib.getDocument({
+    const loadingTask = pdfjs.getDocument({
       data: uint8Array,
       useSystemFonts: true,
       disableFontFace: true,
