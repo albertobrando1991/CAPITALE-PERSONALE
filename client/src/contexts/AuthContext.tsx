@@ -26,7 +26,6 @@ interface User {
   firstName: string | null;
   lastName: string | null;
   profileImageUrl: string | null;
-  linkUserToSupabaseAuth: (id: string, supabaseAuthId: string) => Promise<void>;
   name: string;
   level: number;
   isAdmin?: boolean;
