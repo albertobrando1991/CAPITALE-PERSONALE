@@ -1,3 +1,9 @@
+// Disable SSL certificate verification for development/proxy environments
+// This is needed because some environments (corporate VPNs, proxies) use self-signed certificates
+if (process.env.NODE_ENV !== 'production') {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
+
 import { app, httpServer, initializeApp, log } from "./app";
 
 (async () => {

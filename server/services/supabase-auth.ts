@@ -22,12 +22,14 @@ export function getSupabaseAdmin(): SupabaseClient | null {
     }
 
     if (!supabaseAdmin) {
+        console.log("[SupabaseAuth] Creating Supabase admin client...");
         supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
             auth: {
                 autoRefreshToken: false,
                 persistSession: false,
             },
         });
+        console.log("[SupabaseAuth] Supabase admin client created");
     }
 
     return supabaseAdmin;
@@ -46,13 +48,23 @@ export async function verifySupabaseToken(token: string) {
         throw new Error("Supabase not configured");
     }
 
-    const { data: { user }, error } = await admin.auth.getUser(token);
+    try {
+        const { data: { user }, error } = await admin.auth.getUser(token);
 
-    if (error || !user) {
-        throw new Error(error?.message || "Invalid token");
+        if (error || !user) {
+            console.error("[SupabaseAuth] Token verification error:", error?.message);
+            throw new Error(error?.message || "Invalid token");
+        }
+
+        return user;
+    } catch (err: any) {
+        // Log the full error for debugging
+        console.error("[SupabaseAuth] verifySupabaseToken exception:", err.message);
+        if (err.message?.includes('self-signed certificate')) {
+            console.error("[SupabaseAuth] SSL Certificate issue detected - this may be due to a corporate proxy or VPN");
+        }
+        throw err;
     }
-
-    return user;
 }
 
 /**
@@ -62,46 +74,52 @@ export async function verifySupabaseToken(token: string) {
 export async function getOrCreateAppUser(supabaseUser: { id: string; email?: string; user_metadata?: any }) {
     console.log(`[getOrCreateAppUser] Looking up user for Supabase ID: ${supabaseUser.id}, Email: ${supabaseUser.email}`);
 
-    // First, try to find by supabase_auth_id
-    const existingByAuthId = await storage.getUserBySupabaseAuthId(supabaseUser.id);
-    console.log(`[getOrCreateAppUser] getUserBySupabaseAuthId result:`, existingByAuthId ? `Found user ${existingByAuthId.id} (${existingByAuthId.email})` : 'NOT FOUND');
+    try {
+        // First, try to find by supabase_auth_id
+        const existingByAuthId = await storage.getUserBySupabaseAuthId(supabaseUser.id);
+        console.log(`[getOrCreateAppUser] getUserBySupabaseAuthId result:`, existingByAuthId ? `Found user ${existingByAuthId.id} (${existingByAuthId.email})` : 'NOT FOUND');
 
-    if (existingByAuthId) {
-        console.log(`[getOrCreateAppUser] Returning existing user by AuthId: ${existingByAuthId.id}`);
-        return existingByAuthId;
-    }
-
-    // Try to find by email (for migrating existing users)
-    if (supabaseUser.email) {
-        const existingByEmail = await storage.getUserByEmail(supabaseUser.email);
-        console.log(`[getOrCreateAppUser] getUserByEmail result:`, existingByEmail ? `Found user ${existingByEmail.id}` : 'NOT FOUND');
-
-        if (existingByEmail) {
-            // Link the existing user to Supabase Auth
-            console.log(`[getOrCreateAppUser] Linking user ${existingByEmail.id} to Supabase Auth ID ${supabaseUser.id}`);
-            await storage.linkUserToSupabaseAuth(existingByEmail.id, supabaseUser.id);
-            return { ...existingByEmail, supabaseAuthId: supabaseUser.id };
+        if (existingByAuthId) {
+            console.log(`[getOrCreateAppUser] Returning existing user by AuthId: ${existingByAuthId.id}`);
+            return existingByAuthId;
         }
+
+        // Try to find by email (for migrating existing users)
+        if (supabaseUser.email) {
+            const existingByEmail = await storage.getUserByEmail(supabaseUser.email);
+            console.log(`[getOrCreateAppUser] getUserByEmail result:`, existingByEmail ? `Found user ${existingByEmail.id}` : 'NOT FOUND');
+
+            if (existingByEmail) {
+                // Link the existing user to Supabase Auth
+                console.log(`[getOrCreateAppUser] Linking user ${existingByEmail.id} to Supabase Auth ID ${supabaseUser.id}`);
+                await storage.linkUserToSupabaseAuth(existingByEmail.id, supabaseUser.id);
+                return { ...existingByEmail, supabaseAuthId: supabaseUser.id };
+            }
+        }
+
+        // Create new user
+        console.log(`[getOrCreateAppUser] Creating NEW user with Supabase ID as primary ID`);
+        const newUser = await storage.upsertUser({
+            id: supabaseUser.id, // Use Supabase Auth ID as primary ID for new users
+            email: supabaseUser.email || null,
+            firstName: supabaseUser.user_metadata?.full_name?.split(' ')[0] ||
+                supabaseUser.user_metadata?.first_name ||
+                supabaseUser.email?.split('@')[0] || 'User',
+            lastName: supabaseUser.user_metadata?.full_name?.split(' ').slice(1).join(' ') ||
+                supabaseUser.user_metadata?.last_name || '',
+            profileImageUrl: supabaseUser.user_metadata?.avatar_url ||
+                supabaseUser.user_metadata?.picture ||
+                `https://ui-avatars.com/api/?name=${supabaseUser.email}&background=random`,
+            supabaseAuthId: supabaseUser.id,
+        });
+        console.log(`[getOrCreateAppUser] Created new user: ${newUser.id}`);
+
+        return newUser;
+    } catch (error: any) {
+        console.error(`[getOrCreateAppUser] Database error:`, error.message);
+        console.error(`[getOrCreateAppUser] Stack:`, error.stack);
+        throw new Error(`Failed to get/create user: ${error.message}`);
     }
-
-    // Create new user
-    console.log(`[getOrCreateAppUser] Creating NEW user with Supabase ID as primary ID`);
-    const newUser = await storage.upsertUser({
-        id: supabaseUser.id, // Use Supabase Auth ID as primary ID for new users
-        email: supabaseUser.email || null,
-        firstName: supabaseUser.user_metadata?.full_name?.split(' ')[0] ||
-            supabaseUser.user_metadata?.first_name ||
-            supabaseUser.email?.split('@')[0] || 'User',
-        lastName: supabaseUser.user_metadata?.full_name?.split(' ').slice(1).join(' ') ||
-            supabaseUser.user_metadata?.last_name || '',
-        profileImageUrl: supabaseUser.user_metadata?.avatar_url ||
-            supabaseUser.user_metadata?.picture ||
-            `https://ui-avatars.com/api/?name=${supabaseUser.email}&background=random`,
-        supabaseAuthId: supabaseUser.id,
-    });
-    console.log(`[getOrCreateAppUser] Created new user: ${newUser.id}`);
-
-    return newUser;
 }
 
 /**
