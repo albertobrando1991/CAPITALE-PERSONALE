@@ -3,13 +3,17 @@ import { db } from './db';
 import { eq, and, desc, sql, gte, lte } from 'drizzle-orm';
 import { breathingSessions, hydrationLogs, nutritionLogs, reframingLogs, sleepLogs } from '../shared/schema';
 import { cleanJson, generateWithFallback } from './services/ai';
+import { isAuthenticatedHybrid } from './services/supabase-auth';
 
 console.log('✅ Benessere Routes module loaded');
 
 const router = Router();
 
+// Apply hybrid auth to all benessere routes
+router.use(isAuthenticatedHybrid);
+
 // =====================================================
-// MIDDLEWARE: Verifica autenticazione
+// MIDDLEWARE: Verifica autenticazione (legacy, ora gestito da isAuthenticatedHybrid)
 // =====================================================
 function requireAuth(req: Request, res: Response, next: Function) {
   const userAny = req.user as any;

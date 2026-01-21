@@ -4,6 +4,7 @@ import { capitoliSQ3R, materieSQ3R } from '../shared/schema-sq3r';
 import { eq, and } from 'drizzle-orm';
 import multer from 'multer';
 import { cleanJson, generateWithFallback } from "./services/ai";
+import { isAuthenticatedHybrid } from './services/supabase-auth';
 
 // Multer per upload PDF
 const upload = multer({
@@ -13,11 +14,15 @@ const upload = multer({
 
 function getUserId(req: Request): string | undefined {
   const user = req.user as any;
-  return user?.claims?.sub;
+  // Support both Supabase auth (user.id) and legacy auth (user.claims.sub)
+  return user?.id || user?.claims?.sub;
 }
 
 export function registerSQ3RRoutes(app: Express) {
   console.log('📚 [INIT] Registrazione routes SQ3R...');
+
+  // Apply hybrid auth middleware to all SQ3R routes
+  app.use('/api/sq3r', isAuthenticatedHybrid);
 
   // ========== MATERIE ROUTES ==========
 
