@@ -104,6 +104,9 @@ app.get("/api/health", (_req, res) => {
       hasDatabaseUrl: !!process.env.DATABASE_URL,
       hasSessionSecret: !!process.env.SESSION_SECRET,
       hasReplId: !!process.env.REPL_ID,
+      hasSupabaseUrl: !!process.env.SUPABASE_URL,
+      hasSupabaseServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      supabaseUrlPrefix: process.env.SUPABASE_URL?.substring(0, 30) || "NOT SET",
     },
   });
 });
