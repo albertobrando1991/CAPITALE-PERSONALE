@@ -111,6 +111,43 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
+// Debug endpoint to test token verification
+app.get("/api/debug/verify-token", async (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.json({ error: "No Bearer token in Authorization header" });
+  }
+
+  const token = authHeader.substring(7);
+
+  try {
+    const { verifySupabaseToken, getOrCreateAppUser } = await import("./services/supabase-auth");
+
+    const supabaseUser = await verifySupabaseToken(token);
+    const appUser = await getOrCreateAppUser(supabaseUser);
+
+    res.json({
+      success: true,
+      supabaseUser: {
+        id: supabaseUser.id,
+        email: supabaseUser.email,
+      },
+      appUser: {
+        id: appUser.id,
+        email: appUser.email,
+        supabaseAuthId: appUser.supabaseAuthId,
+      },
+    });
+  } catch (err: any) {
+    res.json({
+      success: false,
+      error: err.message,
+      stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined,
+    });
+  }
+});
+
 // 🔧 MOCK AUTH per development (NON deve mai essere attivo in produzione)
 if (process.env.NODE_ENV === "development") {
   app.use(async (req, res, next) => {
