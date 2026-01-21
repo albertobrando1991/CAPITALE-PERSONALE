@@ -73,17 +73,17 @@ export function getGeminiClient(): any | null {
  */
 export function cleanJson(text: string): string {
   if (!text) return "{}";
-  
+
   // Remove markdown json blocks
   let cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-  
+
   // Find first brace/bracket
   const firstOpenBrace = cleaned.indexOf("{");
   const firstOpenBracket = cleaned.indexOf("[");
-  
+
   let startIndex = -1;
   let endIndex = -1;
-  
+
   // Determine if object or array
   if (firstOpenBrace !== -1 && (firstOpenBracket === -1 || firstOpenBrace < firstOpenBracket)) {
     startIndex = firstOpenBrace;
@@ -92,11 +92,11 @@ export function cleanJson(text: string): string {
     startIndex = firstOpenBracket;
     endIndex = cleaned.lastIndexOf("]");
   }
-  
+
   if (startIndex !== -1 && endIndex !== -1) {
     cleaned = cleaned.substring(startIndex, endIndex + 1);
   }
-  
+
   return cleaned;
 }
 
@@ -114,29 +114,29 @@ export interface GenerateWithFallbackOptions {
 function getModelChain(task: AITask): string[] {
   switch (task) {
     case "flashcards_generate":
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
     case "flashcard_explain":
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash", "anthropic/claude-3.5-sonnet"];
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5", "anthropic/claude-3.5-sonnet"];
     case "distractors_generate":
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
     case "quiz_generate":
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
     case "fase3_drill_generate":
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
     case "concept_explain":
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash", "anthropic/claude-3.5-sonnet"];
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5", "anthropic/claude-3.5-sonnet"];
     case "sq3r_generate":
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
     case "sq3r_chapters_extract":
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
     case "recovery_plan":
-      return ["anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+      return ["anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini", "google/gemini-flash-1.5"];
     case "reframing_generate":
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
     case "ocr_images":
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
     default:
-      return ["openai/gpt-4o-mini", "google/gemini-2.0-flash"];
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
   }
 }
 
