@@ -151,6 +151,7 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
       formData.append('file', uploadFile);
       formData.append('concorsoId', concorsoId);
       formData.append('materia', materia.nomeMateria);
+      formData.append('materiaId', materiaId); // Pass existing materia ID
 
       // 1. Upload file
       const xhr = new XMLHttpRequest();
@@ -182,8 +183,8 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
       setIsUploading(false);
       setIsExtracting(true);
 
-      // 2. Extract chapters
-      const extractRes = await apiRequest('POST', `/api/sq3r/fonti/${uploadResult.id}/estrai-capitoli`);
+      // 2. Extract chapters - pass materiaId to ensure chapters go to this materia
+      const extractRes = await apiRequest('POST', `/api/sq3r/fonti/${uploadResult.id}/estrai-capitoli?materiaId=${materiaId}`);
       const extractData = await extractRes.json();
 
       toast({

@@ -8,7 +8,7 @@ import { join } from 'path';
 import { cleanJson, generateWithFallback } from './services/ai';
 
 export class StorageSQ3R {
-  
+
   // ============================================
   // FONTI STUDIO
   // ============================================
@@ -18,6 +18,7 @@ export class StorageSQ3R {
     concorsoId: string;
     titolo: string;
     materia: string;
+    materiaId?: string; // Optional: if provided, chapters will be added to this materia
     pdfBase64: string;
     fileName: string;
     fileSize: number;
@@ -37,6 +38,7 @@ export class StorageSQ3R {
       }).returning();
 
       console.log('✅ Fonte upload creata:', fonte.id);
+      // Note: materiaId passed separately to estrai-capitoli endpoint
       return fonte;
     } catch (error) {
       console.error('❌ Errore creazione fonte upload:', error);
@@ -64,15 +66,15 @@ export class StorageSQ3R {
       throw error;
     }
   }
-  
+
   async createFonte(data: InsertFonteStudio): Promise<FonteStudio> {
     console.log('📚 StorageSQ3R.createFonte:', data);
-    
+
     const [fonte] = await db
       .insert(fontiStudio)
       .values(data)
       .returning();
-    
+
     console.log('✅ Fonte creata:', fonte.id);
     return fonte;
   }
@@ -89,43 +91,43 @@ export class StorageSQ3R {
       .select()
       .from(documentiPubblici)
       .where(eq(documentiPubblici.id, data.documentoLibreriaId));
-    
+
     if (!documento) {
       throw new Error('Documento non trovato nella libreria');
     }
-    
+
     // 2. Crea fonte collegata
     const [fonte] = await db.insert(fontiStudio)
       .values({
         userId: data.userId,
         concorsoId: data.concorsoId,
         tipo: 'libreria',
-        
+
         // Copia metadati
         titolo: documento.titolo,
         descrizione: documento.descrizione,
         materia: documento.materia,
-        
+
         // File info
         fileUrl: documento.pdfUrl,
         fileSize: documento.fileSize,
         fileType: 'pdf', // Assumiamo PDF per ora
-        
+
         // Collegamento
         documentoLibreriaId: data.documentoLibreriaId,
-        
+
         createdAt: new Date(),
         updatedAt: new Date(),
       })
       .returning();
-    
+
     console.log('✅ Fonte creata da libreria:', fonte.id);
     return fonte;
   }
-  
+
   async getFonti(userId: string, concorsoId: string): Promise<FonteStudio[]> {
     console.log('📚 StorageSQ3R.getFonti:', { userId, concorsoId });
-    
+
     const fonti = await db
       .select()
       .from(fontiStudio)
@@ -136,14 +138,14 @@ export class StorageSQ3R {
         )
       )
       .orderBy(desc(fontiStudio.createdAt));
-    
+
     console.log(`✅ ${fonti.length} fonti trovate`);
     return fonti;
   }
-  
+
   async getFonte(id: string, userId: string): Promise<FonteStudio | undefined> {
     console.log('📚 StorageSQ3R.getFonte:', { id, userId });
-    
+
     const [fonte] = await db
       .select()
       .from(fontiStudio)
@@ -153,13 +155,13 @@ export class StorageSQ3R {
           eq(fontiStudio.userId, userId)
         )
       );
-    
+
     return fonte;
   }
-  
+
   async updateFonte(id: string, userId: string, data: Partial<InsertFonteStudio>): Promise<FonteStudio> {
     console.log('📚 StorageSQ3R.updateFonte:', { id, data });
-    
+
     const [updated] = await db
       .update(fontiStudio)
       .set({
@@ -173,18 +175,18 @@ export class StorageSQ3R {
         )
       )
       .returning();
-    
+
     if (!updated) {
       throw new Error('Fonte non trovata o non autorizzato');
     }
-    
+
     console.log('✅ Fonte aggiornata:', updated.id);
     return updated;
   }
-  
+
   async deleteFonte(id: string, userId: string): Promise<void> {
     console.log('📚 StorageSQ3R.deleteFonte:', { id, userId });
-    
+
     await db
       .delete(fontiStudio)
       .where(
@@ -193,7 +195,7 @@ export class StorageSQ3R {
           eq(fontiStudio.userId, userId)
         )
       );
-    
+
     console.log('✅ Fonte eliminata');
   }
 
@@ -201,7 +203,7 @@ export class StorageSQ3R {
   // ESTRAZIONE CAPITOLI CON AI
   // ==========================================
 
-  async estraiCapitoliDaFonte(fonteId: string, userId: string) {
+  async estraiCapitoliDaFonte(fonteId: string, userId: string, targetMateriaId?: string) {
     try {
       // 1. Recupera fonte con PDF
       const fonte = await this.getFonte(fonteId, userId);
@@ -218,7 +220,7 @@ export class StorageSQ3R {
       console.log(`📄 Avvio estrazione testo con pdf-parse (Buffer size: ${pdfBuffer.length} bytes)`);
       let testoCompleto = "";
       let numPagine = 0;
-      
+
       try {
         const pdfParse = await import("pdf-parse");
         const pdfData = await pdfParse.default(pdfBuffer);
@@ -235,25 +237,37 @@ export class StorageSQ3R {
       // Nota: materia potrebbe essere null, usiamo "Materia sconosciuta" come fallback
       const capitoliEstratti = await this.estraiCapitoliConAI(testoCompleto, fonte.materia || "Materia generale");
 
-      // 5. Crea materia se non esiste
-      let materia = await db.select()
-        .from(materieSQ3R)
-        .where(and(
-          eq(materieSQ3R.userId, userId),
-          eq(materieSQ3R.concorsoId, fonte.concorsoId),
-          eq(materieSQ3R.nomeMateria, fonte.materia || "Nuova Materia")
-        ))
-        .then(rows => rows[0]);
+      // 5. Usa materia esistente se targetMateriaId fornito, altrimenti cerca/crea per nome
+      let materia: any;
 
-      if (!materia) {
-        [materia] = await db.insert(materieSQ3R).values({
-          userId,
-          concorsoId: fonte.concorsoId,
-          nomeMateria: fonte.materia || "Nuova Materia",
-          fonteId: fonteId, // Collega la materia alla fonte
-          capitoliTotali: 0,
-          capitoliCompletati: 0,
-        }).returning();
+      if (targetMateriaId) {
+        // Use the specified materia directly
+        console.log(`📌 Usando materia specificata: ${targetMateriaId}`);
+        materia = await this.getMateria(targetMateriaId, userId);
+        if (!materia) {
+          throw new Error(`Materia con ID ${targetMateriaId} non trovata`);
+        }
+      } else {
+        // Fallback: cerca o crea materia per nome (comportamento legacy)
+        materia = await db.select()
+          .from(materieSQ3R)
+          .where(and(
+            eq(materieSQ3R.userId, userId),
+            eq(materieSQ3R.concorsoId, fonte.concorsoId),
+            eq(materieSQ3R.nomeMateria, fonte.materia || "Nuova Materia")
+          ))
+          .then(rows => rows[0]);
+
+        if (!materia) {
+          [materia] = await db.insert(materieSQ3R).values({
+            userId,
+            concorsoId: fonte.concorsoId,
+            nomeMateria: fonte.materia || "Nuova Materia",
+            fonteId: fonteId, // Collega la materia alla fonte
+            capitoliTotali: 0,
+            capitoliCompletati: 0,
+          }).returning();
+        }
       }
 
       // 6. Crea capitoli
@@ -286,7 +300,7 @@ export class StorageSQ3R {
       // 8. Aggiorna fonte
       await this.updateFonteCapitoliEstratti(fonteId, userId, capitoliCreati);
 
-      console.log(`✅ ${capitoliCreati} capitoli creati per materia ${fonte.materia}`);
+      console.log(`✅ ${capitoliCreati} capitoli creati per materia ${materia.nomeMateria} (ID: ${materia.id})`);
       return { capitoliEstratti: capitoliCreati, materiaId: materia.id };
     } catch (error) {
       console.error('❌ Errore estrazione capitoli:', error);
@@ -337,14 +351,14 @@ ${testoTroncato}`;
       throw error;
     }
   }
-  
+
   // ============================================
   // MATERIE SQ3R
   // ============================================
-  
+
   async createMateria(data: InsertMateriaSQ3R): Promise<MateriaSQ3R> {
     console.log('📖 StorageSQ3R.createMateria:', data);
-    
+
     // Rimuovi campi undefined per permettere al database di usare i valori default
     const cleanData = Object.fromEntries(
       Object.entries(data).filter(([_, v]) => v !== undefined)
@@ -354,14 +368,14 @@ ${testoTroncato}`;
       .insert(materieSQ3R)
       .values(cleanData)
       .returning();
-    
+
     console.log('✅ Materia creata:', materia.id);
     return materia;
   }
-  
+
   async getMaterie(userId: string, concorsoId: string): Promise<MateriaSQ3R[]> {
     console.log('📖 StorageSQ3R.getMaterie (con ricalcolo conteggi):', { userId, concorsoId });
-    
+
     const materie = await db
       .select()
       .from(materieSQ3R)
@@ -372,7 +386,7 @@ ${testoTroncato}`;
         )
       )
       .orderBy(materieSQ3R.ordine);
-    
+
     // Ricalcolo dinamico dei conteggi per garantire coerenza
     // Questo risolve il problema dei contatori denormalizzati non sincronizzati
     for (const materia of materie) {
@@ -388,20 +402,20 @@ ${testoTroncato}`;
             eq(capitoliSQ3R.materiaId, materia.id)
           )
         );
-        
+
       materia.capitoliTotali = capitoli.length;
       materia.capitoliCompletati = capitoli.filter(c => c.completato).length;
-      
+
       // Opzionale: potremmo aggiornare il DB qui, ma per ora ci fidiamo del calcolo runtime
     }
-    
+
     console.log(`✅ ${materie.length} materie trovate`);
     return materie;
   }
-  
+
   async getMateria(id: string, userId: string): Promise<MateriaSQ3R | undefined> {
     console.log('📖 StorageSQ3R.getMateria:', { id, userId });
-    
+
     const [materia] = await db
       .select()
       .from(materieSQ3R)
@@ -411,13 +425,13 @@ ${testoTroncato}`;
           eq(materieSQ3R.userId, userId)
         )
       );
-    
+
     return materia;
   }
-  
+
   async updateMateria(id: string, userId: string, data: Partial<InsertMateriaSQ3R>): Promise<MateriaSQ3R> {
     console.log('📖 StorageSQ3R.updateMateria:', { id, data });
-    
+
     const [updated] = await db
       .update(materieSQ3R)
       .set({
@@ -431,18 +445,18 @@ ${testoTroncato}`;
         )
       )
       .returning();
-    
+
     if (!updated) {
       throw new Error('Materia non trovata o non autorizzato');
     }
-    
+
     console.log('✅ Materia aggiornata:', updated.id);
     return updated;
   }
-  
+
   async deleteMateria(id: string, userId: string): Promise<void> {
     console.log('📖 StorageSQ3R.deleteMateria:', { id, userId });
-    
+
     await db
       .delete(materieSQ3R)
       .where(
@@ -451,25 +465,25 @@ ${testoTroncato}`;
           eq(materieSQ3R.userId, userId)
         )
       );
-    
+
     console.log('✅ Materia eliminata');
   }
-  
+
   // ============================================
   // CAPITOLI SQ3R
   // ============================================
-  
+
   async createCapitolo(data: InsertCapitoloSQ3R): Promise<CapitoloSQ3R> {
     console.log('📄 StorageSQ3R.createCapitolo:', { ...data, pdfUrl: data.pdfUrl ? 'PRESENT (base64)' : undefined });
-    
+
     // NOTA: Se data.pdfUrl è presente, il returning() lo restituirà indietro,
     // causando un payload di risposta enorme. Dobbiamo evitarlo.
-    
+
     const [capitolo] = await db
       .insert(capitoliSQ3R)
       .values(data)
       .returning();
-    
+
     // Aggiorna contatore materia
     const materia = await this.getMateria(data.materiaId, data.userId);
     if (materia) {
@@ -477,17 +491,17 @@ ${testoTroncato}`;
         capitoliTotali: (materia.capitoliTotali || 0) + 1
       });
     }
-    
+
     console.log('✅ Capitolo creato:', capitolo.id);
-    
+
     // 🆕 Rimuovi pdfUrl dall'oggetto ritornato per evitare payload giganti
     const { pdfUrl, ...capitoloLight } = capitolo;
     return capitoloLight as CapitoloSQ3R;
   }
-  
+
   async getCapitoli(userId: string, materiaId?: string): Promise<CapitoloSQ3R[]> {
     console.log('📄 StorageSQ3R.getCapitoli:', { userId, materiaId });
-    
+
     // Select specifica per escludere pdfUrl
     const selectFields = {
       id: capitoliSQ3R.id,
@@ -523,7 +537,7 @@ ${testoTroncato}`;
         .select(selectFields)
         .from(capitoliSQ3R)
         .where(eq(capitoliSQ3R.userId, userId));
-      
+
       let capitoli: any[] = [];
 
       if (materiaId) {
@@ -543,21 +557,21 @@ ${testoTroncato}`;
 
       // Parse JSON fields
       return capitoli.map(c => {
-         return {
-           ...c,
-           reciteData: c.reciteData && typeof c.reciteData === 'string' ? JSON.parse(c.reciteData) : c.reciteData,
-           reviewData: c.reviewData && typeof c.reviewData === 'string' ? JSON.parse(c.reviewData) : c.reviewData
-         };
+        return {
+          ...c,
+          reciteData: c.reciteData && typeof c.reciteData === 'string' ? JSON.parse(c.reciteData) : c.reciteData,
+          reviewData: c.reviewData && typeof c.reviewData === 'string' ? JSON.parse(c.reviewData) : c.reviewData
+        };
       });
     } catch (error) {
-       console.error('❌ Error in getCapitoli query:', error);
-       throw error;
+      console.error('❌ Error in getCapitoli query:', error);
+      throw error;
     }
   }
-  
+
   async getCapitolo(id: string, userId: string): Promise<CapitoloSQ3R | undefined> {
     console.log('📄 StorageSQ3R.getCapitolo:', { id, userId });
-    
+
     try {
       const [capitolo] = await db
         .select({
@@ -595,7 +609,7 @@ ${testoTroncato}`;
             eq(capitoliSQ3R.userId, userId)
           )
         );
-      
+
       if (capitolo) {
         // Parse JSON fields
         if (capitolo.reciteData && typeof capitolo.reciteData === 'string') {
@@ -620,10 +634,10 @@ ${testoTroncato}`;
       throw error;
     }
   }
-  
+
   async updateCapitolo(id: string, userId: string, data: Partial<InsertCapitoloSQ3R>): Promise<CapitoloSQ3R> {
     console.log('📄 StorageSQ3R.updateCapitolo:', { id, data });
-    
+
     // FIX: Assicura che i campi complessi salvati come TEXT siano stringificati correttamente
     // Drizzle con .$type() su colonna text non fa auto-stringify
     const updateData = { ...data };
@@ -649,11 +663,11 @@ ${testoTroncato}`;
         )
       )
       .returning();
-    
+
     if (!updated) {
       throw new Error('Capitolo non trovato o non autorizzato');
     }
-    
+
     // Se il capitolo è stato completato, aggiorna il contatore della materia
     if (data.completato === true && updated.materiaId) {
       // Verifica se il capitolo era GIÀ completato prima dell'update
@@ -662,7 +676,7 @@ ${testoTroncato}`;
       // Ma possiamo controllare se l'incremento è necessario in modo più furbo
       // Oppure, semplicemente ci fidiamo che il client invii completato=true solo alla fine.
       // Un approccio migliore: leggere PRIMA dell'update.
-      
+
       // Dato che abbiamo già fatto l'update, usiamo una logica idempotente basata sul conteggio reale
       const materia = await this.getMateria(updated.materiaId, userId);
       if (materia) {
@@ -684,17 +698,17 @@ ${testoTroncato}`;
         });
       }
     }
-    
+
     console.log('✅ Capitolo aggiornato:', updated.id);
     return updated;
   }
-  
+
   async deleteCapitolo(id: string, userId: string): Promise<void> {
     console.log('📄 StorageSQ3R.deleteCapitolo:', { id, userId });
-    
+
     // Ottieni il capitolo per aggiornare il contatore della materia
     const capitolo = await this.getCapitolo(id, userId);
-    
+
     await db
       .delete(capitoliSQ3R)
       .where(
@@ -703,7 +717,7 @@ ${testoTroncato}`;
           eq(capitoliSQ3R.userId, userId)
         )
       );
-    
+
     // Aggiorna contatore materia
     if (capitolo && capitolo.materiaId) {
       const materia = await this.getMateria(capitolo.materiaId, userId);
@@ -716,29 +730,29 @@ ${testoTroncato}`;
         });
       }
     }
-    
+
     console.log('✅ Capitolo eliminato');
   }
-  
+
   // ============================================
   // NOTEBOOKLM SESSIONS
   // ============================================
-  
+
   async createNotebookSession(data: InsertNotebookLmSession): Promise<NotebookLmSession> {
     console.log('🤖 StorageSQ3R.createNotebookSession:', data);
-    
+
     const [session] = await db
       .insert(notebookLmSessions)
       .values(data)
       .returning();
-    
+
     console.log('✅ Notebook session creata:', session.id);
     return session;
   }
-  
+
   async getNotebookSessions(userId: string, concorsoId: string): Promise<NotebookLmSession[]> {
     console.log('🤖 StorageSQ3R.getNotebookSessions:', { userId, concorsoId });
-    
+
     const sessions = await db
       .select()
       .from(notebookLmSessions)
@@ -749,14 +763,14 @@ ${testoTroncato}`;
         )
       )
       .orderBy(desc(notebookLmSessions.createdAt));
-    
+
     console.log(`✅ ${sessions.length} sessions trovate`);
     return sessions;
   }
-  
+
   async getNotebookSession(id: string, userId: string): Promise<NotebookLmSession | undefined> {
     console.log('🤖 StorageSQ3R.getNotebookSession:', { id, userId });
-    
+
     const [session] = await db
       .select()
       .from(notebookLmSessions)
@@ -766,13 +780,13 @@ ${testoTroncato}`;
           eq(notebookLmSessions.userId, userId)
         )
       );
-    
+
     return session;
   }
-  
+
   async updateNotebookSession(id: string, userId: string, data: Partial<InsertNotebookLmSession>): Promise<NotebookLmSession> {
     console.log('🤖 StorageSQ3R.updateNotebookSession:', { id, data });
-    
+
     const [updated] = await db
       .update(notebookLmSessions)
       .set({
@@ -786,11 +800,11 @@ ${testoTroncato}`;
         )
       )
       .returning();
-    
+
     if (!updated) {
       throw new Error('Notebook session non trovata o non autorizzato');
     }
-    
+
     console.log('✅ Notebook session aggiornata:', updated.id);
     return updated;
   }
@@ -801,17 +815,17 @@ ${testoTroncato}`;
 
   async ricalcolaContatori(materiaId: string): Promise<{ totali: number; completati: number }> {
     console.log('🔄 Ricalcolo contatori per materia:', materiaId);
-    
+
     try {
       // Conta capitoli reali
       const capitoli = await db
         .select()
         .from(capitoliSQ3R)
         .where(eq(capitoliSQ3R.materiaId, materiaId));
-      
+
       const totali = capitoli.length;
       const completati = capitoli.filter(c => c.completato).length;
-      
+
       // Aggiorna materia
       await db
         .update(materieSQ3R)
@@ -821,9 +835,9 @@ ${testoTroncato}`;
           updatedAt: new Date(),
         })
         .where(eq(materieSQ3R.id, materiaId));
-      
+
       console.log('✅ Contatori aggiornati:', { totali, completati });
-      
+
       return { totali, completati };
     } catch (error) {
       console.error('❌ Errore ricalcolo contatori:', error);
@@ -881,11 +895,11 @@ ${testoTroncato}`;
 
     // Construct response compatible with frontend
     const formattedQuestions = [];
-    
+
     for (const q of qs) {
       const ans = await db.select().from(answers)
         .where(eq(answers.questionId, q.id));
-      
+
       // Fisher-Yates shuffle on retrieval
       const shuffledAnswers = [...ans];
       for (let i = shuffledAnswers.length - 1; i > 0; i--) {

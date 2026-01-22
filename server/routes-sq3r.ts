@@ -165,7 +165,7 @@ export function registerSQ3RRoutes(app: Express) {
   // ========== GET CAPITOLI PER MATERIA ==========
   app.get('/api/sq3r/capitoli', async (req: Request, res: Response) => {
     console.log('📥 GET /api/sq3r/capitoli');
-    
+
     try {
       // Auth check
       const userId = getUserId(req);
@@ -197,19 +197,19 @@ export function registerSQ3RRoutes(app: Express) {
         .orderBy(capitoliSQ3R.numeroCapitolo);
 
       console.log(`✅ Trovati ${capitoli.length} capitoli`);
-      
+
       // Aggiorna conteggi materia se necessario
       try {
-          const capitoliCompletati = capitoli.filter(c => c.completato).length;
-          await db.update(materieSQ3R)
-            .set({
-                capitoliTotali: capitoli.length,
-                capitoliCompletati: capitoliCompletati,
-                updatedAt: new Date()
-            })
-            .where(eq(materieSQ3R.id, materiaId as string));
-      } catch(e) {
-          console.error("Errore aggiornamento conteggi materia:", e);
+        const capitoliCompletati = capitoli.filter(c => c.completato).length;
+        await db.update(materieSQ3R)
+          .set({
+            capitoliTotali: capitoli.length,
+            capitoliCompletati: capitoliCompletati,
+            updatedAt: new Date()
+          })
+          .where(eq(materieSQ3R.id, materiaId as string));
+      } catch (e) {
+        console.error("Errore aggiornamento conteggi materia:", e);
       }
 
       // Rimuovi PDF dal payload
@@ -233,7 +233,7 @@ export function registerSQ3RRoutes(app: Express) {
   // ========== GET CAPITOLO SINGOLO ==========
   app.get('/api/sq3r/capitoli/:id', async (req: Request, res: Response) => {
     console.log('📥 GET /api/sq3r/capitoli/:id');
-    
+
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -291,7 +291,7 @@ export function registerSQ3RRoutes(app: Express) {
   // ========== POST CREA CAPITOLO ==========
   app.post('/api/sq3r/capitoli', async (req: Request, res: Response) => {
     console.log('📥 POST /api/sq3r/capitoli');
-    
+
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -330,7 +330,7 @@ export function registerSQ3RRoutes(app: Express) {
         .select({ count: capitoliSQ3R.id })
         .from(capitoliSQ3R)
         .where(eq(capitoliSQ3R.materiaId, materiaId));
-        
+
       await db
         .update(materieSQ3R)
         .set({
@@ -356,7 +356,7 @@ export function registerSQ3RRoutes(app: Express) {
   // ========== PATCH UPDATE CAPITOLO ==========
   app.patch('/api/sq3r/capitoli/:id', async (req: Request, res: Response) => {
     console.log('📥 PATCH /api/sq3r/capitoli/:id');
-    
+
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -444,7 +444,7 @@ export function registerSQ3RRoutes(app: Express) {
           .select({ count: capitoliSQ3R.id })
           .from(capitoliSQ3R)
           .where(eq(capitoliSQ3R.materiaId, materiaId));
-          
+
         await db
           .update(materieSQ3R)
           .set({
@@ -464,7 +464,7 @@ export function registerSQ3RRoutes(app: Express) {
   // ========== GET PDF CAPITOLO (LAZY LOAD) ==========
   app.get('/api/sq3r/capitoli/:id/pdf', async (req: Request, res: Response) => {
     console.log('📥 GET /api/sq3r/capitoli/:id/pdf');
-    
+
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -508,14 +508,14 @@ export function registerSQ3RRoutes(app: Express) {
   app.post('/api/sq3r/fonti/upload', upload.single('file'), async (req: Request, res: Response) => {
     try {
       console.log('📥 [START] POST /api/sq3r/fonti/upload');
-      
+
       const userId = getUserId(req);
       if (!userId) {
         console.log('❌ Utente non autenticato');
         return res.status(401).json({ error: 'Non autenticato' });
       }
 
-      const { concorsoId, materia } = req.body;
+      const { concorsoId, materia, materiaId } = req.body;
       const file = req.file;
 
       if (!file) {
@@ -529,6 +529,9 @@ export function registerSQ3RRoutes(app: Express) {
       }
 
       console.log(`📄 File ricevuto: ${file.originalname} (${file.size} bytes)`);
+      if (materiaId) {
+        console.log(`📌 MateriaId specificato: ${materiaId}`);
+      }
 
       // Converti in base64
       const pdfBase64 = file.buffer.toString('base64');
@@ -548,12 +551,13 @@ export function registerSQ3RRoutes(app: Express) {
       // Crea fonte
       // Import storageSQ3R directly (it is exported at the end of storage-sq3r.ts)
       const { storageSQ3R } = await import('./storage-sq3r');
-      
+
       const fonte = await storageSQ3R.createFonteUpload({
         userId,
         concorsoId,
         titolo: file.originalname.replace(/\.[^/.]+$/, ''), // Rimuovi estensione
         materia,
+        materiaId: materiaId || undefined, // Pass materiaId if provided
         pdfBase64: pdfDataUrl, // Store full data URL for easy consumption
         fileName: file.originalname,
         fileSize: file.size,
@@ -572,7 +576,7 @@ export function registerSQ3RRoutes(app: Express) {
   app.get('/api/sq3r/fonti', async (req: Request, res: Response) => {
     try {
       console.log('📥 [START] GET /api/sq3r/fonti');
-      
+
       const userId = getUserId(req);
       if (!userId) {
         return res.status(401).json({ error: 'Non autenticato' });
@@ -585,7 +589,7 @@ export function registerSQ3RRoutes(app: Express) {
 
       const { storageSQ3R } = await import('./storage-sq3r');
       const fonti = await storageSQ3R.getFonti(userId, concorsoId as string);
-      
+
       console.log(`✅ [END] Trovate ${fonti.length} fonti`);
       res.json(fonti);
     } catch (error: any) {
@@ -604,7 +608,7 @@ export function registerSQ3RRoutes(app: Express) {
 
       const { storageSQ3R } = await import('./storage-sq3r');
       const fonte = await storageSQ3R.getFonte(req.params.id, userId);
-      
+
       if (!fonte) return res.status(404).json({ error: 'Fonte non trovata' });
       res.json(fonte);
     } catch (error: any) {
@@ -634,15 +638,21 @@ export function registerSQ3RRoutes(app: Express) {
   app.post('/api/sq3r/fonti/:id/estrai-capitoli', async (req: Request, res: Response) => {
     try {
       console.log('📥 [START] POST /api/sq3r/fonti/:id/estrai-capitoli');
-      
+
       const userId = getUserId(req);
       if (!userId) {
         return res.status(401).json({ error: 'Non autenticato' });
       }
 
+      // Accept optional materiaId from query - if provided, chapters go to this materia
+      const targetMateriaId = req.query.materiaId as string | undefined;
+      if (targetMateriaId) {
+        console.log(`📌 Target materiaId specificato: ${targetMateriaId}`);
+      }
+
       const { storageSQ3R } = await import('./storage-sq3r');
-      const result = await storageSQ3R.estraiCapitoliDaFonte(req.params.id, userId);
-      
+      const result = await storageSQ3R.estraiCapitoliDaFonte(req.params.id, userId, targetMateriaId);
+
       console.log('✅ [END] Capitoli estratti:', result);
       res.json(result);
     } catch (error: any) {
@@ -655,7 +665,7 @@ export function registerSQ3RRoutes(app: Express) {
   app.post('/api/sq3r/capitoli/:id/genera-review', async (req: Request, res: Response) => {
     console.log('📥 POST /api/sq3r/capitoli/:id/genera-review');
     console.log('='.repeat(60));
-    
+
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -685,10 +695,10 @@ export function registerSQ3RRoutes(app: Express) {
       // ============================================
       // RACCOLTA CONTENUTI DA TUTTE LE FASI
       // ============================================
-      
+
       let contentToAnalyze = `📚 CAPITOLO: ${capitolo.titolo}\n`;
       contentToAnalyze += '═'.repeat(50) + '\n\n';
-      
+
       let totalContentItems = 0;
 
       // 1️⃣ TESTO EVIDENZIATO (Read Phase) - PRIORITÀ ALTA
@@ -888,7 +898,7 @@ Rispondi SOLO con un array JSON valido, senza testo aggiuntivo prima o dopo.
       console.log("🔍 Parsing risposta AI...");
       const cleanJsonString = cleanJson(generatedJson);
       let domandeGenerate = [];
-      
+
       try {
         domandeGenerate = JSON.parse(cleanJsonString);
       } catch (e) {
@@ -935,7 +945,7 @@ Rispondi SOLO con un array JSON valido, senza testo aggiuntivo prima o dopo.
 
       console.log('✅ Quiz salvato nel database');
       console.log('='.repeat(60));
-      
+
       res.json({
         domande: domandeGenerate,
         metadati: {
@@ -1017,7 +1027,7 @@ Rispondi SOLO con un array JSON valido, senza testo aggiuntivo prima o dopo.
     upload.single('pdf'),
     async (req: Request, res: Response) => {
       console.log('📥 POST /api/sq3r/capitoli/:id/upload-pdf');
-      
+
       try {
         const userId = getUserId(req);
         if (!userId) {

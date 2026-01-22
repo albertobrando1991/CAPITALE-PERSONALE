@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { BookOpen, Upload, Crown, Sparkles } from 'lucide-react';
+import { BookOpen, Crown, Sparkles } from 'lucide-react';
 
 export default function SetupFontiPage() {
   const { concorsoId } = useParams();
@@ -75,34 +75,8 @@ export default function SetupFontiPage() {
       </div>
 
       {/* Opzioni */}
-      <div className="grid md:grid-cols-3 gap-6 mb-8">
-        {/* Opzione A: Carica Dispense - ora in Fase 1 */}
-        <Card className="hover:shadow-lg transition-all hover:border-primary cursor-pointer"
-          onClick={() => setLocation(`/concorsi/${concorsoId}/fase1`)}>
-          <CardHeader>
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center mb-4">
-              <Upload className="w-8 h-8 text-white" />
-            </div>
-            <CardTitle className="text-2xl">Inizia a Studiare</CardTitle>
-            <CardDescription className="text-base">
-              Carica PDF nelle materie e l'AI estrarrà i capitoli
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li>✅ Crea materie e capitoli</li>
-              <li>✅ Upload PDF, estrazione AI</li>
-              <li>✅ Metodo SQ3R integrato</li>
-            </ul>
-          </CardContent>
-          <CardFooter>
-            <Button className="w-full" size="lg">
-              Vai a Fase 1 →
-            </Button>
-          </CardFooter>
-        </Card>
-
-        {/* Opzione B: Risorse Consigliate */}
+      <div className="grid md:grid-cols-2 gap-6 mb-8">
+        {/* Opzione A: Risorse Consigliate */}
         <Card className="hover:shadow-lg transition-all hover:border-primary cursor-pointer"
           onClick={() => setLocation(`/concorsi/${concorsoId}/risorse-consigliate`)}>
           <CardHeader>
