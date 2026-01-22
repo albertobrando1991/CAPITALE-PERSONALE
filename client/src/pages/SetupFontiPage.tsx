@@ -76,35 +76,35 @@ export default function SetupFontiPage() {
 
       {/* Opzioni */}
       <div className="grid md:grid-cols-3 gap-6 mb-8">
-        {/* Opzione A: Upload Dispense */}
+        {/* Opzione A: Carica Dispense - ora in Fase 1 */}
         <Card className="hover:shadow-lg transition-all hover:border-primary cursor-pointer"
-              onClick={() => setLocation(`/concorsi/${concorsoId}/upload-dispense`)}>
+          onClick={() => setLocation(`/concorsi/${concorsoId}/fase1`)}>
           <CardHeader>
             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center mb-4">
               <Upload className="w-8 h-8 text-white" />
             </div>
-            <CardTitle className="text-2xl">Carica Dispense</CardTitle>
+            <CardTitle className="text-2xl">Inizia a Studiare</CardTitle>
             <CardDescription className="text-base">
-              Carica i tuoi PDF/Word e organizzali automaticamente
+              Carica PDF nelle materie e l'AI estrarrà i capitoli
             </CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li>✅ Upload PDF, Word, TXT</li>
-              <li>✅ Estrazione capitoli con AI</li>
-              <li>✅ Integrazione immediata</li>
+              <li>✅ Crea materie e capitoli</li>
+              <li>✅ Upload PDF, estrazione AI</li>
+              <li>✅ Metodo SQ3R integrato</li>
             </ul>
           </CardContent>
           <CardFooter>
             <Button className="w-full" size="lg">
-              Upload File →
+              Vai a Fase 1 →
             </Button>
           </CardFooter>
         </Card>
 
         {/* Opzione B: Risorse Consigliate */}
         <Card className="hover:shadow-lg transition-all hover:border-primary cursor-pointer"
-              onClick={() => setLocation(`/concorsi/${concorsoId}/risorse-consigliate`)}>
+          onClick={() => setLocation(`/concorsi/${concorsoId}/risorse-consigliate`)}>
           <CardHeader>
             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mb-4">
               <BookOpen className="w-8 h-8 text-white" />

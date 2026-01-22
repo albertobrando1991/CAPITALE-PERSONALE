@@ -1,12 +1,12 @@
-import { useState } from 'react';
-import { useLocation, useRoute } from 'wouter';
+import { useState, useRef } from 'react';
+import { useLocation } from 'wouter';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, BookOpen, Plus, Loader2, FileText, CheckCircle2, Circle, Trash2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Plus, Loader2, FileText, CheckCircle2, Circle, Trash2, Upload } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,6 +20,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiRequest } from '@/lib/queryClient';
+import { getAccessToken } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 
@@ -28,13 +29,21 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [capitoloToDelete, setCapitoloToDelete] = useState<string | null>(null);
-  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Form state
   const [titolo, setTitolo] = useState('');
   const [numeroCapitolo, setNumeroCapitolo] = useState('1');
   const [pagineInizio, setPagineInizio] = useState('');
   const [pagineFine, setPagineFine] = useState('');
+
+  // Upload state
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
 
   // 1. Fetch Materia (dalla lista)
   const { data: materie = [] } = useQuery({
@@ -114,6 +123,96 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
     setCapitoloToDelete(id);
   };
 
+  // PDF Upload and Chapter Extraction
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 50 * 1024 * 1024) {
+        toast({ title: "❌ File troppo grande", description: "Max 50MB", variant: "destructive" });
+        return;
+      }
+      if (file.type !== 'application/pdf') {
+        toast({ title: "❌ Formato non supportato", description: "Solo PDF", variant: "destructive" });
+        return;
+      }
+      setUploadFile(file);
+    }
+  };
+
+  const handleUploadAndExtract = async () => {
+    if (!uploadFile || !materia) return;
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const token = await getAccessToken();
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+      formData.append('concorsoId', concorsoId);
+      formData.append('materia', materia.nomeMateria);
+
+      // 1. Upload file
+      const xhr = new XMLHttpRequest();
+
+      const uploadResult = await new Promise<any>((resolve, reject) => {
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            setUploadProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status === 200) {
+            resolve(JSON.parse(xhr.responseText));
+          } else {
+            reject(new Error(`Errore upload: ${xhr.status}`));
+          }
+        });
+
+        xhr.addEventListener('error', () => reject(new Error('Errore rete')));
+
+        xhr.open('POST', '/api/sq3r/fonti/upload');
+        if (token) {
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        }
+        xhr.send(formData);
+      });
+
+      setIsUploading(false);
+      setIsExtracting(true);
+
+      // 2. Extract chapters
+      const extractRes = await apiRequest('POST', `/api/sq3r/fonti/${uploadResult.id}/estrai-capitoli`);
+      const extractData = await extractRes.json();
+
+      toast({
+        title: `✅ ${extractData.capitoliEstratti || 0} capitoli estratti!`,
+        description: "I capitoli sono stati aggiunti automaticamente.",
+      });
+
+      // Refresh data
+      queryClient.invalidateQueries({ queryKey: ['/api/sq3r/capitoli', materiaId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/sq3r/materie', concorsoId] });
+
+      // Reset
+      setIsUploadDialogOpen(false);
+      setUploadFile(null);
+      setUploadProgress(0);
+
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      toast({
+        title: "❌ Errore",
+        description: error.message || "Impossibile elaborare il file",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploading(false);
+      setIsExtracting(false);
+    }
+  };
+
   if (!materia && !isLoadingCapitoli) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -143,65 +242,139 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
             <span>{materia?.oreStudioTotali?.toFixed(1) || 0}h Studio</span>
           </div>
         </div>
-        
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Nuovo Capitolo
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Aggiungi Capitolo</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleCreate} className="space-y-4 py-4">
-              <div className="grid grid-cols-4 gap-4">
-                <div className="col-span-1">
-                  <Label>N°</Label>
-                  <Input 
-                    type="number" 
-                    value={numeroCapitolo} 
-                    onChange={e => setNumeroCapitolo(e.target.value)} 
+
+        {/* Action Buttons */}
+        <div className="flex gap-2">
+          {/* PDF Upload Button */}
+          <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Upload className="h-4 w-4 mr-2" />
+                Carica PDF
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>📤 Carica Dispensa PDF</DialogTitle>
+                <DialogDescription>
+                  Carica un PDF e l'AI estrarrà automaticamente i capitoli.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="py-6 space-y-4">
+                {/* File Input */}
+                <div
+                  className="border-2 border-dashed rounded-lg p-8 text-center hover:border-primary transition-colors cursor-pointer"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
+                  {uploadFile ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <FileText className="h-5 w-5 text-primary" />
+                      <span className="font-medium">{uploadFile.name}</span>
+                      <Badge variant="secondary">{(uploadFile.size / 1024 / 1024).toFixed(1)} MB</Badge>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground">Clicca o trascina un file PDF (max 50MB)</p>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf"
+                    className="hidden"
+                    onChange={handleFileChange}
                   />
                 </div>
-                <div className="col-span-3">
-                  <Label>Titolo Capitolo</Label>
-                  <Input 
-                    value={titolo} 
-                    onChange={e => setTitolo(e.target.value)} 
-                    placeholder="Es. Introduzione al diritto"
-                    autoFocus 
-                  />
-                </div>
+
+                {/* Progress */}
+                {(isUploading || isExtracting) && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm">
+                        {isExtracting ? "🤖 Estrazione capitoli in corso..." : `Caricamento... ${uploadProgress}%`}
+                      </span>
+                    </div>
+                    {isUploading && <Progress value={uploadProgress} />}
+                  </div>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Pag. Inizio (opz)</Label>
-                  <Input 
-                    type="number" 
-                    value={pagineInizio} 
-                    onChange={e => setPagineInizio(e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <Label>Pag. Fine (opz)</Label>
-                  <Input 
-                    type="number" 
-                    value={pagineFine} 
-                    onChange={e => setPagineFine(e.target.value)} 
-                  />
-                </div>
-              </div>
+
               <DialogFooter>
-                <Button type="submit" disabled={createCapitoloMutation.isPending || !titolo}>
-                  {createCapitoloMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Crea
+                <Button variant="outline" onClick={() => setIsUploadDialogOpen(false)}>
+                  Annulla
+                </Button>
+                <Button
+                  onClick={handleUploadAndExtract}
+                  disabled={!uploadFile || isUploading || isExtracting}
+                >
+                  {(isUploading || isExtracting) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Carica ed Estrai Capitoli
                 </Button>
               </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+
+          {/* Manual Chapter Creation Button */}
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Nuovo Capitolo
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Aggiungi Capitolo</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleCreate} className="space-y-4 py-4">
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="col-span-1">
+                    <Label>N°</Label>
+                    <Input
+                      type="number"
+                      value={numeroCapitolo}
+                      onChange={e => setNumeroCapitolo(e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <Label>Titolo Capitolo</Label>
+                    <Input
+                      value={titolo}
+                      onChange={e => setTitolo(e.target.value)}
+                      placeholder="Es. Introduzione al diritto"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Pag. Inizio (opz)</Label>
+                    <Input
+                      type="number"
+                      value={pagineInizio}
+                      onChange={e => setPagineInizio(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label>Pag. Fine (opz)</Label>
+                    <Input
+                      type="number"
+                      value={pagineFine}
+                      onChange={e => setPagineFine(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button type="submit" disabled={createCapitoloMutation.isPending || !titolo}>
+                    {createCapitoloMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Crea
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Lista Capitoli */}
@@ -210,17 +383,28 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
           <Card className="p-12 text-center border-dashed">
             <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-medium mb-2">Nessun capitolo presente</h3>
-            <p className="text-muted-foreground mb-6">Inizia aggiungendo il primo capitolo da studiare.</p>
-            <Button variant="outline" onClick={() => setIsDialogOpen(true)}>Crea Capitolo Manualmente</Button>
+            <p className="text-muted-foreground mb-6">
+              Carica un PDF per estrarre automaticamente i capitoli oppure aggiungili manualmente.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <Button variant="outline" onClick={() => setIsUploadDialogOpen(true)}>
+                <Upload className="h-4 w-4 mr-2" />
+                Carica PDF
+              </Button>
+              <Button onClick={() => setIsDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Crea Manualmente
+              </Button>
+            </div>
           </Card>
         ) : (
           capitoli.map((cap: any) => {
             const isCompleted = cap.completato;
             const fase = cap.faseCorrente || 'survey';
-            
+
             return (
-              <Card 
-                key={cap.id} 
+              <Card
+                key={cap.id}
                 className="hover:shadow-md transition-shadow cursor-pointer border-l-4"
                 style={{ borderLeftColor: isCompleted ? '#22c55e' : '#3b82f6' }}
                 onClick={() => setLocation(`/concorsi/${concorsoId}/fase1/capitolo/${cap.id}`)}
@@ -229,7 +413,7 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
                   <div className="flex flex-col items-center justify-center h-12 w-12 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-lg text-slate-600">
                     {cap.numeroCapitolo}
                   </div>
-                  
+
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold mb-1">{cap.titolo}</h3>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -248,9 +432,9 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
                         <Circle className="h-4 w-4 mr-1" /> In corso
                       </Badge>
                     )}
-                    
-                    <Button 
-                      variant="ghost" 
+
+                    <Button
+                      variant="ghost"
                       size="icon"
                       className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={(e) => handleDeleteCapitolo(e, cap.id)}
@@ -281,7 +465,7 @@ function MateriaContent({ concorsoId, materiaId }: { concorsoId: string, materia
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Annulla</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={() => capitoloToDelete && deleteCapitoloMutation.mutate(capitoloToDelete)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
