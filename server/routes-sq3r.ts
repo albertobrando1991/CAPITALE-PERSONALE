@@ -1,6 +1,6 @@
 import { Express, Request, Response } from 'express';
 import { db } from './db';
-import { capitoliSQ3R, materieSQ3R } from '../shared/schema-sq3r';
+import { capitoliSQ3R, materieSQ3R, fontiStudio } from '../shared/schema-sq3r';
 import { eq, and } from 'drizzle-orm';
 import multer from 'multer';
 import { cleanJson, generateWithFallback } from "./services/ai";
@@ -473,12 +473,14 @@ export function registerSQ3RRoutes(app: Express) {
 
       const { id } = req.params;
 
-      const [result] = await db
+      // Prima prova a recuperare il PDF diretto dal capitolo
+      const [capitolo] = await db
         .select({
           pdfUrl: capitoliSQ3R.pdfUrl,
           pdfFileName: capitoliSQ3R.pdfFileName,
           pdfFileSize: capitoliSQ3R.pdfFileSize,
           pdfNumPages: capitoliSQ3R.pdfNumPages,
+          materiaId: capitoliSQ3R.materiaId,
         })
         .from(capitoliSQ3R)
         .where(
@@ -488,12 +490,57 @@ export function registerSQ3RRoutes(app: Express) {
           )
         );
 
-      if (!result || !result.pdfUrl) {
-        return res.status(404).json({ error: 'PDF non trovato' });
+      if (!capitolo) {
+        return res.status(404).json({ error: 'Capitolo non trovato' });
       }
 
-      console.log('✅ PDF recuperato');
-      res.json(result);
+      // Se il capitolo ha un PDF diretto, usalo
+      if (capitolo.pdfUrl) {
+        console.log('✅ PDF recuperato dal capitolo');
+        return res.json({
+          pdfUrl: capitolo.pdfUrl,
+          pdfFileName: capitolo.pdfFileName,
+          pdfFileSize: capitolo.pdfFileSize,
+          pdfNumPages: capitolo.pdfNumPages,
+        });
+      }
+
+      // Fallback: recupera il PDF dalla fonte della materia
+      console.log('🔄 Capitolo senza PDF diretto, cercando nella fonte della materia...');
+
+      const [materia] = await db
+        .select({
+          fonteId: materieSQ3R.fonteId,
+        })
+        .from(materieSQ3R)
+        .where(eq(materieSQ3R.id, capitolo.materiaId));
+
+      if (!materia?.fonteId) {
+        return res.status(404).json({ error: 'PDF non trovato - nessuna fonte collegata alla materia' });
+      }
+
+      // Recupera il PDF dalla fonte
+      const [fonte] = await db
+        .select({
+          fileUrl: fontiStudio.fileUrl,
+          titolo: fontiStudio.titolo,
+          fileSize: fontiStudio.fileSize,
+          numeroTotalePagine: fontiStudio.numeroTotalePagine,
+        })
+        .from(fontiStudio)
+        .where(eq(fontiStudio.id, materia.fonteId));
+
+      if (!fonte?.fileUrl) {
+        return res.status(404).json({ error: 'PDF non trovato - fonte senza file' });
+      }
+
+      console.log('✅ PDF recuperato dalla fonte della materia');
+      res.json({
+        pdfUrl: fonte.fileUrl,
+        pdfFileName: fonte.titolo,
+        pdfFileSize: fonte.fileSize,
+        pdfNumPages: fonte.numeroTotalePagine,
+      });
     } catch (error: any) {
       console.error('❌ Errore GET PDF:', error.message);
       res.status(500).json({ error: 'Errore caricamento PDF' });
