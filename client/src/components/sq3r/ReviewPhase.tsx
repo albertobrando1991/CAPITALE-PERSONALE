@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { CheckCircle, XCircle, Sparkles, Loader2, RefreshCw } from 'lucide-react';
+import { CheckCircle, XCircle, Sparkles, Loader2, RefreshCw, Brain } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
