@@ -1,7 +1,7 @@
 import { db } from './db';
 import { fontiStudio, materieSQ3R, capitoliSQ3R, notebookLmSessions, quizzes, questions, answers } from '../shared/schema-sq3r';
 import { documentiPubblici } from '../shared/schema-libreria';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import type { FonteStudio, InsertFonteStudio, MateriaSQ3R, InsertMateriaSQ3R, CapitoloSQ3R, InsertCapitoloSQ3R, NotebookLmSession, InsertNotebookLmSession } from '../shared/schema-sq3r';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -398,24 +398,43 @@ ${testoTroncato}`;
 
     // Ricalcolo dinamico dei conteggi per garantire coerenza
     // Questo risolve il problema dei contatori denormalizzati non sincronizzati
-    for (const materia of materie) {
-      const capitoli = await db
+    const materiaIds = materie.map((m: any) => m.id);
+
+    if (materiaIds.length > 0) {
+      const allCapitoli = await db
         .select({
-          id: capitoliSQ3R.id,
+          materiaId: capitoliSQ3R.materiaId,
           completato: capitoliSQ3R.completato
         })
         .from(capitoliSQ3R)
         .where(
           and(
             eq(capitoliSQ3R.userId, userId),
-            eq(capitoliSQ3R.materiaId, materia.id)
+            inArray(capitoliSQ3R.materiaId, materiaIds)
           )
         );
 
-      materia.capitoliTotali = capitoli.length;
-      materia.capitoliCompletati = capitoli.filter(c => c.completato).length;
+      // Group counts by materiaId
+      const countsByMateria = new Map<string, { total: number; completed: number }>();
 
-      // Opzionale: potremmo aggiornare il DB qui, ma per ora ci fidiamo del calcolo runtime
+      for (const cap of allCapitoli) {
+        const mId = cap.materiaId;
+        if (!mId) continue;
+
+        const current = countsByMateria.get(mId) || { total: 0, completed: 0 };
+        current.total++;
+        if (cap.completato) {
+          current.completed++;
+        }
+        countsByMateria.set(mId, current);
+      }
+
+      // Assign counts to materie
+      for (const materia of materie) {
+        const counts = countsByMateria.get(materia.id) || { total: 0, completed: 0 };
+        materia.capitoliTotali = counts.total;
+        materia.capitoliCompletati = counts.completed;
+      }
     }
 
     console.log(`✅ ${materie.length} materie trovate`);
