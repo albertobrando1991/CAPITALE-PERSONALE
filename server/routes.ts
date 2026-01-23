@@ -15,7 +15,8 @@ import { z } from "zod";
 import { generateWithFallback, getOpenRouterClient, cleanJson, makeVisionUserMessage } from "./services/ai";
 import { extractTextFromPDFRobust } from "./services/pdf-extraction";
 import multer from "multer";
-import { readFileSync, mkdirSync, existsSync } from "fs";
+import { mkdirSync, existsSync } from "fs";
+import { readFile } from "fs/promises";
 import { join } from "path";
 
 // Configura multer per salvare file su disco
@@ -810,7 +811,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
           try {
             // Leggi il file dal disco per estrarre il testo
             const filePath = join(uploadDir, reqWithFile.file.filename);
-            const fileBuffer = readFileSync(filePath);
+            const fileBuffer = await readFile(filePath);
             contenuto = await extractTextFromPDF(fileBuffer);
             console.log("[UPLOAD-MATERIAL] Testo estratto:", contenuto ? `${contenuto.length} caratteri` : "vuoto");
           } catch (pdfError: any) {
@@ -1815,7 +1816,7 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
           if (!existsSync(filePath)) {
             throw new Error(`File non trovato: ${filePath}. Multer potrebbe non aver salvato il file correttamente.`);
           }
-          const fileBuffer = readFileSync(filePath);
+          const fileBuffer = await readFile(filePath);
           console.log("[BANDO] File letto, dimensione buffer:", fileBuffer.length, "bytes");
           if (fileBuffer.length === 0) {
             throw new Error(`File vuoto: ${filePath}. Il file potrebbe non essere stato salvato correttamente.`);
@@ -1841,7 +1842,7 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
         // Leggi il file dal disco (multer usa diskStorage)
         const filePath = join(uploadDir, req.file.filename);
         console.log("[BANDO] Leggendo file da:", filePath);
-        const fileBuffer = readFileSync(filePath);
+        const fileBuffer = await readFile(filePath);
         fileContent = fileBuffer.toString("utf-8");
         console.log(`[BANDO] File testo letto: ${fileContent.length} caratteri`);
         if (!fileContent || fileContent.trim().length < 100) {
@@ -2065,7 +2066,7 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
       if (req.file.mimetype === "application/pdf") {
         try {
           const filePath = join(uploadDir, req.file.filename);
-          const fileBuffer = readFileSync(filePath);
+          const fileBuffer = await readFile(filePath);
           fileContent = await extractTextFromPDF(fileBuffer);
         } catch (pdfError: any) {
           console.error("[QUIZ-GEN] Errore estrazione PDF:", pdfError);
@@ -2074,7 +2075,7 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
       } else {
         // Fallback per file testo se necessario
         const filePath = join(uploadDir, req.file.filename);
-        fileContent = readFileSync(filePath, "utf-8");
+        fileContent = await readFile(filePath, "utf-8");
       }
 
       if (!fileContent || fileContent.trim().length < 100) {
