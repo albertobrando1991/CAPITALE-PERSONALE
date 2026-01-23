@@ -1,6 +1,6 @@
 import type { Express } from 'express';
 import { db } from './db';
-import { podcastDatabase, podcastRequests, podcastListens, userSubscriptions } from '../shared/schema';
+import { podcastDatabase, podcastRequests, podcastListens, userSubscriptions, userRoles } from '../shared/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import multer from 'multer';
 
@@ -204,8 +204,20 @@ export function registerPodcastRoutes(app: Express) {
         return res.status(401).json({ error: 'Non autenticato' });
       }
 
-      // TODO: Verifica ruolo staff
-      // if (user.ruolo !== 'staff') return res.status(403)...
+      // Verifica ruolo staff (da ENV o da DB)
+      const isEnvStaff = isStaff(user.email);
+
+      const [userRole] = await db
+        .select({ role: userRoles.role })
+        .from(userRoles)
+        .where(eq(userRoles.userId, user.id))
+        .limit(1);
+
+      const isDbStaff = userRole?.role === 'staff' || userRole?.role === 'admin' || userRole?.role === 'super_admin';
+
+      if (!isEnvStaff && !isDbStaff) {
+        return res.status(403).json({ error: 'Richiede permessi staff' });
+      }
 
       const { titolo, descrizione, materia, argomento, durata } = req.body;
       const file = req.file;
@@ -243,7 +255,7 @@ export function registerPodcastRoutes(app: Express) {
   console.log('✅ Routes Podcast registrate');
 }
 
-import { isAlwaysPremium } from './utils/auth-helpers';
+import { isAlwaysPremium, isStaff } from './utils/auth-helpers';
 
 // Helper: Verifica status premium (con override admin)
 async function checkPremiumStatus(userId?: string, userEmail?: string): Promise<boolean> {
