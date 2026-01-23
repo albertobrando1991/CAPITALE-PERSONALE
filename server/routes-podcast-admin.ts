@@ -3,26 +3,12 @@ import { db } from './db';
 import { podcastRequests, podcastDatabase, users } from '../shared/schema';
 import { eq, desc } from 'drizzle-orm';
 import multer from 'multer';
+import { requireAdminRole } from './middleware/adminAuth';
 
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 });
-
-// Helper: Require staff/admin
-function requireStaff(req: Request, res: Response, next: Function) {
-    const user = req.user as any;
-    if (!user?.id) {
-        return res.status(401).json({ error: 'Non autenticato' });
-    }
-    // TODO: Proper role check from RBAC
-    // For now, check if email matches admin list
-    const adminEmails = ['albertobrando1991@gmail.com', 'admin@capitalepersonale.it'];
-    if (!adminEmails.includes(user.email)) {
-        return res.status(403).json({ error: 'Accesso riservato allo staff' });
-    }
-    next();
-}
 
 export function registerPodcastAdminRoutes(app: Express) {
     console.log('🎧 [INIT] Registrazione routes Podcast Admin...');
@@ -30,7 +16,7 @@ export function registerPodcastAdminRoutes(app: Express) {
     // ==========================================
     // GET ALL PODCAST REQUESTS (Admin)
     // ==========================================
-    app.get('/api/admin/podcast/requests', requireStaff, async (req: Request, res: Response) => {
+    app.get('/api/admin/podcast/requests', requireAdminRole, async (req: Request, res: Response) => {
         try {
             const { status } = req.query;
 
@@ -66,7 +52,7 @@ export function registerPodcastAdminRoutes(app: Express) {
     // ==========================================
     // UPDATE REQUEST STATUS (Admin)
     // ==========================================
-    app.patch('/api/admin/podcast/requests/:id', requireStaff, async (req: Request, res: Response) => {
+    app.patch('/api/admin/podcast/requests/:id', requireAdminRole, async (req: Request, res: Response) => {
         try {
             const { id } = req.params;
             const { status, noteStaff, podcastId } = req.body;
@@ -96,7 +82,7 @@ export function registerPodcastAdminRoutes(app: Express) {
     // ==========================================
     // GET ALL PODCASTS (Admin view with full data)
     // ==========================================
-    app.get('/api/admin/podcast/library', requireStaff, async (req: Request, res: Response) => {
+    app.get('/api/admin/podcast/library', requireAdminRole, async (req: Request, res: Response) => {
         try {
             const podcasts = await db.select().from(podcastDatabase).orderBy(desc(podcastDatabase.createdAt));
             console.log(`📥 GET /api/admin/podcast/library - Found ${podcasts.length}`);
@@ -110,7 +96,7 @@ export function registerPodcastAdminRoutes(app: Express) {
     // ==========================================
     // DELETE PODCAST (Admin)
     // ==========================================
-    app.delete('/api/admin/podcast/:id', requireStaff, async (req: Request, res: Response) => {
+    app.delete('/api/admin/podcast/:id', requireAdminRole, async (req: Request, res: Response) => {
         try {
             const { id } = req.params;
             await db.delete(podcastDatabase).where(eq(podcastDatabase.id, id));
