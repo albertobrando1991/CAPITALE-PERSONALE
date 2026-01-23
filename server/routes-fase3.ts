@@ -825,13 +825,15 @@ router.post('/:concorsoId/generate-questions', isAuthenticatedHybrid, upload.sin
     Restituisci un ARRAY JSON puro:
     [
       {
-        "text": "Domanda...",
-        "options": ["A", "B", "C", "D"],
-        "correctAnswer": "A", // La stringa esatta dell'opzione corretta
-        "explanation": "Spiegazione...",
-        "topic": "Argomento specifico"
+        "text": "Quale principio stabilisce che...",
+        "options": ["Principio di legalità", "Principio di costituzionalità", "Principio di irretroattività", "Principio di primauté"],
+        "correctAnswer": "Principio di costituzionalità",
+        "explanation": "Spiegazione dettagliata...",
+        "topic": "Diritto Amministrativo"
       }
-    ]`;
+    ]
+    
+    ⚠️ IMPORTANTE: "correctAnswer" DEVE essere il TESTO ESATTO di una delle opzioni, NON una lettera (A/B/C/D) o un indice!`;
 
     const userPrompt = `Testo da analizzare:\n${textToAnalyze.substring(0, 30000)}`; // Limit context
 
@@ -1659,13 +1661,15 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', isAuthenticatedHy
                     Restituisci un ARRAY JSON puro:
                     [
                       {
-                        "text": "Domanda...",
-                        "options": ["A", "B", "C", "D"],
-                        "correctAnswer": "A", 
-                        "explanation": "Spiegazione...",
+                        "text": "Quale principio stabilisce che...",
+                        "options": ["Principio di legalità", "Principio di costituzionalità", "Principio di irretroattività", "Principio di primauté"],
+                        "correctAnswer": "Principio di costituzionalità",
+                        "explanation": "Spiegazione dettagliata...",
                         "topic": "${session.topic_id}"
                       }
-                    ]`;
+                    ]
+                    
+                    ⚠️ IMPORTANTE: "correctAnswer" DEVE essere il TESTO ESATTO di una delle opzioni, NON una lettera (A/B/C/D) o un indice!`;
 
             const userPrompt = `Testo da analizzare:\n${fullText.substring(0, 30000)}`;
 
