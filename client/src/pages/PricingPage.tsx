@@ -44,7 +44,7 @@ export default function PricingPage() {
       <div className="max-w-7xl mx-auto px-6 py-16">
         <div className="text-center mb-16">
           <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-            Supera il tuo concorso con Trae AI
+            Supera il tuo concorso con Capitale Personale
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
             Strumenti AI avanzati, podcast educativi e assistenza personale per la tua preparazione

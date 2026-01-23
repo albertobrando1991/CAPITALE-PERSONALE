@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { CheckCircle, XCircle, Sparkles, Loader2, RefreshCw, Brain } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -37,6 +37,8 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
   const [risposte, setRisposte] = useState<number[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [riflessioni, setRiflessioni] = useState<Record<number, string>>({});
+  const [savingRiflessione, setSavingRiflessione] = useState<number | null>(null);
   const queryClient = useQueryClient();
 
   // NEW: Fetch quiz from new endpoint
@@ -48,11 +50,36 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
       return res.json();
     },
     // Don't retry if 404 (no quiz yet)
+    // Don't retry if 404 (no quiz yet)
     retry: false
   });
 
   const domande = quizData?.domande || capitolo.reviewData?.domande || [];
   const hasDomande = domande.length > 0;
+
+  // Hydrate state from persisted data
+  useEffect(() => {
+    if (domande.length > 0) {
+      // 1. Hydrate Answers
+      const savedRisposte = domande.map((d: any) => d.rispostaUtente);
+      if (savedRisposte.some((r: any) => r !== undefined)) {
+        setRisposte(savedRisposte);
+      }
+
+      // 2. Hydrate Reflections
+      const savedRiflessioni: Record<number, string> = {};
+      domande.forEach((d: any, i: number) => {
+        if (d.riflessione) savedRiflessioni[i] = d.riflessione;
+      });
+      setRiflessioni(savedRiflessioni);
+
+      // 3. Check completion status
+      const data = quizData || capitolo.reviewData;
+      if (data?.percentualeCorrette !== undefined || data?.completatoAt) {
+        setShowResults(true);
+      }
+    }
+  }, [domande, quizData, capitolo.reviewData]);
 
   // Genera domande con AI
   const generaDomandeMutation = useMutation({
@@ -77,6 +104,11 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
       queryClient.invalidateQueries({ queryKey: ['capitolo', capitolo.id] });
       queryClient.invalidateQueries({ queryKey: ['quiz', capitolo.id] }); // Invalidate quiz query
       setIsGenerating(false);
+      // Reset state on new generation
+      setRisposte([]);
+      setRiflessioni({});
+      setShowResults(false);
+      setCurrentQuestion(0);
     },
     onError: (error: Error) => {
       toast({
@@ -96,6 +128,12 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
       ).length;
       const percentuale = Math.round((risposteCorrette / domande.length) * 100);
 
+      // Persist answers in questions
+      const domandeConRisposte = domande.map((d: any, idx: number) => ({
+        ...d,
+        rispostaUtente: risposte[idx] !== undefined ? risposte[idx] : undefined
+      }));
+
       const res = await fetch(`/api/sq3r/capitoli/${capitolo.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -105,6 +143,7 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
           faseCorrente: 'completed',
           reviewData: {
             ...capitolo.reviewData,
+            domande: domandeConRisposte, // Save updated questions with answers
             punteggio: risposteCorrette,
             percentualeCorrette: percentuale,
             completatoAt: new Date(),
@@ -122,11 +161,66 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
       });
       // Invalida query specifiche e liste per aggiornare UI globale
       queryClient.invalidateQueries({ queryKey: ['capitolo', capitolo.id] });
-      queryClient.invalidateQueries({ queryKey: ['capitoli'] }); 
+      queryClient.invalidateQueries({ queryKey: ['quiz', capitolo.id] });
+      queryClient.invalidateQueries({ queryKey: ['capitoli'] });
       queryClient.invalidateQueries({ queryKey: ['materie'] });
       onComplete();
     },
   });
+
+  // Salva riflessione per una domanda specifica
+  const salvaRiflessione = async (indiceDomanda: number) => {
+    const testo = riflessioni[indiceDomanda]?.trim();
+    if (!testo) {
+      toast({
+        title: "Attenzione",
+        description: "Inserisci una riflessione prima di salvare",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setSavingRiflessione(indiceDomanda);
+
+    try {
+      // Aggiorna reviewData con la riflessione
+      const domandeAggiornate = domande.map((d: Domanda, idx: number) => ({
+        ...d,
+        riflessione: idx === indiceDomanda ? testo : (d as any).riflessione
+      }));
+
+      const res = await fetch(`/api/sq3r/capitoli/${capitolo.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          reviewData: {
+            ...capitolo.reviewData,
+            domande: domandeAggiornate
+          }
+        }),
+      });
+
+      if (!res.ok) throw new Error('Errore salvataggio riflessione');
+
+      toast({
+        title: "✅ Riflessione salvata!",
+        description: "La tua riflessione è stata registrata per aiutarti a migliorare."
+      });
+
+      // Invalida le query per aggiornare i dati
+      queryClient.invalidateQueries({ queryKey: ['capitolo', capitolo.id] });
+      queryClient.invalidateQueries({ queryKey: ['quiz', capitolo.id] });
+    } catch (error) {
+      toast({
+        title: "Errore",
+        description: "Impossibile salvare la riflessione",
+        variant: "destructive"
+      });
+    } finally {
+      setSavingRiflessione(null);
+    }
+  };
 
   const handleRisposta = (indiceRisposta: number) => {
     const newRisposte = [...risposte];
@@ -182,10 +276,10 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
               L'AI creerà 5 domande personalizzate basate sul contenuto che hai studiato
             </p>
           </div>
-          <Button 
-            size="lg" 
-            onClick={() => generaDomandeMutation.mutate()} 
-            disabled={isGenerating} 
+          <Button
+            size="lg"
+            onClick={() => generaDomandeMutation.mutate()}
+            disabled={isGenerating}
           >
             {isGenerating ? (
               <>
@@ -213,16 +307,16 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle>🎯 Risultati Quiz</CardTitle>
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => {
-                 if(window.confirm("Vuoi generare nuove domande con l'AI?")) {
-                    generaDomandeMutation.mutate();
-                    setCurrentQuestion(0);
-                    setRisposte([]);
-                    setShowResults(false);
-                 }
+                if (window.confirm("Vuoi generare nuove domande con l'AI?")) {
+                  generaDomandeMutation.mutate();
+                  setCurrentQuestion(0);
+                  setRisposte([]);
+                  setShowResults(false);
+                }
               }}
               disabled={isGenerating}
             >
@@ -266,7 +360,7 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
         <div className="space-y-3">
           {domande.map((domanda, idx) => {
             const isCorretta = risposte[idx] === domanda.rispostaCorretta;
-            
+
             return (
               <Card key={idx} className={isCorretta ? 'border-green-500' : 'border-red-500'}>
                 <CardContent className="pt-6">
@@ -299,7 +393,7 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
                           💡 {domanda.spiegazione}
                         </p>
                       </div>
-                      
+
                       {/* Growth Mindset per Errori */}
                       {!isCorretta && (
                         <div className="mt-4 p-4 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg">
@@ -313,21 +407,36 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
                                   🎯 Growth Mindset: Trasforma l'errore in apprendimento
                                 </h4>
                                 <p className="text-xs text-muted-foreground">
-                                  Questo errore è un <strong>dato diagnostico prezioso</strong>. 
+                                  Questo errore è un <strong>dato diagnostico prezioso</strong>.
                                   Non dice che sei incompetente, ma rivela una lacuna specifica da colmare.
                                 </p>
                               </div>
-                              
+
                               <div className="bg-white dark:bg-slate-900 rounded-lg p-3 border">
                                 <label className="text-xs text-muted-foreground mb-2 block font-medium">
                                   💭 Cosa hai imparato da questo errore?
                                 </label>
-                                <textarea 
-                                  className="w-full text-sm border rounded p-2 min-h-[60px] resize-none" 
-                                  placeholder="Es. Ho confuso il concetto X con Y. Devo rivedere il capitolo 3 sulla distinzione tra..." 
+                                <textarea
+                                  className="w-full text-sm border rounded p-2 min-h-[60px] resize-none"
+                                  placeholder="Es. Ho confuso il concetto X con Y. Devo rivedere il capitolo 3 sulla distinzione tra..."
+                                  value={riflessioni[idx] ?? (domanda as any).riflessione ?? ''}
+                                  onChange={(e) => setRiflessioni(prev => ({ ...prev, [idx]: e.target.value }))}
                                 />
-                                <Button size="sm" className="mt-2 w-full" variant="outline">
-                                  Salva Riflessione
+                                <Button
+                                  size="sm"
+                                  className="mt-2 w-full"
+                                  variant="outline"
+                                  onClick={() => salvaRiflessione(idx)}
+                                  disabled={savingRiflessione === idx}
+                                >
+                                  {savingRiflessione === idx ? (
+                                    <>
+                                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                      Salvataggio...
+                                    </>
+                                  ) : (
+                                    'Salva Riflessione'
+                                  )}
                                 </Button>
                               </div>
                             </div>
@@ -342,11 +451,11 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
           })}
         </div>
 
-        <Button 
-          size="lg" 
-          className="w-full" 
-          onClick={() => completeMutation.mutate()} 
-          disabled={completeMutation.isPending} 
+        <Button
+          size="lg"
+          className="w-full"
+          onClick={() => completeMutation.mutate()}
+          disabled={completeMutation.isPending}
         >
           <CheckCircle className="h-5 w-5 mr-2" />
           Completa Capitolo
@@ -378,16 +487,16 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-lg">❓ {domandaCorrente.domanda}</CardTitle>
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             title="Rigenera Quiz con AI"
             onClick={() => {
-              if(window.confirm("Vuoi rigenerare il quiz con l'AI? I progressi attuali andranno persi.")) {
-                 generaDomandeMutation.mutate();
-                 setCurrentQuestion(0);
-                 setRisposte([]);
-                 setShowResults(false);
+              if (window.confirm("Vuoi rigenerare il quiz con l'AI? I progressi attuali andranno persi.")) {
+                generaDomandeMutation.mutate();
+                setCurrentQuestion(0);
+                setRisposte([]);
+                setShowResults(false);
               }
             }}
             disabled={isGenerating}
@@ -396,9 +505,9 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
           </Button>
         </CardHeader>
         <CardContent>
-          <RadioGroup 
-            value={risposte[currentQuestion]?.toString()} 
-            onValueChange={(value) => handleRisposta(parseInt(value))} 
+          <RadioGroup
+            value={risposte[currentQuestion]?.toString()}
+            onValueChange={(value) => handleRisposta(parseInt(value))}
           >
             {domandaCorrente.opzioni.map((opzione, idx) => (
               <div key={idx} className="flex items-center space-x-2 p-3 rounded border hover:bg-muted transition-colors">
@@ -414,18 +523,18 @@ export default function ReviewPhase({ capitolo, onComplete }: ReviewPhaseProps) 
 
       {/* Navigation */}
       <div className="flex gap-2">
-        <Button 
-          variant="outline" 
-          onClick={handlePrevious} 
-          disabled={currentQuestion === 0} 
-          className="flex-1" 
+        <Button
+          variant="outline"
+          onClick={handlePrevious}
+          disabled={currentQuestion === 0}
+          className="flex-1"
         >
           Precedente
         </Button>
-        <Button 
-          onClick={handleNext} 
-          disabled={risposte[currentQuestion] === undefined} 
-          className="flex-1" 
+        <Button
+          onClick={handleNext}
+          disabled={risposte[currentQuestion] === undefined}
+          className="flex-1"
         >
           {currentQuestion === domande.length - 1 ? 'Vedi Risultati' : 'Successiva'}
         </Button>
