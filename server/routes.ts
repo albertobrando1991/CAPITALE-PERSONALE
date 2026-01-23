@@ -492,11 +492,15 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
 
         console.log(`[AUTH-USER] User ${user.email}: roleFromDb=${roleData?.role}, isAdminFromDb=${isAdminFromDb}, isAdminFromEnv=${isAdminFromEnv}, final isAdmin=${isUserAdmin}`);
 
+        const xp = user.xp || 0;
+        const level = Math.floor(Math.sqrt(xp / 100));
+
         // Return enriched user matching AuthContext expectations
         res.json({
           ...user,
           name: [user.firstName, user.lastName].filter(Boolean).join(" ") || "Utente",
-          level: isUserAdmin ? 100 : 0, // Mock level: Admins get 100, others 0 for now (until level logic linked)
+          level,
+          xp,
           isAdmin: isUserAdmin,
           isPremium,
           tier: subData?.tier || (isUserAdmin ? 'premium' : 'free')

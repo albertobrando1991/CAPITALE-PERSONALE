@@ -28,6 +28,7 @@ interface User {
   profileImageUrl: string | null;
   name: string;
   level: number;
+  xp: number;
   isAdmin?: boolean;
   isPremium?: boolean;
   tier?: string;
@@ -120,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     profileImageUrl: supabaseUser.user_metadata?.avatar_url || null,
     name: supabaseUser.user_metadata?.full_name || 'Utente',
     level: 0, // Fallback level
+    xp: 0, // Fallback xp
   } : null);
   const isAuthenticated = !!user;
 

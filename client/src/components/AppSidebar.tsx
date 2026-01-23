@@ -156,9 +156,22 @@ export function AppSidebar({ userName, userLevel, onLogout }: AppSidebarProps) {
     });
   }
 
-  const nextLevelXP = (userLevel + 1) * 100;
-  const currentXP = userLevel * 100 * 0.65;
-  const progressToNextLevel = (currentXP / nextLevelXP) * 100;
+  // Gamification Logic (Real)
+  const currentLevel = user?.level || userLevel || 0;
+  const currentXP = user?.xp || 0;
+
+  // Formula: XP = Level^2 * 100
+  // Level 0: 0 XP
+  // Level 1: 100 XP
+  // Level 2: 400 XP
+  // Level 3: 900 XP
+  const currentLevelBaseXP = Math.pow(currentLevel, 2) * 100;
+  const nextLevelBaseXP = Math.pow(currentLevel + 1, 2) * 100;
+
+  const xpInCurrentLevel = Math.max(0, currentXP - currentLevelBaseXP);
+  const xpNeededForNextLevel = nextLevelBaseXP - currentLevelBaseXP;
+
+  const progressToNextLevel = Math.min(100, Math.max(0, (xpInCurrentLevel / xpNeededForNextLevel) * 100));
 
   return (
     <Sidebar>

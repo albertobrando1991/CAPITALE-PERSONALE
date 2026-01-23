@@ -13,6 +13,7 @@ export const users = pgTable("users", {
   lastName: text("last_name"),
   profileImageUrl: text("profile_image_url"),
   supabaseAuthId: varchar("supabase_auth_id").unique(), // Link to Supabase Auth user
+  xp: integer("xp").default(0).notNull(), // Gamification XP
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

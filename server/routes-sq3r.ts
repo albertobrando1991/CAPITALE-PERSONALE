@@ -1,7 +1,8 @@
 import { Express, Request, Response } from 'express';
 import { db } from './db';
 import { capitoliSQ3R, materieSQ3R, fontiStudio } from '../shared/schema-sq3r';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
+import { users } from '../shared/schema-base';
 import multer from 'multer';
 import { cleanJson, generateWithFallback } from "./services/ai";
 import { isAuthenticatedHybrid } from './services/supabase-auth';
@@ -441,10 +442,27 @@ export function registerSQ3RRoutes(app: Express) {
         console.log(`✅ Contatori materia aggiornati: ${capitoliCompletatiCount}/${capitoli.length}`);
       }
 
+      // Gamification: Assegna XP se il capitolo è stato completato
+      let xpEarned = 0;
+      if (updates.completato === true) {
+        // Incrementa XP (50 XP per capitolo)
+        xpEarned = 50;
+        await db
+          .update(users)
+          .set({
+            xp: sql`${users.xp} + ${xpEarned}`,
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, userId));
+
+        console.log(`🎉 Assegnati ${xpEarned} XP all'utente ${userId}`);
+      }
+
       console.log('✅ Capitolo aggiornato');
 
       const { pdfUrl, ...capitoloSafe } = capitolo;
-      res.json({ ...capitoloSafe, hasPdf: !!pdfUrl });
+      res.json({ ...capitoloSafe, hasPdf: !!pdfUrl, xpEarned });
+
     } catch (error: any) {
       console.error('❌ Errore PATCH capitolo:');
       console.error('   Message:', error.message);
