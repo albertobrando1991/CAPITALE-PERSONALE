@@ -50,7 +50,7 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Cache-Control, Pragma");
   }
 
   // Handle preflight requests
@@ -155,7 +155,7 @@ if (process.env.NODE_ENV === "development") {
     if (!(req as any).user) {
       // Simula admin per test
       const mockEmail = "albertobrando1991@gmail.com";
-      
+
       (req as any).user = {
         id: "admin-user-123",
         email: mockEmail,
@@ -163,19 +163,19 @@ if (process.env.NODE_ENV === "development") {
         ruolo: isAdmin(mockEmail) ? "admin" : "utente",
         claims: { sub: "admin-user-123" }
       };
-      
+
       // Assicuriamoci che l'utente esista nel DB per evitare errori FK
       try {
         const { storage } = await import("./storage");
         const existingUser = await storage.getUser("admin-user-123");
         if (!existingUser) {
-           console.log("👤 Creating default admin user for development...");
-           await storage.upsertUser({
-             id: "admin-user-123",
-             email: mockEmail,
-             firstName: "Alberto",
-             lastName: "Brando"
-           });
+          console.log("👤 Creating default admin user for development...");
+          await storage.upsertUser({
+            id: "admin-user-123",
+            email: mockEmail,
+            firstName: "Alberto",
+            lastName: "Brando"
+          });
         }
       } catch (err) {
         console.error("Error ensuring default user exists:", err);
@@ -214,9 +214,9 @@ app.use((req, res, next) => {
       if (capturedJsonResponse) {
         const jsonString = JSON.stringify(capturedJsonResponse);
         if (jsonString.length > 2000) {
-           logLine += ` :: ${jsonString.substring(0, 2000)}... (truncated)`;
+          logLine += ` :: ${jsonString.substring(0, 2000)}... (truncated)`;
         } else {
-           logLine += ` :: ${jsonString}`;
+          logLine += ` :: ${jsonString}`;
         }
       }
 
@@ -231,7 +231,7 @@ app.use((req, res, next) => {
 let initialized = false;
 export async function initializeApp() {
   if (initialized) return;
-  
+
   await registerRoutes(httpServer, app);
 
   // Register Mnemotecniche Routes
@@ -262,13 +262,13 @@ export async function initializeApp() {
   } else {
     // Only import vite in dev
     try {
-        const { setupVite } = await import("./vite");
-        await setupVite(httpServer, app);
+      const { setupVite } = await import("./vite");
+      await setupVite(httpServer, app);
     } catch (e) {
-        console.log("Vite setup skipped (not in dev environment or module missing)");
+      console.log("Vite setup skipped (not in dev environment or module missing)");
     }
   }
-  
+
   initialized = true;
 }
 
