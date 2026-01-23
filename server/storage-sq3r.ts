@@ -247,6 +247,15 @@ export class StorageSQ3R {
         if (!materia) {
           throw new Error(`Materia con ID ${targetMateriaId} non trovata`);
         }
+
+        // Update materia with fonteId if not already set
+        if (!materia.fonteId) {
+          console.log(`📌 Aggiorno materia ${targetMateriaId} con fonteId: ${fonteId}`);
+          await db.update(materieSQ3R)
+            .set({ fonteId: fonteId, updatedAt: new Date() })
+            .where(eq(materieSQ3R.id, targetMateriaId));
+          materia.fonteId = fonteId;
+        }
       } else {
         // Fallback: cerca o crea materia per nome (comportamento legacy)
         materia = await db.select()

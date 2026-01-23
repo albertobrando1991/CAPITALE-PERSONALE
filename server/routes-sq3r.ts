@@ -491,12 +491,15 @@ export function registerSQ3RRoutes(app: Express) {
         );
 
       if (!capitolo) {
+        console.log(`❌ Capitolo ${id} non trovato per user ${userId}`);
         return res.status(404).json({ error: 'Capitolo non trovato' });
       }
 
+      console.log(`📊 Capitolo trovato: materiaId=${capitolo.materiaId}, hasPdfUrl=${!!capitolo.pdfUrl}, pdfUrlLength=${capitolo.pdfUrl?.length || 0}`);
+
       // Se il capitolo ha un PDF diretto, usalo
       if (capitolo.pdfUrl) {
-        console.log('✅ PDF recuperato dal capitolo');
+        console.log('✅ PDF recuperato dal capitolo (diretto)');
         return res.json({
           pdfUrl: capitolo.pdfUrl,
           pdfFileName: capitolo.pdfFileName,
@@ -515,7 +518,10 @@ export function registerSQ3RRoutes(app: Express) {
         .from(materieSQ3R)
         .where(eq(materieSQ3R.id, capitolo.materiaId));
 
+      console.log(`📊 Materia: fonteId=${materia?.fonteId || 'null'}`);
+
       if (!materia?.fonteId) {
+        console.log(`❌ Materia ${capitolo.materiaId} non ha fonteId collegato`);
         return res.status(404).json({ error: 'PDF non trovato - nessuna fonte collegata alla materia' });
       }
 
