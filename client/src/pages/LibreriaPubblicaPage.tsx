@@ -302,7 +302,20 @@ export default function LibreriaPubblicaPage() {
                 <p className="text-sm text-muted-foreground mb-4">
                   Allena la tolleranza alla noia come un muscolo per studiare con costanza.
                 </p>
-                <Button variant="outline" size="sm" className="w-full">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const link = document.createElement('a');
+                    link.href = '/documents/resilienza-monotonia.pdf';
+                    link.download = 'resilienza-monotonia.pdf';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                >
                   Leggi l'articolo completo →
                 </Button>
               </CardContent>
@@ -324,7 +337,20 @@ export default function LibreriaPubblicaPage() {
                 <p className="text-sm text-muted-foreground mb-4">
                   Supera i plateau con una visione chiara dell'obiettivo finale.
                 </p>
-                <Button variant="outline" size="sm" className="w-full">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const link = document.createElement('a');
+                    link.href = '/documents/visione-strategica.pdf';
+                    link.download = 'visione-strategica.pdf';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                >
                   Leggi l'articolo completo →
                 </Button>
               </CardContent>
@@ -509,28 +535,72 @@ export default function LibreriaPubblicaPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Button variant="outline" className="justify-between">
+                <Button
+                  variant="outline"
+                  className="justify-between"
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = '/documents/template-analisi-errori.pdf';
+                    link.download = 'template-analisi-errori.pdf';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                >
                   <span className="flex items-center gap-2">
                     <Download className="h-4 w-4" />
                     Template Analisi Errori (PDF)
                   </span>
                   <ExternalLink className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" className="justify-between">
+                <Button
+                  variant="outline"
+                  className="justify-between"
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = '/documents/checklist-routine-quotidiana.pdf';
+                    link.download = 'checklist-routine-quotidiana.pdf';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                >
                   <span className="flex items-center gap-2">
                     <Download className="h-4 w-4" />
                     Checklist Routine Quotidiana (PDF)
                   </span>
                   <ExternalLink className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" className="justify-between">
+                <Button
+                  variant="outline"
+                  className="justify-between"
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = '/documents/diario-studio.xlsx';
+                    link.download = 'diario-studio.xlsx';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                >
                   <span className="flex items-center gap-2">
                     <Download className="h-4 w-4" />
                     Diario di Studio (Excel)
                   </span>
                   <ExternalLink className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" className="justify-between">
+                <Button
+                  variant="outline"
+                  className="justify-between"
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = '/documents/template-dichiarazione-visione.docx';
+                    link.download = 'template-dichiarazione-visione.docx';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                >
                   <span className="flex items-center gap-2">
                     <Download className="h-4 w-4" />
                     Template Dichiarazione Visione (DOC)
