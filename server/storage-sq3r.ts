@@ -281,21 +281,23 @@ export class StorageSQ3R {
 
       // 6. Crea capitoli
       let capitoliCreati = 0;
-      for (const cap of capitoliEstratti) {
-        await db.insert(capitoliSQ3R).values({
+      if (capitoliEstratti.length > 0) {
+        const valuesToInsert = capitoliEstratti.map((cap) => ({
           userId,
           materiaId: materia.id,
           numeroCapitolo: cap.numero,
           titolo: cap.titolo,
           pagineInizio: cap.pagineInizio,
           pagineFine: cap.pagineFine,
-          faseCorrente: 'survey',
+          faseCorrente: "survey",
           pdfUrl: fonte.fileUrl, // Collegamento al PDF fonte
           pdfFileName: fonte.titolo + ".pdf",
           pdfFileSize: fonte.fileSize,
           pdfNumPages: numPagine,
-        });
-        capitoliCreati++;
+        }));
+
+        await db.insert(capitoliSQ3R).values(valuesToInsert);
+        capitoliCreati = capitoliEstratti.length;
       }
 
       // 7. Aggiorna contatore materia
