@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from './db';
 import { podcastDatabase, podcastRequests, staffMembers } from '../shared/schema-sq3r';
 import { users, userSubscriptions, userRoles, userSuspensions, adminActivityLog } from '../shared/schema';
-import { eq, desc, sql, like, or, and } from 'drizzle-orm';
+import { eq, desc, sql, like, or, and, inArray } from 'drizzle-orm';
 import { isAdmin, isStaff } from './utils/auth-helpers';
 import { getUserId } from './middleware/auth';
 import multer from 'multer';
@@ -555,39 +555,49 @@ router.get('/users', requireAdmin, async (req, res) => {
       .offset(offset);
 
     // Get roles and subscriptions for each user
-    const enrichedUsers = await Promise.all(
-      usersData.map(async (u: any) => {
-        const [roleData] = await db
-          .select({ role: userRoles.role })
+    const userIds = usersData.map((u: any) => u.id);
+    let enrichedUsers: any[] = [];
+
+    if (userIds.length === 0) {
+      enrichedUsers = [];
+    } else {
+      const [allRoles, allSubs, allSuspensions] = await Promise.all([
+        db
+          .select({ userId: userRoles.userId, role: userRoles.role })
           .from(userRoles)
-          .where(eq(userRoles.userId, u.id))
-          .limit(1);
-
-        const [subData] = await db
-          .select({ tier: userSubscriptions.tier, status: userSubscriptions.status })
+          .where(inArray(userRoles.userId, userIds)),
+        db
+          .select({ userId: userSubscriptions.userId, tier: userSubscriptions.tier, status: userSubscriptions.status })
           .from(userSubscriptions)
-          .where(eq(userSubscriptions.userId, u.id))
-          .limit(1);
-
-        const [suspensionData] = await db
+          .where(inArray(userSubscriptions.userId, userIds)),
+        db
           .select()
           .from(userSuspensions)
           .where(and(
-            eq(userSuspensions.userId, u.id),
+            inArray(userSuspensions.userId, userIds),
             eq(userSuspensions.isActive, true)
           ))
-          .limit(1);
+      ]);
+
+      const roleMap = new Map(allRoles.map((r) => [r.userId, r.role]));
+      const subMap = new Map(allSubs.map((s) => [s.userId, s]));
+      const suspensionMap = new Map(allSuspensions.map((s) => [s.userId, s]));
+
+      enrichedUsers = usersData.map((u: any) => {
+        const role = roleMap.get(u.id);
+        const sub = subMap.get(u.id);
+        const suspension = suspensionMap.get(u.id);
 
         return {
           ...u,
-          role: roleData?.role || 'user',
-          subscriptionTier: subData?.tier || 'free',
-          subscriptionStatus: subData?.status || 'none',
-          isSuspended: !!suspensionData,
-          suspensionReason: suspensionData?.reason,
+          role: role || 'user',
+          subscriptionTier: sub?.tier || 'free',
+          subscriptionStatus: sub?.status || 'none',
+          isSuspended: !!suspension,
+          suspensionReason: suspension?.reason,
         };
-      })
-    );
+      });
+    }
 
     // Get total count
     const [countResult] = await db
