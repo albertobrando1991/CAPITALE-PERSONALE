@@ -128,32 +128,53 @@ export function PDFViewerWithHighlights({
 
 
   // 🆕 Query separata per PDF (lazy load)
-  const { 
-    data: pdfData, 
-    isLoading: isLoadingPdf, 
-    error: pdfError, 
-  } = useQuery({ 
-    queryKey: ['capitolo-pdf', capitoloId], 
-    queryFn: async () => { 
-      console.log('🔄 Caricamento PDF...'); 
-      const startTime = performance.now(); 
+  // Converte data URL in Blob URL per migliore compatibilità con react-pdf
+  const {
+    data: pdfData,
+    isLoading: isLoadingPdf,
+    error: pdfError,
+  } = useQuery({
+    queryKey: ['capitolo-pdf', capitoloId],
+    queryFn: async () => {
+      console.log('🔄 Caricamento PDF...');
+      const startTime = performance.now();
 
-      const res = await fetch(`/api/sq3r/capitoli/${capitoloId}/pdf`, { 
-        credentials: 'include', 
-      }); 
+      const res = await fetch(`/api/sq3r/capitoli/${capitoloId}/pdf`, {
+        credentials: 'include',
+      });
 
-      if (!res.ok) throw new Error('Errore caricamento PDF'); 
+      if (!res.ok) throw new Error('Errore caricamento PDF');
 
-      const data = await res.json(); 
-      
-      const duration = performance.now() - startTime; 
-      console.log(`✅ PDF caricato in ${duration.toFixed(0)}ms`); 
+      const data = await res.json();
 
-      return data; 
-    }, 
-    staleTime: 5 * 60 * 1000, // Cache 5 minuti 
-    gcTime: 10 * 60 * 1000, 
-    retry: 2, 
+      // Converti data URL base64 in Blob URL per react-pdf
+      let pdfUrl = data.pdfUrl;
+      if (pdfUrl && pdfUrl.startsWith('data:application/pdf;base64,')) {
+        try {
+          console.log('🔄 Conversione data URL in Blob URL...');
+          const base64 = pdfUrl.split(',')[1];
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type: 'application/pdf' });
+          pdfUrl = URL.createObjectURL(blob);
+          console.log('✅ Blob URL creato');
+        } catch (e) {
+          console.error('❌ Errore conversione Blob:', e);
+          // Fallback al data URL originale
+        }
+      }
+
+      const duration = performance.now() - startTime;
+      console.log(`✅ PDF caricato in ${duration.toFixed(0)}ms`);
+
+      return { ...data, pdfUrl };
+    },
+    staleTime: 5 * 60 * 1000, // Cache 5 minuti
+    gcTime: 10 * 60 * 1000,
+    retry: 2,
   }); 
 
   // Loading state 
