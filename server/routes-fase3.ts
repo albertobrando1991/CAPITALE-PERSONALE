@@ -5,6 +5,7 @@
 
 import express, { Request, Response } from 'express';
 import { pool as db } from './db';
+import { isAuthenticatedHybrid } from './services/supabase-auth';
 import multer from 'multer';
 import { join } from 'path';
 import { readFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
@@ -58,14 +59,7 @@ function cleanJson(text: string): string {
   return cleaned;
 }
 // Remove duplicate genAI initialization later in the file
-// Middleware autenticazione (da adattare al tuo sistema auth)
-const requireAuth = (req: Request, res: Response, next: Function) => {
-  // @ts-ignore - session type augmentation might be missing in this context
-  if (!req.session?.userId && !(req as any).user?.id) {
-    return res.status(401).json({ error: 'Non autenticato' });
-  }
-  next();
-};
+// Use isAuthenticatedHybrid middleware imported from supabase-auth.ts for all routes
 
 // Helper to get userId from session or user object
 const getUserId = (req: Request): string => {
@@ -84,7 +78,7 @@ const getUserId = (req: Request): string => {
  * GET /api/fase3/:concorsoId/progress
  * Ottieni stato consolidamento per concorso
  */
-router.get('/:concorsoId/progress', requireAuth, async (req: Request, res: Response) => {
+router.get('/:concorsoId/progress', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId } = req.params;
     const userId = getUserId(req);
@@ -245,7 +239,7 @@ function calculateStatus(progress: any): string {
  * GET /api/fase3/:concorsoId/error-bins
  * Ottieni tutti gli Error Bins (raggruppamenti errori)
  */
-router.get('/:concorsoId/error-bins', requireAuth, async (req: Request, res: Response) => {
+router.get('/:concorsoId/error-bins', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId } = req.params;
     const userId = getUserId(req);
@@ -295,7 +289,7 @@ router.get('/:concorsoId/error-bins', requireAuth, async (req: Request, res: Res
  * GET /api/fase3/:concorsoId/error-bins/:binId
  * Dettaglio singolo Error Bin con errori associati
  */
-router.get('/:concorsoId/error-bins/:binId', requireAuth, async (req: Request, res: Response) => {
+router.get('/:concorsoId/error-bins/:binId', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId, binId } = req.params;
     const userId = getUserId(req);
@@ -334,7 +328,7 @@ router.get('/:concorsoId/error-bins/:binId', requireAuth, async (req: Request, r
  * POST /api/fase3/:concorsoId/errors
  * Registra nuovo errore (da Quiz, Flashcards, Drill)
  */
-router.post('/:concorsoId/errors', requireAuth, async (req: Request, res: Response) => {
+router.post('/:concorsoId/errors', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId } = req.params;
     const userId = getUserId(req);
@@ -469,7 +463,7 @@ router.post('/:concorsoId/errors', requireAuth, async (req: Request, res: Respon
  * POST /api/fase3/:concorsoId/sync
  * Ricalcola forzatamente tutte le statistiche e i collegamenti
  */
-router.post('/:concorsoId/sync', requireAuth, async (req: Request, res: Response) => {
+router.post('/:concorsoId/sync', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId } = req.params;
     const userId = getUserId(req);
@@ -591,7 +585,7 @@ router.post('/:concorsoId/sync', requireAuth, async (req: Request, res: Response
  * POST /api/fase3/:concorsoId/error-bins/:binId/recovery-plan
  * Genera Recovery Plan AI per un Error Bin
  */
-router.post('/:concorsoId/error-bins/:binId/recovery-plan', requireAuth, async (req: Request, res: Response) => {
+router.post('/:concorsoId/error-bins/:binId/recovery-plan', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId, binId } = req.params;
     const userId = getUserId(req);
@@ -742,7 +736,7 @@ Dagli errori registrati emerge una necessità di consolidare le basi teoriche de
  * PATCH /api/fase3/:concorsoId/error-bins/:binId/resolve
  * Marca Error Bin come risolto
  */
-router.patch('/:concorsoId/error-bins/:binId/resolve', requireAuth, async (req: Request, res: Response) => {
+router.patch('/:concorsoId/error-bins/:binId/resolve', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { binId } = req.params;
     const userId = getUserId(req);
@@ -776,7 +770,7 @@ interface MulterRequest extends Request {
  * POST /api/fase3/:concorsoId/generate-questions
  * Genera domande da PDF, Testo o Topic (AI)
  */
-router.post('/:concorsoId/generate-questions', requireAuth, upload.single('file'), async (req: MulterRequest, res: Response) => {
+router.post('/:concorsoId/generate-questions', isAuthenticatedHybrid, upload.single('file'), async (req: MulterRequest, res: Response) => {
   try {
     const { concorsoId } = req.params;
     const { type, content, topic_id, num_questions = 10 } = req.body;
@@ -871,7 +865,7 @@ router.post('/:concorsoId/generate-questions', requireAuth, upload.single('file'
  * POST /api/fase3/:concorsoId/error-bins/:binId/resolve
  * Toggle stato risolto/non risolto di un Error Bin
  */
-router.post('/:concorsoId/error-bins/:binId/resolve', requireAuth, async (req: Request, res: Response) => {
+router.post('/:concorsoId/error-bins/:binId/resolve', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId, binId } = req.params;
     const userId = getUserId(req);
@@ -914,7 +908,7 @@ router.post('/:concorsoId/error-bins/:binId/resolve', requireAuth, async (req: R
  * POST /api/fase3/:concorsoId/drill-sessions
  * Crea nuova sessione Drill
  */
-router.post('/:concorsoId/drill-sessions', requireAuth, async (req: Request, res: Response) => {
+router.post('/:concorsoId/drill-sessions', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId } = req.params;
     const userId = getUserId(req);
@@ -950,7 +944,7 @@ router.post('/:concorsoId/drill-sessions', requireAuth, async (req: Request, res
  * PATCH /api/fase3/:concorsoId/drill-sessions/:sessionId/complete
  * Completa sessione Drill con risultati
  */
-router.patch('/:concorsoId/drill-sessions/:sessionId/complete', requireAuth, async (req: Request, res: Response) => {
+router.patch('/:concorsoId/drill-sessions/:sessionId/complete', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId, sessionId } = req.params;
     const userId = getUserId(req);
@@ -1083,7 +1077,7 @@ router.patch('/:concorsoId/drill-sessions/:sessionId/complete', requireAuth, asy
  * GET /api/fase3/:concorsoId/drill-sessions
  * Ottieni storico Drill Sessions
  */
-router.get('/:concorsoId/drill-sessions', requireAuth, async (req: Request, res: Response) => {
+router.get('/:concorsoId/drill-sessions', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId } = req.params;
     const userId = getUserId(req);
@@ -1107,7 +1101,7 @@ router.get('/:concorsoId/drill-sessions', requireAuth, async (req: Request, res:
  * GET /api/fase3/:concorsoId/drill-sessions/:sessionId/questions
  * Ottieni domande per la sessione (basate su mode e topic)
  */
-router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, async (req: Request, res: Response) => {
+router.get('/:concorsoId/drill-sessions/:sessionId/questions', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId, sessionId } = req.params;
     const userId = getUserId(req);
@@ -1743,7 +1737,7 @@ router.get('/:concorsoId/drill-sessions/:sessionId/questions', requireAuth, asyn
  * GET /api/fase3/:concorsoId/drill-sessions/:sessionId
  * Ottieni dettaglio singola sessione drill
  */
-router.get('/:concorsoId/drill-sessions/:sessionId', requireAuth, async (req: Request, res: Response) => {
+router.get('/:concorsoId/drill-sessions/:sessionId', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
     const userId = getUserId(req);
@@ -1768,7 +1762,7 @@ router.get('/:concorsoId/drill-sessions/:sessionId', requireAuth, async (req: Re
  * DELETE /api/fase3/:concorsoId/drill-sessions/:sessionId
  * Elimina una singola sessione drill
  */
-router.delete('/:concorsoId/drill-sessions/:sessionId', requireAuth, async (req: Request, res: Response) => {
+router.delete('/:concorsoId/drill-sessions/:sessionId', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
     const userId = getUserId(req);
@@ -1819,7 +1813,7 @@ router.delete('/:concorsoId/drill-sessions/:sessionId', requireAuth, async (req:
  * GET /api/fase3/:concorsoId/srs/due-today
  * Ottieni item SRS da rivedere oggi
  */
-router.get('/:concorsoId/srs/due-today', requireAuth, async (req: Request, res: Response) => {
+router.get('/:concorsoId/srs/due-today', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId } = req.params;
     const userId = getUserId(req);
@@ -1843,7 +1837,7 @@ router.get('/:concorsoId/srs/due-today', requireAuth, async (req: Request, res: 
  * POST /api/fase3/:concorsoId/srs
  * Aggiungi item a SRS
  */
-router.post('/:concorsoId/srs', requireAuth, async (req: Request, res: Response) => {
+router.post('/:concorsoId/srs', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId } = req.params;
     const userId = getUserId(req);
@@ -1874,7 +1868,7 @@ router.post('/:concorsoId/srs', requireAuth, async (req: Request, res: Response)
  * POST /api/fase3/:concorsoId/srs/:itemId/review
  * Registra review SRS con algoritmo SM-2
  */
-router.post('/:concorsoId/srs/:itemId/review', requireAuth, async (req: Request, res: Response) => {
+router.post('/:concorsoId/srs/:itemId/review', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { itemId } = req.params;
     const userId = getUserId(req);
@@ -1976,7 +1970,7 @@ router.post('/:concorsoId/srs/:itemId/review', requireAuth, async (req: Request,
  * GET /api/fase3/:concorsoId/srs/calendar
  * Ottieni calendario review prossimi 30 giorni
  */
-router.get('/:concorsoId/srs/calendar', requireAuth, async (req: Request, res: Response) => {
+router.get('/:concorsoId/srs/calendar', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId } = req.params;
     const userId = getUserId(req);
@@ -2013,7 +2007,7 @@ router.get('/:concorsoId/srs/calendar', requireAuth, async (req: Request, res: R
  * GET /api/fase3/:concorsoId/stats
  * Statistiche generali Fase 3
  */
-router.get('/:concorsoId/stats', requireAuth, async (req: Request, res: Response) => {
+router.get('/:concorsoId/stats', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId } = req.params;
     const userId = getUserId(req);
@@ -2044,7 +2038,7 @@ router.get('/:concorsoId/stats', requireAuth, async (req: Request, res: Response
  * GET /api/fase3/:concorsoId/topics
  * Ottieni lista argomenti disponibili
  */
-router.get('/:concorsoId/topics', requireAuth, async (req: Request, res: Response) => {
+router.get('/:concorsoId/topics', isAuthenticatedHybrid, async (req: Request, res: Response) => {
   try {
     const { concorsoId } = req.params;
     const userId = getUserId(req);
