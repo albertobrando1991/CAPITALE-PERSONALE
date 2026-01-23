@@ -418,6 +418,9 @@ export function PDFViewerWithHighlights({
           <Document
             file={pdfData.pdfUrl} // 🆕 Usa pdfUrl dalla query lazy
             onLoadSuccess={onDocumentLoadSuccess}
+            onLoadError={(error) => {
+              console.error('❌ PDF.js Document onLoadError:', error);
+            }}
             loading={
               <div className="flex items-center justify-center h-96">
                 <div className="text-center">
