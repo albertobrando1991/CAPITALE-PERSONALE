@@ -488,9 +488,12 @@ ${testoTroncato}`;
     // NOTA: Se data.pdfUrl è presente, il returning() lo restituirà indietro,
     // causando un payload di risposta enorme. Dobbiamo evitarlo.
 
+    const insertData = { ...data };
+    this.stringifyComplexFields(insertData);
+
     const [capitolo] = await db
       .insert(capitoliSQ3R)
-      .values(data)
+      .values(insertData)
       .returning();
 
     // Aggiorna contatore materia
@@ -650,14 +653,7 @@ ${testoTroncato}`;
     // FIX: Assicura che i campi complessi salvati come TEXT siano stringificati correttamente
     // Drizzle con .$type() su colonna text non fa auto-stringify
     const updateData = { ...data };
-
-    if (updateData.reciteData && typeof updateData.reciteData !== 'string') {
-      updateData.reciteData = JSON.stringify(updateData.reciteData) as any;
-    }
-
-    if (updateData.reviewData && typeof updateData.reviewData !== 'string') {
-      updateData.reviewData = JSON.stringify(updateData.reviewData) as any;
-    }
+    this.stringifyComplexFields(updateData);
 
     const [updated] = await db
       .update(capitoliSQ3R)
@@ -932,6 +928,16 @@ ${testoTroncato}`;
       domande: formattedQuestions,
       createdAt: quiz.createdAt
     };
+  }
+
+  private stringifyComplexFields(data: Partial<InsertCapitoloSQ3R>) {
+    if (data.reciteData && typeof data.reciteData !== 'string') {
+      (data as any).reciteData = JSON.stringify(data.reciteData);
+    }
+
+    if (data.reviewData && typeof data.reviewData !== 'string') {
+      (data as any).reviewData = JSON.stringify(data.reviewData);
+    }
   }
 }
 
