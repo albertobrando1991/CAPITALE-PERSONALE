@@ -267,7 +267,20 @@ export default function LibreriaPubblicaPage() {
                 <p className="text-sm text-muted-foreground mb-4">
                   Trasforma ogni errore in un dato diagnostico prezioso per il tuo apprendimento.
                 </p>
-                <Button variant="outline" size="sm" className="w-full">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const link = document.createElement('a');
+                    link.href = '/documents/growth-mindset.pdf';
+                    link.download = 'growth-mindset.pdf';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                >
                   Leggi l'articolo completo →
                 </Button>
               </CardContent>
