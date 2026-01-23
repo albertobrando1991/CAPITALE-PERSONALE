@@ -88,8 +88,9 @@ async function seedPodcastDatabase() {
   try {
     console.log('🎧 Popolamento Banca Dati Podcast...');
     
+    await db.insert(podcastDatabase).values(podcastDemo).onConflictDoNothing();
+
     for (const podcast of podcastDemo) {
-      await db.insert(podcastDatabase).values(podcast).onConflictDoNothing();
       console.log(`  ✅ Inserito: ${podcast.titolo} (${Math.floor(podcast.durata / 60)} min)`);
     }
     
