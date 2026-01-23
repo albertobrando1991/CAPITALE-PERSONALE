@@ -928,6 +928,18 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       if (!material) {
         return res.status(404).json({ error: "Materiale non trovato" });
       }
+
+      // Check regeneration limit (max 3)
+      const MAX_FLASHCARD_GENERATIONS = 3;
+      const currentGenerationCount = (material as any).flashcardGenerationCount || 0;
+      if (currentGenerationCount >= MAX_FLASHCARD_GENERATIONS) {
+        return res.status(400).json({
+          error: `Hai raggiunto il limite massimo di ${MAX_FLASHCARD_GENERATIONS} rigenerazioni per questo materiale.`,
+          generationCount: currentGenerationCount,
+          maxGenerations: MAX_FLASHCARD_GENERATIONS,
+        });
+      }
+
       if (!material.contenuto) {
         return res.status(400).json({ error: "Materiale senza contenuto" });
       }
@@ -942,6 +954,10 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       if (!concorso) {
         return res.status(403).json({ error: "Concorso non autorizzato" });
       }
+
+      // Get existing flashcards to avoid duplicates in regeneration
+      const existingFlashcards = await storage.getFlashcardsByMaterialId(userId, materialId);
+      const existingQuestions = existingFlashcards.map(f => f.fronte);
 
       const normalizeForMatch = (s: string) =>
         s
@@ -1069,6 +1085,11 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         `[GEN-FLASHCARDS] Analisi testo (chars=${contentToAnalyze.length}, primi 500): ${contentToAnalyze.substring(0, 500)}...`
       );
 
+      // Build exclusion prompt if there are existing flashcards (for regeneration)
+      const exclusionPrompt = existingQuestions.length > 0
+        ? `\n\nIMPORTANTE - RIGENERAZIONE: Questa è una rigenerazione. NON generare flashcard su questi argomenti già trattati nelle generazioni precedenti:\n${existingQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}\n\nGenera flashcard su ASPETTI DIVERSI dello stesso materiale: dettagli meno ovvi, approfondimenti, collegamenti, casi limite, eccezioni non ancora trattate.`
+        : '';
+
       const systemPrompt = `Sei un esperto creatore di flashcard per la preparazione ai concorsi pubblici italiani (diritto, economia, informatica, lingue, materie tecniche, cultura generale, logica, ecc.).
 
 LIVELLO TARGET
@@ -1118,7 +1139,7 @@ CASI SPECIALI: CREA FLASHCARD DEDICATE PER OGNI OCCORRENZA DI
 - Acronimi e sigle (significato e contesto).
 - Nomi propri importanti (autori, enti, istituzioni, teorie).
 - Termini tecnici (con definizione e contesto).
-- Esempi pratici (casi reali o applicazioni nel testo).
+- Esempi pratici (casi reali o applicazioni nel testo).${exclusionPrompt}
 
 FORMATTO DI OUTPUT
 Devi restituire SOLO un ARRAY JSON valido. Ogni elemento dell'array deve essere un oggetto con le chiavi esatte:
@@ -1360,11 +1381,22 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
       }));
 
       const created = await storage.createFlashcards(flashcardsToInsert);
-      await storage.updateMaterial(materialId, userId, {
-        flashcardGenerate: created.length
-      });
 
-      res.json({ count: created.length, flashcards: created, warning: looseWarning });
+      // Update material with new flashcard count and increment generation counter
+      const newGenerationCount = currentGenerationCount + 1;
+      await storage.updateMaterial(materialId, userId, {
+        flashcardGenerate: (material.flashcardGenerate || 0) + created.length,
+        flashcardGenerationCount: newGenerationCount,
+      } as any);
+
+      res.json({
+        count: created.length,
+        flashcards: created,
+        warning: looseWarning,
+        generationCount: newGenerationCount,
+        maxGenerations: MAX_FLASHCARD_GENERATIONS,
+        regenerationsRemaining: MAX_FLASHCARD_GENERATIONS - newGenerationCount,
+      });
     } catch (error) {
       console.error("Error generating flashcards:", error);
       const message = (error as any)?.message || "Errore sconosciuto";

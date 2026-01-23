@@ -296,6 +296,14 @@ export class DatabaseStorage implements IStorage {
     return deleted.length;
   }
 
+  async getFlashcardsByMaterialId(userId: string, materialId: string): Promise<Flashcard[]> {
+    return await db
+      .select()
+      .from(flashcards)
+      .where(and(eq(flashcards.userId, userId), eq(flashcards.materialId, materialId)))
+      .orderBy(desc(flashcards.createdAt));
+  }
+
   async getFlashcards(userId: string, concorsoId?: string): Promise<Flashcard[]> {
     if (concorsoId) {
       return await db

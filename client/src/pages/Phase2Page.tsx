@@ -391,9 +391,12 @@ export default function Phase2Page() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/flashcards", concorsoId] });
       queryClient.invalidateQueries({ queryKey: ["/api/materials", concorsoId] });
+      const regenerationInfo = data.regenerationsRemaining !== undefined
+        ? ` (${data.regenerationsRemaining} rigenerazioni rimaste)`
+        : '';
       toast({
         title: "Flashcard generate",
-        description: `${data.count || 0} flashcard create con successo.`,
+        description: `${data.count || 0} flashcard create con successo.${regenerationInfo}`,
       });
       setIsGenerating(null);
     },
@@ -760,11 +763,21 @@ export default function Phase2Page() {
                         <CheckCircle className="h-4 w-4 text-status-online" />
                       )}
                     </div>
+                    {/* Regeneration counter */}
+                    {(material as any).flashcardGenerationCount > 0 && (
+                      <div className="text-xs text-muted-foreground">
+                        Rigenerazioni: {(material as any).flashcardGenerationCount}/3
+                      </div>
+                    )}
                     <Button
                       variant="secondary"
                       className="w-full"
                       onClick={() => generateFlashcardsMutation.mutate(material.id)}
-                      disabled={isGenerating === material.id || !material.contenuto}
+                      disabled={
+                        isGenerating === material.id ||
+                        !material.contenuto ||
+                        ((material as any).flashcardGenerationCount || 0) >= 3
+                      }
                       data-testid={`button-generate-flashcards-${material.id}`}
                     >
                       {isGenerating === material.id ? (
@@ -772,7 +785,11 @@ export default function Phase2Page() {
                       ) : (
                         <Sparkles className="h-4 w-4 mr-2" />
                       )}
-                      Genera Flashcard AI
+                      {((material as any).flashcardGenerationCount || 0) >= 3
+                        ? 'Limite rigenerazioni raggiunto'
+                        : (material.flashcardGenerate || 0) > 0
+                          ? `Rigenera (${3 - ((material as any).flashcardGenerationCount || 0)} rimaste)`
+                          : 'Genera Flashcard AI'}
                     </Button>
                   </CardContent>
                 </Card>

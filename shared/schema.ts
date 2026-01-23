@@ -21,6 +21,7 @@ export const materials = pgTable("materials", {
   fileUrl: text("file_url"),
   estratto: boolean("estratto").default(false),
   flashcardGenerate: integer("flashcard_generate").default(0),
+  flashcardGenerationCount: integer("flashcard_generation_count").default(0), // 0-3, tracks regenerations
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -159,10 +160,10 @@ export const mnemonicheNumeri = pgTable("mnemoniche_numeri", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const insertMnemonicheNumeriSchema = createInsertSchema(mnemonicheNumeri).omit({ 
-  id: true, 
-  createdAt: true, 
-  updatedAt: true 
+export const insertMnemonicheNumeriSchema = createInsertSchema(mnemonicheNumeri).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
 });
 export type MnemonicheNumeri = typeof mnemonicheNumeri.$inferSelect;
 export type InsertMnemonicheNumeri = typeof mnemonicheNumeri.$inferInsert;
@@ -179,10 +180,10 @@ export const palazziMemoria = pgTable("palazzi_memoria", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const insertPalazziMemoriaSchema = createInsertSchema(palazziMemoria).omit({ 
-  id: true, 
-  createdAt: true, 
-  updatedAt: true 
+export const insertPalazziMemoriaSchema = createInsertSchema(palazziMemoria).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
 });
 export type PalazziMemoria = typeof palazziMemoria.$inferSelect;
 export type InsertPalazziMemoria = typeof palazziMemoria.$inferInsert;
@@ -205,10 +206,10 @@ export const filmMentali = pgTable("film_mentali", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const insertFilmMentaliSchema = createInsertSchema(filmMentali).omit({ 
-  id: true, 
-  createdAt: true, 
-  updatedAt: true 
+export const insertFilmMentaliSchema = createInsertSchema(filmMentali).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
 });
 export type FilmMentali = typeof filmMentali.$inferSelect;
 export type InsertFilmMentali = typeof filmMentali.$inferInsert;
@@ -232,9 +233,9 @@ export const breathingSessions = pgTable("breathing_sessions", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertBreathingSessionSchema = createInsertSchema(breathingSessions).omit({ 
-  id: true, 
-  createdAt: true 
+export const insertBreathingSessionSchema = createInsertSchema(breathingSessions).omit({
+  id: true,
+  createdAt: true
 });
 export type BreathingSession = typeof breathingSessions.$inferSelect;
 export type InsertBreathingSession = typeof breathingSessions.$inferInsert;
@@ -253,9 +254,9 @@ export const reframingLogs = pgTable("reframing_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertReframingLogSchema = createInsertSchema(reframingLogs).omit({ 
-  id: true, 
-  createdAt: true 
+export const insertReframingLogSchema = createInsertSchema(reframingLogs).omit({
+  id: true,
+  createdAt: true
 });
 export type ReframingLog = typeof reframingLogs.$inferSelect;
 export type InsertReframingLog = typeof reframingLogs.$inferInsert;
@@ -277,10 +278,10 @@ export const sleepLogs = pgTable("sleep_logs", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const insertSleepLogSchema = createInsertSchema(sleepLogs).omit({ 
-  id: true, 
-  createdAt: true, 
-  updatedAt: true 
+export const insertSleepLogSchema = createInsertSchema(sleepLogs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
 });
 export type SleepLog = typeof sleepLogs.$inferSelect;
 export type InsertSleepLog = typeof sleepLogs.$inferInsert;
@@ -300,10 +301,10 @@ export const hydrationLogs = pgTable("hydration_logs", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const insertHydrationLogSchema = createInsertSchema(hydrationLogs).omit({ 
-  id: true, 
-  createdAt: true, 
-  updatedAt: true 
+export const insertHydrationLogSchema = createInsertSchema(hydrationLogs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
 });
 export type HydrationLog = typeof hydrationLogs.$inferSelect;
 export type InsertHydrationLog = typeof hydrationLogs.$inferInsert;
@@ -322,9 +323,9 @@ export const nutritionLogs = pgTable("nutrition_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertNutritionLogSchema = createInsertSchema(nutritionLogs).omit({ 
-  id: true, 
-  createdAt: true 
+export const insertNutritionLogSchema = createInsertSchema(nutritionLogs).omit({
+  id: true,
+  createdAt: true
 });
 export type NutritionLog = typeof nutritionLogs.$inferSelect;
 export type InsertNutritionLog = typeof nutritionLogs.$inferInsert;
