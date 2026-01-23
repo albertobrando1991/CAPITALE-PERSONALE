@@ -343,7 +343,16 @@ router.delete('/podcast/:id', requireAdmin, async (req, res) => {
 // Lista tutte le richieste
 router.get('/requests', requireStaff, async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, page, limit } = req.query;
+
+    // Pagination (default to 100 items to prevent unbounded query, max 500)
+    const parsedPage = parseInt(page as string);
+    const pageNum = isNaN(parsedPage) ? 1 : Math.max(1, parsedPage);
+
+    const parsedLimit = parseInt(limit as string);
+    const limitNum = isNaN(parsedLimit) ? 100 : Math.min(500, Math.max(1, parsedLimit));
+
+    const offset = (pageNum - 1) * limitNum;
 
     let query = db.select().from(podcastRequests);
 
@@ -351,7 +360,10 @@ router.get('/requests', requireStaff, async (req, res) => {
       query = query.where(eq(podcastRequests.status, status as string)) as any;
     }
 
-    const requests = await query.orderBy(desc(podcastRequests.createdAt));
+    const requests = await query
+      .orderBy(desc(podcastRequests.createdAt))
+      .limit(limitNum)
+      .offset(offset);
 
     res.json(requests);
   } catch (error: any) {
