@@ -50,6 +50,40 @@ export function registerSQ3RRoutes(app: Express) {
         )
         .orderBy(materieSQ3R.ordine, materieSQ3R.createdAt);
 
+      // Ricalcola contatori dinamicamente per garantire consistenza
+      for (const materia of materie) {
+        const capitoli = await db
+          .select({
+            id: capitoliSQ3R.id,
+            completato: capitoliSQ3R.completato,
+            surveyDurata: capitoliSQ3R.surveyDurata,
+            readTempoLettura: capitoliSQ3R.readTempoLettura,
+            reciteDurata: capitoliSQ3R.reciteDurata
+          })
+          .from(capitoliSQ3R)
+          .where(
+            and(
+              eq(capitoliSQ3R.userId, userId),
+              eq(capitoliSQ3R.materiaId, materia.id)
+            )
+          );
+
+        materia.capitoliTotali = capitoli.length;
+        materia.capitoliCompletati = capitoli.filter(c => c.completato).length;
+
+        // Calcola ore di studio totali aggregando i tempi di ogni capitolo
+        // surveyDurata e reciteDurata sono in secondi, readTempoLettura in minuti
+        const totaleSecondi = capitoli.reduce((acc, c) => {
+          const survey = c.surveyDurata || 0; // secondi
+          const read = (c.readTempoLettura || 0) * 60; // minuti -> secondi
+          const recite = c.reciteDurata || 0; // secondi
+          return acc + survey + read + recite;
+        }, 0);
+
+        // Converti in ore (con 1 decimale)
+        materia.oreStudioTotali = Math.round((totaleSecondi / 3600) * 10) / 10;
+      }
+
       res.json(materie);
     } catch (error: any) {
       console.error('❌ Errore GET materie:', error);
@@ -385,6 +419,26 @@ export function registerSQ3RRoutes(app: Express) {
 
       if (!capitolo) {
         return res.status(404).json({ error: 'Capitolo non trovato' });
+      }
+
+      // Se il campo completato è stato aggiornato, ricalcola i contatori della materia
+      if (updates.completato !== undefined && capitolo.materiaId) {
+        const capitoli = await db
+          .select({ id: capitoliSQ3R.id, completato: capitoliSQ3R.completato })
+          .from(capitoliSQ3R)
+          .where(eq(capitoliSQ3R.materiaId, capitolo.materiaId));
+
+        const capitoliCompletatiCount = capitoli.filter(c => c.completato).length;
+
+        await db.update(materieSQ3R)
+          .set({
+            capitoliTotali: capitoli.length,
+            capitoliCompletati: capitoliCompletatiCount,
+            updatedAt: new Date()
+          })
+          .where(eq(materieSQ3R.id, capitolo.materiaId));
+
+        console.log(`✅ Contatori materia aggiornati: ${capitoliCompletatiCount}/${capitoli.length}`);
       }
 
       console.log('✅ Capitolo aggiornato');
