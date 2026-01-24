@@ -75,16 +75,16 @@ type ExamPhase = 'setup' | 'session' | 'feedback';
 
 const PERSONA_IMAGES = {
     rigorous: {
-        listening: '/images/professor-male-listening.jpg',
-        thinking: '/images/professor-male-thinking.jpg',
-        speaking: '/images/professor-male-speaking.jpg',
-        positive: '/images/professor-male-positive.jpg',
+        listening: '/images/professor-male-listening.png',
+        thinking: '/images/professor-male-listening.png', // Reuse listening for now
+        speaking: '/images/professor-male-speaking.png',
+        positive: '/images/professor-male-speaking.png', // Reuse speaking/positive for now
     },
     empathetic: {
-        listening: '/images/professor-female-listening.jpg',
-        thinking: '/images/professor-female-thinking.jpg',
-        speaking: '/images/professor-female-speaking.jpg',
-        positive: '/images/professor-female-positive.jpg',
+        listening: '/images/professor-female-listening.png',
+        thinking: '/images/professor-female-listening.png',
+        speaking: '/images/professor-female-speaking.png',
+        positive: '/images/professor-female-speaking.png',
     },
 };
 
@@ -552,10 +552,22 @@ export default function OralExamPage() {
                 <div className="p-4 bg-gradient-to-b from-slate-100 to-white dark:from-slate-900 dark:to-background flex justify-center">
                     <div className="relative">
                         <div
-                            className={`w-32 h-32 rounded-full bg-slate-200 flex items-center justify-center transition-all duration-300 ${personaState === 'speaking' ? 'ring-4 ring-primary ring-opacity-50 animate-pulse' : ''
+                            className={`w-32 h-32 rounded-full overflow-hidden border-4 border-slate-200 transition-all duration-300 ${personaState === 'speaking' ? 'ring-4 ring-primary ring-opacity-50 animate-pulse' : ''
                                 } ${personaState === 'thinking' ? 'opacity-70' : ''}`}
                         >
-                            <User className="h-16 w-16 text-slate-500" />
+                            <img
+                                src={PERSONA_IMAGES[selectedPersona][personaState]}
+                                alt="Persona Avatar"
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                    // Fallback to icon if image fails
+                                    e.currentTarget.style.display = 'none';
+                                    e.currentTarget.parentElement?.classList.add('flex', 'items-center', 'justify-center', 'bg-slate-200');
+                                    const icon = document.createElement('div');
+                                    icon.innerHTML = '<svg class="h-16 w-16 text-slate-500" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+                                    e.currentTarget.parentElement?.appendChild(icon);
+                                }}
+                            />
                         </div>
                         {isSpeaking && (
                             <Button
@@ -580,8 +592,8 @@ export default function OralExamPage() {
                             >
                                 <div
                                     className={`max-w-[80%] p-3 rounded-lg ${msg.role === 'user'
-                                            ? 'bg-primary text-primary-foreground'
-                                            : 'bg-muted'
+                                        ? 'bg-primary text-primary-foreground'
+                                        : 'bg-muted'
                                         }`}
                                 >
                                     <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
