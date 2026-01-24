@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Target, Play, History, CheckCircle, Brain, Clock, FileText, AlertTriangle, Lightbulb } from "lucide-react";
+import { Target, Play, History, CheckCircle, Brain, Clock, FileText, AlertTriangle, Lightbulb, GraduationCap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Concorso } from "@shared/schema";
 import { SimulazioniList } from "@/components/simulazioni/SimulazioniList";
@@ -151,6 +151,27 @@ export default function SimulazioniPage() {
               </Button>
             </div>
           )}
+
+          {concorsoSelezionato && (
+            <div className="mt-4 border-t pt-4">
+              <Button
+                size="lg"
+                className="w-full h-16 bg-gradient-to-r from-primary/90 to-primary text-primary-foreground shadow-md hover:shadow-lg transition-all"
+                onClick={() => setLocation(`/concorsi/${concorsoSelezionato}/oral-exam`)}
+              >
+                <div className="flex items-center justify-center gap-3">
+                  <GraduationCap className="h-6 w-6" />
+                  <div className="text-left">
+                    <div className="font-bold text-lg flex items-center gap-2">
+                      Simulazione Esame Orale
+                      <Badge variant="secondary" className="text-xs bg-white/20 text-white border-0">Premium</Badge>
+                    </div>
+                    <div className="text-xs font-normal opacity-90">Interrogazione con docente AI e feedback vocale</div>
+                  </div>
+                </div>
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -178,7 +199,7 @@ export default function SimulazioniPage() {
                 Fai i quiz seduto a un tavolo, con rumore di fondo (usa app che simulano il brusio d'aula), senza cibo/musica.
               </p>
             </div>
-            
+
             <div className="space-y-2 p-3 bg-card rounded-lg border shadow-sm">
               <div className="flex items-center gap-2 font-semibold text-secondary">
                 <Clock className="h-4 w-4" />

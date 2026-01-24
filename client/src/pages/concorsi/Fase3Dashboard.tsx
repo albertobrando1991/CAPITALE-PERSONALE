@@ -363,27 +363,7 @@ export default function Fase3Dashboard() {
               </div>
             </Button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mt-4">
-            <Button
-              size="lg"
-              variant="outline"
-              className="h-20 border-2 border-primary/20 hover:border-primary/50"
-              onClick={() => setLocation(`/concorsi/${concorsoId}/oral-exam`)}
-            >
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-primary/10 rounded-full">
-                  <GraduationCap className="h-8 w-8 text-primary" />
-                </div>
-                <div className="text-left">
-                  <div className="font-semibold flex items-center gap-2">
-                    Simulazione Esame Orale
-                    <Badge variant="secondary" className="text-xs">Premium</Badge>
-                  </div>
-                  <div className="text-sm opacity-80">Interrogazione AI con voce e feedback immediato</div>
-                </div>
-              </div>
-            </Button>
-          </div>
+
         </CardContent>
       </Card>
 
@@ -606,6 +586,6 @@ export default function Fase3Dashboard() {
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
+    </div >
   );
 }

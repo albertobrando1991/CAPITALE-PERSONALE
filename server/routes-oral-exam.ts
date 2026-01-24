@@ -16,6 +16,12 @@ import { userSubscriptions } from '../shared/schema';
 import { isAlwaysPremium } from './utils/auth-helpers';
 import { eq, sql } from 'drizzle-orm';
 import { db as drizzleDb } from './db';
+import multer from 'multer';
+import pdf from 'pdf-parse';
+import fs from 'fs';
+
+// Multer setup for temporary file storage
+const upload = multer({ dest: 'uploads/' });
 
 // Helper to get userId from session or user object
 const getUserId = (req: Request): string => {
@@ -465,6 +471,38 @@ router.get('/concorso/:concorsoId', isAuthenticatedHybrid, async (req: Request, 
     } catch (error: any) {
         console.error('Errore lista sessioni:', error);
         res.status(500).json({ error: 'Errore recupero lista sessioni' });
+    }
+});
+
+// ============================================================================
+// UPLOAD CONTENT (PDF)
+// ============================================================================
+
+router.post('/upload-pdf', isAuthenticatedHybrid, upload.single('file'), async (req: Request, res: Response) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'Nessun file caricato' });
+        }
+
+        const dataBuffer = fs.readFileSync(req.file.path);
+        const data = await pdf(dataBuffer);
+
+        // Cleanup temp file
+        fs.unlinkSync(req.file.path);
+
+        // Limit text length if needed (e.g. 100k chars)
+        const text = data.text.slice(0, 100000);
+
+        res.json({
+            success: true,
+            text,
+            pages: data.numpages,
+            info: data.info
+        });
+
+    } catch (error: any) {
+        console.error('Errore upload PDF:', error);
+        res.status(500).json({ error: 'Errore processamento PDF', details: error.message });
     }
 });
 

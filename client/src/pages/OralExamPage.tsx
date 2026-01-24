@@ -32,7 +32,15 @@ import {
     Volume2,
     VolumeX,
     RefreshCw,
+    Upload,
+    FileText,
+    Mic2,
+    Settings,
 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import type { Concorso } from '@shared/schema';
@@ -111,11 +119,19 @@ export default function OralExamPage() {
     const [maxTurns, setMaxTurns] = useState(5);
 
     // Session state
+    const [sourceType, setSourceType] = useState<'topics' | 'pdf'>('topics');
+    const [uploadingPdf, setUploadingPdf] = useState(false);
+    const [pdfContext, setPdfContext] = useState<string>('');
+    const [pdfFileName, setPdfFileName] = useState<string>('');
+
+    // Session state
     const [userInput, setUserInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [personaState, setPersonaState] = useState<PersonaState>('listening');
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isListening, setIsListening] = useState(false);
+    const [fluidMode, setFluidMode] = useState(true); // Default to fluid mode
+    const recognitionRef = useRef<any>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Fetch concorso data
@@ -143,8 +159,13 @@ export default function OralExamPage() {
     // ============================================================================
 
     const startSession = async () => {
-        if (selectedTopics.length === 0) {
+        if (sourceType === 'topics' && selectedTopics.length === 0) {
             toast({ title: 'Seleziona almeno un argomento', variant: 'destructive' });
+            return;
+        }
+
+        if (sourceType === 'pdf' && !pdfContext) {
+            toast({ title: 'Carica un PDF prima di iniziare', variant: 'destructive' });
             return;
         }
 
@@ -159,9 +180,10 @@ export default function OralExamPage() {
                 body: JSON.stringify({
                     concorsoId,
                     persona: selectedPersona,
-                    topics: selectedTopics,
+                    topics: sourceType === 'topics' ? selectedTopics : [pdfFileName || 'Materiale Caricato'],
                     difficulty,
                     maxTurns,
+                    context: pdfContext || undefined,
                 }),
             });
 
@@ -322,7 +344,16 @@ export default function OralExamPage() {
         window.speechSynthesis.cancel();
         setIsSpeaking(false);
         setPersonaState('listening');
+
+        // Auto-start listening if fluid mode is on
+        if (fluidMode && phase === 'session' && session?.status === 'active') {
+            setTimeout(() => {
+                toggleListening();
+            }, 500); // Small delay to avoid capturing system audio
+        }
     };
+
+
 
     // ============================================================================
     // SPEECH RECOGNITION (STT)
@@ -335,6 +366,7 @@ export default function OralExamPage() {
         }
 
         if (isListening) {
+            recognitionRef.current?.stop();
             setIsListening(false);
             return;
         }
@@ -343,19 +375,92 @@ export default function OralExamPage() {
         const recognition = new SpeechRecognition();
 
         recognition.lang = 'it-IT';
-        recognition.continuous = false;
-        recognition.interimResults = false;
+        recognition.continuous = false; // Stop after one sentence/pause
+        recognition.interimResults = true; // Show interim results
 
-        recognition.onstart = () => setIsListening(true);
-        recognition.onend = () => setIsListening(false);
+        recognition.onstart = () => {
+            setIsListening(true);
+            setPersonaState('listening');
+        };
+
+        recognition.onend = () => {
+            setIsListening(false);
+            // If fluid mode and we have input, send it automatically
+            // We use a timeout to check the ref/state value effectively
+            // Using a small delay to ensure state update or check
+            // Implementation note: accessing state inside callback requires refs or functional updates usually
+            // But here we'll let the user verify the input briefly OR just send it if confident.
+            // "Fluid" usually means auto-send.
+            // Let's implement auto-send if there is substantial input.
+            const currentInput = (document.getElementById('speech-input') as HTMLTextAreaElement)?.value;
+            if (fluidMode && currentInput && currentInput.trim().length > 3) {
+                // Trigger send
+                // We need to trigger the sendMessage function, but verify state
+                // Using a dedicated button click logic or calling function if accessible
+                // Direct call might use stale state, better to use useEffect or Ref for input
+                // For now, let's keep it manual or auto-send via a ref-based check
+                // actually set isListening false is enough. The user sees the text.
+                // To make it TRULY fluid like Gemini, it should auto send.
+                // We will add a small timeout and then send.
+                setTimeout(() => {
+                    const btn = document.getElementById('send-button');
+                    btn?.click();
+                }, 1000);
+            }
+        };
+
         recognition.onerror = () => setIsListening(false);
 
         recognition.onresult = (event: any) => {
-            const transcript = event.results[0][0].transcript;
-            setUserInput((prev) => prev + ' ' + transcript);
+            let finalTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalTranscript += event.results[i][0].transcript;
+                } else {
+                    // Interim
+                }
+            }
+            if (finalTranscript) {
+                setUserInput((prev) => prev ? prev + ' ' + finalTranscript : finalTranscript);
+            }
         };
 
+        recognitionRef.current = recognition;
         recognition.start();
+    };
+
+    const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        if (file.type !== 'application/pdf') {
+            toast({ title: 'Solo file PDF sono supportati', variant: 'destructive' });
+            return;
+        }
+
+        setUploadingPdf(true);
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await fetch('/api/oral-exam/upload-pdf', {
+                method: 'POST',
+                body: formData,
+                credentials: 'include'
+            });
+
+            if (!res.ok) throw new Error('Upload fallito');
+
+            const data = await res.json();
+            setPdfContext(data.text);
+            setPdfFileName(file.name);
+            toast({ title: 'PDF analizzato con successo', description: `${data.pages} pagine elaborate.` });
+        } catch (error) {
+            console.error(error);
+            toast({ title: 'Errore caricamento PDF', variant: 'destructive' });
+        } finally {
+            setUploadingPdf(false);
+        }
     };
 
     // ============================================================================
@@ -443,33 +548,72 @@ export default function OralExamPage() {
                     </CardContent>
                 </Card>
 
-                {/* Topics Selection */}
+                {/* Content Source Selection */}
                 <Card>
                     <CardHeader>
                         <CardTitle>Argomenti dell'Esame</CardTitle>
-                        <CardDescription>Seleziona le materie su cui vuoi essere interrogato</CardDescription>
+                        <CardDescription>Scegli la fonte delle domande</CardDescription>
                     </CardHeader>
-                    <CardContent>
-                        <div className="flex flex-wrap gap-2">
-                            {availableTopics.length > 0 ? (
-                                availableTopics.map((topic) => (
-                                    <Badge
-                                        key={topic}
-                                        variant={selectedTopics.includes(topic) ? 'default' : 'outline'}
-                                        className="cursor-pointer text-sm py-1.5 px-3"
-                                        onClick={() => {
-                                            setSelectedTopics((prev) =>
-                                                prev.includes(topic) ? prev.filter((t) => t !== topic) : [...prev, topic]
-                                            );
-                                        }}
-                                    >
-                                        {topic}
-                                    </Badge>
-                                ))
-                            ) : (
-                                <p className="text-muted-foreground">Nessuna materia disponibile. Completa prima la Fase 0.</p>
-                            )}
-                        </div>
+                    <CardContent className="space-y-6">
+                        <Tabs defaultValue="topics" value={sourceType} onValueChange={(v) => setSourceType(v as any)} className="w-full">
+                            <TabsList className="grid w-full grid-cols-2">
+                                <TabsTrigger value="topics">Materie Concorso</TabsTrigger>
+                                <TabsTrigger value="pdf">Carica Materiale (PDF)</TabsTrigger>
+                            </TabsList>
+
+                            <TabsContent value="topics" className="mt-4">
+                                <div className="flex flex-wrap gap-2">
+                                    {availableTopics.length > 0 ? (
+                                        availableTopics.map((topic) => (
+                                            <Badge
+                                                key={topic}
+                                                variant={selectedTopics.includes(topic) ? 'default' : 'outline'}
+                                                className="cursor-pointer text-sm py-1.5 px-3"
+                                                onClick={() => {
+                                                    setSelectedTopics((prev) =>
+                                                        prev.includes(topic) ? prev.filter((t) => t !== topic) : [...prev, topic]
+                                                    );
+                                                }}
+                                            >
+                                                {topic}
+                                            </Badge>
+                                        ))
+                                    ) : (
+                                        <p className="text-muted-foreground">Nessuna materia disponibile. Completa prima la Fase 0.</p>
+                                    )}
+                                </div>
+                            </TabsContent>
+
+                            <TabsContent value="pdf" className="mt-4 space-y-4">
+                                <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:bg-slate-50 transition-colors">
+                                    <input
+                                        type="file"
+                                        id="pdf-upload"
+                                        accept=".pdf"
+                                        className="hidden"
+                                        onChange={handleFileUpload}
+                                        disabled={uploadingPdf}
+                                    />
+                                    <label htmlFor="pdf-upload" className="cursor-pointer flex flex-col items-center gap-2">
+                                        {uploadingPdf ? (
+                                            <Loader2 className="h-10 w-10 text-primary animate-spin" />
+                                        ) : pdfContext ? (
+                                            <>
+                                                <FileText className="h-10 w-10 text-green-600" />
+                                                <span className="font-semibold text-green-700">{pdfFileName}</span>
+                                                <span className="text-sm text-muted-foreground">Clicca per cambiare file</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Upload className="h-10 w-10 text-slate-400" />
+                                                <span className="font-semibold">Clicca per caricare un PDF</span>
+                                                <span className="text-sm text-muted-foreground">Estrarremo le domande dal contenuto</span>
+                                            </>
+                                        )}
+                                    </label>
+                                </div>
+                            </TabsContent>
+                        </Tabs>
                     </CardContent>
                 </Card>
 
@@ -514,7 +658,7 @@ export default function OralExamPage() {
                     size="lg"
                     className="w-full"
                     onClick={startSession}
-                    disabled={isLoading || selectedTopics.length === 0}
+                    disabled={isLoading || (sourceType === 'topics' ? selectedTopics.length === 0 : !pdfContext)}
                 >
                     {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <GraduationCap className="h-4 w-4 mr-2" />}
                     Inizia Esame Orale
@@ -548,38 +692,27 @@ export default function OralExamPage() {
                     <Progress value={(session.currentTurn / session.maxTurns) * 100} className="w-32" />
                 </div>
 
-                {/* Avatar Area */}
-                <div className="p-4 bg-gradient-to-b from-slate-100 to-white dark:from-slate-900 dark:to-background flex justify-center">
-                    <div className="relative">
+                {/* Avatar Area - LARGER */}
+                <div className="flex-1 bg-gradient-to-b from-slate-100 to-white dark:from-slate-900 dark:to-background flex flex-col items-center justify-center p-8">
+                    <div className="relative w-full max-w-md aspect-square flex items-center justify-center">
                         <div
-                            className={`w-32 h-32 rounded-full overflow-hidden border-4 border-slate-200 transition-all duration-300 ${personaState === 'speaking' ? 'ring-4 ring-primary ring-opacity-50 animate-pulse' : ''
-                                } ${personaState === 'thinking' ? 'opacity-70' : ''}`}
+                            className={`w-64 h-64 md:w-80 md:h-80 rounded-full overflow-hidden border-8 border-slate-200 shadow-2xl transition-all duration-300 ${personaState === 'speaking' ? 'ring-8 ring-primary ring-opacity-50 animate-pulse scale-105' : ''
+                                } ${personaState === 'thinking' ? 'opacity-70 scale-95' : ''}`}
                         >
                             <img
                                 src={PERSONA_IMAGES[selectedPersona][personaState]}
                                 alt="Persona Avatar"
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
-                                    // Fallback to icon if image fails
                                     e.currentTarget.style.display = 'none';
                                     e.currentTarget.parentElement?.classList.add('flex', 'items-center', 'justify-center', 'bg-slate-200');
-                                    const icon = document.createElement('div');
-                                    icon.innerHTML = '<svg class="h-16 w-16 text-slate-500" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
-                                    e.currentTarget.parentElement?.appendChild(icon);
                                 }}
                             />
                         </div>
-                        {isSpeaking && (
-                            <Button
-                                size="icon"
-                                variant="secondary"
-                                className="absolute -bottom-2 -right-2"
-                                onClick={stopSpeaking}
-                            >
-                                <VolumeX className="h-4 w-4" />
-                            </Button>
-                        )}
                     </div>
+                    <p className="mt-6 text-xl font-medium text-slate-700 dark:text-slate-200 animate-pulse">
+                        {personaState === 'speaking' ? 'Sta parlando...' : (personaState === 'thinking' ? 'Sta pensando...' : 'Ti ascolta...')}
+                    </p>
                 </div>
 
                 {/* Chat Messages */}
@@ -623,10 +756,11 @@ export default function OralExamPage() {
                             {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                         </Button>
                         <Textarea
+                            id="speech-input"
                             value={userInput}
                             onChange={(e) => setUserInput(e.target.value)}
-                            placeholder="Scrivi la tua risposta..."
-                            className="min-h-[60px] resize-none"
+                            placeholder={isListening ? "Parla ora..." : "Scrivi la tua risposta..."}
+                            className={`min-h-[60px] resize-none ${isListening ? 'border-primary ring-1 ring-primary' : ''}`}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' && !e.shiftKey) {
                                     e.preventDefault();
@@ -636,6 +770,7 @@ export default function OralExamPage() {
                             disabled={isLoading || session.status === 'completed'}
                         />
                         <Button
+                            id="send-button"
                             size="icon"
                             onClick={sendMessage}
                             disabled={isLoading || !userInput.trim() || session.status === 'completed'}
