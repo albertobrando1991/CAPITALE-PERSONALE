@@ -142,6 +142,7 @@ export * from "./schema-normativa";
 export * from "./schema-fase3";
 export * from "./schema-rbac";
 export * from "./schema-audit";
+export * from "./schema-oral-exam";
 
 // ============================================
 // MNEMOTECNICHE TABLES

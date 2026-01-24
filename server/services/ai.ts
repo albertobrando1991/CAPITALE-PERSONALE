@@ -13,6 +13,8 @@ export type AITask =
   | "recovery_plan"
   | "reframing_generate"
   | "ocr_images"
+  | "oral_exam_question"
+  | "oral_exam_evaluate"
   | "generic";
 
 export type AIResponseMode = "text" | "json";
@@ -135,6 +137,10 @@ function getModelChain(task: AITask): string[] {
       return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
     case "ocr_images":
       return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
+    case "oral_exam_question":
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
+    case "oral_exam_evaluate":
+      return ["anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini"];
     default:
       return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
   }
@@ -163,6 +169,10 @@ function getDefaultMaxOutputTokens(task: AITask): number {
       return 250;
     case "ocr_images":
       return 1200;
+    case "oral_exam_question":
+      return 500; // Short, focused questions
+    case "oral_exam_evaluate":
+      return 1500; // Detailed feedback
     default:
       return 1000;
   }
