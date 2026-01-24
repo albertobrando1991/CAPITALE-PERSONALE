@@ -49,54 +49,42 @@ import type { Concorso } from '@shared/schema';
 // TYPES
 // ============================================================================
 
-interface OralExamMessage {
-    role: 'user' | 'instructor';
-    content: string;
-    timestamp: string;
-}
-
-interface OralExamFeedback {
-    score: number;
-    strengths: string[];
-    weaknesses: string[];
-    suggestions: string[];
-    overallComment: string;
-}
+type ExamPhase = 'setup' | 'session' | 'feedback';
+type PersonaState = 'listening' | 'thinking' | 'speaking' | 'positive' | 'negative';
 
 interface OralExamSession {
     id: string;
-    persona: string;
+    persona: 'rigorous' | 'empathetic';
     topics: string[];
-    messages: OralExamMessage[];
+    messages: { role: 'user' | 'instructor'; content: string; timestamp?: string }[];
     currentTurn: number;
     maxTurns: number;
-    status: 'active' | 'completed' | 'abandoned';
-    feedback?: OralExamFeedback;
+    feedback?: {
+        score: number;
+        overallComment: string;
+        strengths: string[];
+        weaknesses: string[];
+    };
     score?: number;
+    status: 'active' | 'completed';
 }
-
-type ExamPhase = 'setup' | 'session' | 'feedback';
-
-// ============================================================================
-// PERSONA IMAGES (Reactive Avatars)
-// ============================================================================
 
 const PERSONA_IMAGES = {
     rigorous: {
-        listening: '/images/professor-male-listening.png',
-        thinking: '/images/professor-male-listening.png', // Reuse listening for now
-        speaking: '/images/professor-male-speaking.png',
-        positive: '/images/professor-male-speaking.png', // Reuse speaking/positive for now
+        listening: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
+        thinking: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400', // Placeholder
+        speaking: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400', // Placeholder
+        positive: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
+        negative: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
     },
     empathetic: {
-        listening: '/images/professor-female-listening.png',
-        thinking: '/images/professor-female-listening.png',
-        speaking: '/images/professor-female-speaking.png',
-        positive: '/images/professor-female-speaking.png',
+        listening: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
+        thinking: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
+        speaking: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
+        positive: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
+        negative: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
     },
 };
-
-type PersonaState = 'listening' | 'thinking' | 'speaking' | 'positive';
 
 // ============================================================================
 // MAIN COMPONENT
@@ -331,6 +319,13 @@ export default function OralExamPage() {
         utterance.onend = () => {
             setIsSpeaking(false);
             setPersonaState('listening');
+
+            // Auto-start listening if fluid mode is on
+            if (fluidMode && phase === 'session' && session?.status === 'active') {
+                setTimeout(() => {
+                    toggleListening();
+                }, 500); // Small delay to avoid capturing system audio
+            }
         };
         utterance.onerror = () => {
             setIsSpeaking(false);
@@ -339,21 +334,6 @@ export default function OralExamPage() {
 
         window.speechSynthesis.speak(utterance);
     };
-
-    const stopSpeaking = () => {
-        window.speechSynthesis.cancel();
-        setIsSpeaking(false);
-        setPersonaState('listening');
-
-        // Auto-start listening if fluid mode is on
-        if (fluidMode && phase === 'session' && session?.status === 'active') {
-            setTimeout(() => {
-                toggleListening();
-            }, 500); // Small delay to avoid capturing system audio
-        }
-    };
-
-
 
     // ============================================================================
     // SPEECH RECOGNITION (STT)
@@ -386,22 +366,10 @@ export default function OralExamPage() {
         recognition.onend = () => {
             setIsListening(false);
             // If fluid mode and we have input, send it automatically
-            // We use a timeout to check the ref/state value effectively
-            // Using a small delay to ensure state update or check
-            // Implementation note: accessing state inside callback requires refs or functional updates usually
-            // But here we'll let the user verify the input briefly OR just send it if confident.
-            // "Fluid" usually means auto-send.
-            // Let's implement auto-send if there is substantial input.
+            // "Fluidmode" auto-send logic
             const currentInput = (document.getElementById('speech-input') as HTMLTextAreaElement)?.value;
+            // Only auto-send if substantial input is present
             if (fluidMode && currentInput && currentInput.trim().length > 3) {
-                // Trigger send
-                // We need to trigger the sendMessage function, but verify state
-                // Using a dedicated button click logic or calling function if accessible
-                // Direct call might use stale state, better to use useEffect or Ref for input
-                // For now, let's keep it manual or auto-send via a ref-based check
-                // actually set isListening false is enough. The user sees the text.
-                // To make it TRULY fluid like Gemini, it should auto send.
-                // We will add a small timeout and then send.
                 setTimeout(() => {
                     const btn = document.getElementById('send-button');
                     btn?.click();
@@ -650,6 +618,18 @@ export default function OralExamPage() {
                                 </SelectContent>
                             </Select>
                         </div>
+                        <div className="flex items-center justify-between">
+                            <span className="flex items-center gap-2">
+                                <Mic2 className="h-4 w-4" />
+                                Modalità Fluida
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <Switch checked={fluidMode} onCheckedChange={setFluidMode} />
+                                <span className="text-sm text-muted-foreground">
+                                    {fluidMode ? 'Attiva (Auto-Invio)' : 'Manuale'}
+                                </span>
+                            </div>
+                        </div>
                     </CardContent>
                 </Card>
 
@@ -668,117 +648,154 @@ export default function OralExamPage() {
     }
 
     // ============================================================================
-    // RENDER: SESSION PHASE
+    // RENDER: SESSION PHASE (FULL IMMERSIVE UI)
     // ============================================================================
 
     if (phase === 'session' && session) {
         return (
-            <div className="flex flex-col h-[calc(100vh-80px)]">
-                {/* Header */}
-                <div className="p-4 border-b flex items-center justify-between">
+            <div className="relative h-[calc(100vh-80px)] w-full overflow-hidden bg-black">
+                {/* Background Image - Immersive Room */}
+                <div
+                    className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat transition-transform duration-1000 scale-100 dark:brightness-75"
+                    style={{
+                        backgroundImage: "url('/images/exam-room.png')",
+                        transform: personaState === 'speaking' ? 'scale(1.02)' : 'scale(1)'
+                    }}
+                />
+
+                {/* Overlay Gradient for Text Readability if needed */}
+                <div className="absolute inset-0 z-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
+
+                {/* Header Overlay */}
+                <div className="absolute top-0 left-0 right-0 z-10 p-4 flex items-center justify-between bg-black/40 backdrop-blur-sm text-white border-b border-white/10">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                            <GraduationCap className="h-5 w-5 text-primary" />
-                        </div>
-                        <div>
-                            <h2 className="font-semibold">
+                        <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full">
+                            <GraduationCap className="h-5 w-5 text-primary-foreground" />
+                            <span className="font-semibold text-sm">
                                 {selectedPersona === 'rigorous' ? 'Prof. Bianchi' : 'Prof.ssa Verdi'}
-                            </h2>
-                            <p className="text-xs text-muted-foreground">
-                                Domanda {session.currentTurn} di {session.maxTurns}
-                            </p>
+                            </span>
                         </div>
+                        <Badge variant="outline" className="text-white border-white/20 bg-black/20">
+                            Domanda {session.currentTurn}/{session.maxTurns}
+                        </Badge>
                     </div>
-                    <Progress value={(session.currentTurn / session.maxTurns) * 100} className="w-32" />
+                    <div className="flex items-center gap-4">
+                        <Progress value={(session.currentTurn / session.maxTurns) * 100} className="w-32 h-2 bg-white/20" />
+                        <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => window.location.reload()} // Quick exit
+                            className="h-8 opacity-80 hover:opacity-100"
+                        >
+                            Esci
+                        </Button>
+                    </div>
                 </div>
 
-                {/* Avatar Area - LARGER */}
-                <div className="flex-1 bg-gradient-to-b from-slate-100 to-white dark:from-slate-900 dark:to-background flex flex-col items-center justify-center p-8">
-                    <div className="relative w-full max-w-md aspect-square flex items-center justify-center">
+                {/* Professor Avatar - Positioned behind desk */}
+                <div className="absolute inset-0 z-10 flex items-end justify-center pointer-events-none pb-20 md:pb-10">
+                    <div className="relative w-[300px] h-[300px] md:w-[450px] md:h-[450px] transition-all duration-500">
                         <div
-                            className={`w-64 h-64 md:w-80 md:h-80 rounded-full overflow-hidden border-8 border-slate-200 shadow-2xl transition-all duration-300 ${personaState === 'speaking' ? 'ring-8 ring-primary ring-opacity-50 animate-pulse scale-105' : ''
-                                } ${personaState === 'thinking' ? 'opacity-70 scale-95' : ''}`}
+                            className={`w-full h-full rounded-full overflow-hidden border-4 border-white/20 bg-slate-900/50 shadow-2xl backdrop-blur-sm
+                            transition-all duration-300 ${personaState === 'speaking' ? 'ring-4 ring-primary/50 scale-105' : 'scale-100'}
+                            ${personaState === 'thinking' ? 'animate-pulse opacity-80' : ''}`}
                         >
                             <img
                                 src={PERSONA_IMAGES[selectedPersona][personaState]}
-                                alt="Persona Avatar"
+                                alt="Professor"
                                 className="w-full h-full object-cover"
-                                onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
-                                    e.currentTarget.parentElement?.classList.add('flex', 'items-center', 'justify-center', 'bg-slate-200');
-                                }}
                             />
                         </div>
                     </div>
-                    <p className="mt-6 text-xl font-medium text-slate-700 dark:text-slate-200 animate-pulse">
-                        {personaState === 'speaking' ? 'Sta parlando...' : (personaState === 'thinking' ? 'Sta pensando...' : 'Ti ascolta...')}
-                    </p>
                 </div>
 
-                {/* Chat Messages */}
-                <ScrollArea className="flex-1 p-4">
-                    <div className="space-y-4 max-w-2xl mx-auto">
-                        {session.messages.map((msg, idx) => (
-                            <div
-                                key={idx}
-                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                            >
-                                <div
-                                    className={`max-w-[80%] p-3 rounded-lg ${msg.role === 'user'
-                                        ? 'bg-primary text-primary-foreground'
-                                        : 'bg-muted'
-                                        }`}
-                                >
-                                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                                </div>
-                            </div>
-                        ))}
-                        {isLoading && (
-                            <div className="flex justify-start">
-                                <div className="bg-muted p-3 rounded-lg">
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                </div>
+                {/* Subtitles / Latest Message Overlay */}
+                <div className="absolute top-24 left-1/2 -translate-x-1/2 z-20 w-full max-w-2xl px-4 pointer-events-none">
+                    {session.messages.length > 0 && session.messages[session.messages.length - 1].role === 'instructor' && (
+                        <div className="bg-black/60 backdrop-blur-md p-6 rounded-xl border border-white/10 text-white text-center shadow-2xl animate-in fade-in slide-in-from-top-4">
+                            <p className="text-lg md:text-xl font-medium leading-relaxed">
+                                "{session.messages[session.messages.length - 1].content}"
+                            </p>
+                        </div>
+                    )}
+                </div>
+
+                {/* Chat/Interaction Area - Bottom */}
+                <div className="absolute bottom-0 left-0 right-0 z-30 p-4 md:p-6 bg-gradient-to-t from-black via-black/80 to-transparent">
+                    <div className="max-w-3xl mx-auto space-y-4">
+
+                        {/* User Output / Preview */}
+                        {userInput && (
+                            <div className="bg-primary/20 backdrop-blur-sm border border-primary/30 p-3 rounded-lg text-white mb-2 animate-in fade-in slide-in-from-bottom-2">
+                                <p className="text-sm font-medium opacity-80 mb-1">Tu stai dicendo:</p>
+                                <p className="text-lg">{userInput}</p>
                             </div>
                         )}
-                        <div ref={messagesEndRef} />
-                    </div>
-                </ScrollArea>
 
-                {/* Input Area */}
-                <div className="p-4 border-t">
-                    <div className="max-w-2xl mx-auto flex gap-2">
-                        <Button
-                            variant={isListening ? 'destructive' : 'outline'}
-                            size="icon"
-                            onClick={toggleListening}
-                            disabled={isLoading}
-                        >
-                            {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                        </Button>
-                        <Textarea
-                            id="speech-input"
-                            value={userInput}
-                            onChange={(e) => setUserInput(e.target.value)}
-                            placeholder={isListening ? "Parla ora..." : "Scrivi la tua risposta..."}
-                            className={`min-h-[60px] resize-none ${isListening ? 'border-primary ring-1 ring-primary' : ''}`}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    sendMessage();
-                                }
-                            }}
-                            disabled={isLoading || session.status === 'completed'}
-                        />
-                        <Button
-                            id="send-button"
-                            size="icon"
-                            onClick={sendMessage}
-                            disabled={isLoading || !userInput.trim() || session.status === 'completed'}
-                        >
-                            <Send className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-2 items-center">
+                            <Button
+                                variant={isListening ? "destructive" : "secondary"}
+                                size="lg"
+                                className={`h-14 w-14 rounded-full shadow-xl transition-all ${isListening ? 'animate-pulse ring-4 ring-red-500/30' : ''}`}
+                                onClick={toggleListening}
+                                disabled={isLoading || session.status === 'completed'}
+                            >
+                                {isListening ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+                            </Button>
+
+                            <div className="flex-1 relative">
+                                <Textarea
+                                    id="speech-input"
+                                    value={userInput}
+                                    onChange={(e) => setUserInput(e.target.value)}
+                                    placeholder={isListening ? "Ti ascolto..." : "Scrivi la tua risposta qui..."}
+                                    className="min-h-[56px] pl-4 pr-12 py-4 rounded-2xl border-white/20 bg-white/10 text-white placeholder:text-white/50 backdrop-blur-md focus:bg-white/20 resize-none text-lg"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            sendMessage();
+                                        }
+                                    }}
+                                    disabled={isLoading || session.status === 'completed'}
+                                />
+                                <Button
+                                    id="send-button"
+                                    size="icon"
+                                    className="absolute right-2 top-2 h-10 w-10 rounded-xl"
+                                    onClick={sendMessage}
+                                    disabled={isLoading || !userInput.trim() || session.status === 'completed'}
+                                >
+                                    <Send className="h-5 w-5" />
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-center items-center gap-4 text-xs text-white/40">
+                            <span className={`flex items-center gap-1.5 ${isListening ? 'text-red-400 font-medium' : ''}`}>
+                                <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-red-500 animate-ping' : 'bg-white/20'}`} />
+                                {isListening ? 'Microfono Attivo' : 'Microfono Pronto'}
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                                <Switch
+                                    checked={fluidMode}
+                                    onCheckedChange={setFluidMode}
+                                    className="scale-75 data-[state=checked]:bg-primary"
+                                />
+                                Modalità Fluida
+                            </span>
+                        </div>
                     </div>
                 </div>
+
+                {/* Status Indicators */}
+                {isLoading && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                        <div className="bg-black/80 p-6 rounded-2xl flex flex-col items-center gap-4 text-white">
+                            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                            <p>Il professore sta valutando...</p>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
@@ -853,37 +870,15 @@ export default function OralExamPage() {
                     </Card>
                 </div>
 
-                {/* Suggestions */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Suggerimenti per lo Studio</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <ul className="list-disc list-inside space-y-2">
-                            {session.feedback.suggestions.map((s, i) => (
-                                <li key={i}>{s}</li>
-                            ))}
-                        </ul>
-                    </CardContent>
-                </Card>
-
-                {/* Actions */}
-                <div className="flex gap-4">
-                    <Button variant="outline" className="flex-1" onClick={() => setPhase('setup')}>
+                <div className="flex justify-center pt-4">
+                    <Button onClick={() => window.location.reload()} size="lg">
                         <RefreshCw className="h-4 w-4 mr-2" />
-                        Riprova
+                        Nuova Simulazione
                     </Button>
-                    <Link href={`/concorsi/${concorsoId}`} className="flex-1">
-                        <Button className="w-full">
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Torna al Concorso
-                        </Button>
-                    </Link>
                 </div>
             </div>
         );
     }
 
-    // Fallback
     return null;
 }

@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Target, Play, History, CheckCircle, Brain, Clock, FileText, AlertTriangle, Lightbulb, GraduationCap } from "lucide-react";
+import { Target, Play, History, CheckCircle, Brain, Clock, FileText, AlertTriangle, Lightbulb, GraduationCap, PenTool } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Concorso } from "@shared/schema";
 import { SimulazioniList } from "@/components/simulazioni/SimulazioniList";
@@ -140,35 +140,55 @@ export default function SimulazioniPage() {
           </div>
 
           {concorsoSelezionato && (
-            <div className="flex gap-3">
-              <Button onClick={handleNuovaSimulazione} size="lg" className="flex-1">
-                <Play className="h-4 w-4 mr-2" />
-                Nuova Simulazione
-              </Button>
-              <Button onClick={handleVediStorico} variant="outline" size="lg" className="flex-1">
-                <History className="h-4 w-4 mr-2" />
-                Vedi Storico
-              </Button>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+              {/* Simulazione Scritta */}
+              <div
+                className="group relative flex flex-col items-start gap-4 rounded-xl border p-6 hover:bg-muted/50 transition-colors cursor-pointer"
+                onClick={handleNuovaSimulazione}
+              >
+                <div className="p-3 bg-secondary/10 rounded-lg group-hover:scale-110 transition-transform">
+                  <PenTool className="h-8 w-8 text-secondary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg text-foreground">Simulazione Scritta</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Quiz a risposta multipla su materie specifiche. Timer e punteggio reale.
+                  </p>
+                </div>
+                <Button className="w-full mt-auto" variant="secondary">
+                  <Play className="h-4 w-4 mr-2" /> Inizia Quiz
+                </Button>
+              </div>
+
+              {/* Simulazione Orale */}
+              <div
+                className="group relative flex flex-col items-start gap-4 rounded-xl border p-6 bg-gradient-to-br from-primary/5 to-transparent hover:from-primary/10 transition-all cursor-pointer border-primary/20"
+                onClick={() => setLocation(`/concorsi/${concorsoSelezionato}/oral-exam`)}
+              >
+                <div className="absolute top-4 right-4">
+                  <Badge variant="secondary" className="bg-primary/20 text-primary hover:bg-primary/30">Premium</Badge>
+                </div>
+                <div className="p-3 bg-primary/10 rounded-lg group-hover:scale-110 transition-transform">
+                  <GraduationCap className="h-8 w-8 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg text-primary">Simulazione Orale</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Interrogazione vocale con docente AI. Feedback su esposizione e contenuto.
+                  </p>
+                </div>
+                <Button className="w-full mt-auto" variant="default">
+                  <GraduationCap className="h-4 w-4 mr-2" /> Inizia Orale
+                </Button>
+              </div>
             </div>
           )}
 
           {concorsoSelezionato && (
-            <div className="mt-4 border-t pt-4">
-              <Button
-                size="lg"
-                className="w-full h-16 bg-gradient-to-r from-primary/90 to-primary text-primary-foreground shadow-md hover:shadow-lg transition-all"
-                onClick={() => setLocation(`/concorsi/${concorsoSelezionato}/oral-exam`)}
-              >
-                <div className="flex items-center justify-center gap-3">
-                  <GraduationCap className="h-6 w-6" />
-                  <div className="text-left">
-                    <div className="font-bold text-lg flex items-center gap-2">
-                      Simulazione Esame Orale
-                      <Badge variant="secondary" className="text-xs bg-white/20 text-white border-0">Premium</Badge>
-                    </div>
-                    <div className="text-xs font-normal opacity-90">Interrogazione con docente AI e feedback vocale</div>
-                  </div>
-                </div>
+            <div className="flex justify-end mt-4">
+              <Button onClick={handleVediStorico} variant="ghost" size="sm" className="text-muted-foreground">
+                <History className="h-4 w-4 mr-2" />
+                Vedi Storico Simulazioni Scritte
               </Button>
             </div>
           )}
