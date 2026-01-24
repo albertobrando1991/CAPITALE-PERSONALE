@@ -653,7 +653,7 @@ export default function OralExamPage() {
 
     if (phase === 'session' && session) {
         return (
-            <div className="relative h-[calc(100vh-80px)] w-full overflow-hidden bg-black">
+            <div className="relative h-[calc(100dvh-80px)] w-full overflow-hidden bg-black">
                 {/* Background Image - Immersive Room */}
                 <div
                     className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat transition-transform duration-1000 scale-100 dark:brightness-75"
@@ -721,7 +721,7 @@ export default function OralExamPage() {
                 </div>
 
                 {/* Chat/Interaction Area - Bottom */}
-                <div className="absolute bottom-0 left-0 right-0 z-30 p-4 md:p-6 bg-gradient-to-t from-black via-black/80 to-transparent">
+                <div className="absolute bottom-0 left-0 right-0 z-30 p-4 pb-8 md:p-6 bg-gradient-to-t from-black via-black/80 to-transparent">
                     <div className="max-w-3xl mx-auto space-y-4">
 
                         {/* User Output / Preview */}
