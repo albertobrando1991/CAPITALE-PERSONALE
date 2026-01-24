@@ -27,7 +27,8 @@ import {
   Lock,
   Unlock,
   Trash2,
-  RotateCcw
+  RotateCcw,
+  GraduationCap
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import ErrorAnalytics from '@/components/fase3/ErrorAnalytics';
@@ -48,10 +49,10 @@ export default function Fase3Dashboard() {
   useEffect(() => {
     // Refresh stats when tab changes (to catch updates from other components)
     if (concorsoId) {
-        refreshAll(concorsoId);
-        if (activeTab === 'drill') {
-            fetchDrillSessions();
-        }
+      refreshAll(concorsoId);
+      if (activeTab === 'drill') {
+        fetchDrillSessions();
+      }
     }
   }, [concorsoId, activeTab]);
 
@@ -76,29 +77,29 @@ export default function Fase3Dashboard() {
     setDrillSessions(prev => prev.filter(s => s.id !== sessionId));
 
     try {
-        const response = await fetch(`/api/fase3/${concorsoId}/drill-sessions/${sessionId}`, {
-            method: 'DELETE',
-            credentials: "include",
-        });
+      const response = await fetch(`/api/fase3/${concorsoId}/drill-sessions/${sessionId}`, {
+        method: 'DELETE',
+        credentials: "include",
+      });
 
-        if (response.ok) {
-            toast({
-                title: "Sessione eliminata",
-                description: "La sessione è stata rimossa dalla cronologia.",
-            });
-            // Opzionale: fetchDrillSessions() non serve se l'optimistic update ha funzionato
-            refreshAll(concorsoId!); // Refresh stats
-        } else {
-            throw new Error("Errore eliminazione");
-        }
-    } catch (error) {
-        // Rollback in caso di errore
+      if (response.ok) {
         toast({
-            title: "Errore",
-            description: "Impossibile eliminare la sessione.",
-            variant: "destructive"
+          title: "Sessione eliminata",
+          description: "La sessione è stata rimossa dalla cronologia.",
         });
-        fetchDrillSessions(); // Ricarica la lista vera
+        // Opzionale: fetchDrillSessions() non serve se l'optimistic update ha funzionato
+        refreshAll(concorsoId!); // Refresh stats
+      } else {
+        throw new Error("Errore eliminazione");
+      }
+    } catch (error) {
+      // Rollback in caso di errore
+      toast({
+        title: "Errore",
+        description: "Impossibile eliminare la sessione.",
+        variant: "destructive"
+      });
+      fetchDrillSessions(); // Ricarica la lista vera
     }
   };
 
@@ -125,11 +126,11 @@ export default function Fase3Dashboard() {
   // Calcola progresso verso SOLID
   const calculateProgressToSolid = () => {
     if (!progress) return 0;
-    
+
     const weakAreasScore = Math.max(0, ((8 - (progress.active_weak_areas || 0)) / 8) * 100);
     const retentionScore = Number(progress.retention_rate || 0);
     const drillHoursScore = Math.min(100, (Number(progress.total_drill_hours || 0) / 20) * 100);
-    
+
     return Math.round((weakAreasScore + retentionScore + drillHoursScore) / 3);
   };
 
@@ -149,14 +150,14 @@ export default function Fase3Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => concorsoId && forceSync(concorsoId)}
-                title="Ricalcola statistiche"
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => concorsoId && forceSync(concorsoId)}
+              title="Ricalcola statistiche"
             >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Sync
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Sync
             </Button>
             <Badge className={`${currentStatus.color} text-white px-4 py-2 text-lg`}>
               <currentStatus.icon className="mr-2 h-5 w-5" />
@@ -362,6 +363,27 @@ export default function Fase3Dashboard() {
               </div>
             </Button>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mt-4">
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-20 border-2 border-primary/20 hover:border-primary/50"
+              onClick={() => setLocation(`/concorsi/${concorsoId}/oral-exam`)}
+            >
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-primary/10 rounded-full">
+                  <GraduationCap className="h-8 w-8 text-primary" />
+                </div>
+                <div className="text-left">
+                  <div className="font-semibold flex items-center gap-2">
+                    Simulazione Esame Orale
+                    <Badge variant="secondary" className="text-xs">Premium</Badge>
+                  </div>
+                  <div className="text-sm opacity-80">Interrogazione AI con voce e feedback immediato</div>
+                </div>
+              </div>
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -473,7 +495,7 @@ export default function Fase3Dashboard() {
                   <Zap className="h-5 w-5 mr-2" />
                   Nuova Drill Session
                 </Button>
-                
+
                 {drillSessions.length === 0 ? (
                   <p className="text-muted-foreground text-center py-8">
                     Nessuna sessione ancora. Inizia la tua prima drill!
@@ -483,49 +505,49 @@ export default function Fase3Dashboard() {
                     {drillSessions.map((session) => (
                       <div key={session.id} className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-accent/50 transition-colors">
                         <div className="flex items-center gap-4">
-                            <div className={`p-2 rounded-full ${session.score_percentage >= 80 ? 'bg-green-100 text-green-700' : session.score_percentage >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-                                {session.score_percentage >= 80 ? <CheckCircle2 className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+                          <div className={`p-2 rounded-full ${session.score_percentage >= 80 ? 'bg-green-100 text-green-700' : session.score_percentage >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                            {session.score_percentage >= 80 ? <CheckCircle2 className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+                          </div>
+                          <div>
+                            <div className="font-semibold">
+                              {session.mode === 'topic' ? session.topic_id : (session.mode === 'weak' ? 'Aree Deboli' : 'Misto')}
                             </div>
-                            <div>
-                                <div className="font-semibold">
-                                    {session.mode === 'topic' ? session.topic_id : (session.mode === 'weak' ? 'Aree Deboli' : 'Misto')}
-                                </div>
-                                <div className="text-xs text-muted-foreground flex items-center gap-2">
-                                    <Calendar className="h-3 w-3" />
-                                    {new Date(session.started_at).toLocaleDateString()} alle {new Date(session.started_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                </div>
+                            <div className="text-xs text-muted-foreground flex items-center gap-2">
+                              <Calendar className="h-3 w-3" />
+                              {new Date(session.started_at).toLocaleDateString()} alle {new Date(session.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </div>
+                          </div>
                         </div>
                         <div className="text-right flex items-center gap-4">
-                             <div>
-                                <div className="text-lg font-bold">
-                                    {session.is_completed ? `${Number(session.score_percentage).toFixed(0)}%` : 'Incompleto'}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                    {session.correct_answers}/{session.total_questions} corretti
-                                </div>
-                             </div>
-                             
-                             {!session.is_completed && (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 text-primary border-primary hover:bg-primary hover:text-white"
-                                    onClick={() => setLocation(`/concorsi/${concorsoId}/fase3/drill?resume=${session.id}`)}
-                                >
-                                    <Play className="h-3 w-3 mr-1" />
-                                    Riprendi
-                                </Button>
-                             )}
+                          <div>
+                            <div className="text-lg font-bold">
+                              {session.is_completed ? `${Number(session.score_percentage).toFixed(0)}%` : 'Incompleto'}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {session.correct_answers}/{session.total_questions} corretti
+                            </div>
+                          </div>
 
-                             <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="text-muted-foreground hover:text-red-500 hover:bg-red-50"
-                                onClick={() => handleDeleteSession(session.id)}
-                             >
-                                <Trash2 className="h-4 w-4" />
-                             </Button>
+                          {!session.is_completed && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-primary border-primary hover:bg-primary hover:text-white"
+                              onClick={() => setLocation(`/concorsi/${concorsoId}/fase3/drill?resume=${session.id}`)}
+                            >
+                              <Play className="h-3 w-3 mr-1" />
+                              Riprendi
+                            </Button>
+                          )}
+
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-muted-foreground hover:text-red-500 hover:bg-red-50"
+                            onClick={() => handleDeleteSession(session.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
                     ))}
