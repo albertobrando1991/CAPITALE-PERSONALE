@@ -124,6 +124,7 @@ export default function MnemotecnichePage() {
   // 🔢 CONVERTITORE NUMERI 
   const [numeroArticolo, setNumeroArticolo] = useState(''); 
   const [codiceFonetico, setCodiceFonetico] = useState(''); 
+  const [numeroConvertito, setNumeroConvertito] = useState('');
   const [paroleSuggerite, setParoleSuggerite] = useState<string[]>([]); 
   const [parolaScelta, setParolaScelta] = useState(''); 
 
@@ -143,6 +144,7 @@ export default function MnemotecnichePage() {
       .join('-'); 
     
     setCodiceFonetico(codice); 
+    setNumeroConvertito(numeroArticolo);
     setParoleSuggerite(WORD_SUGGESTIONS[numeroArticolo] || []); 
   }; 
 
@@ -188,6 +190,7 @@ export default function MnemotecnichePage() {
 
       // Reset 
       setNumeroArticolo(''); 
+      setNumeroConvertito('');
       setCodiceFonetico(''); 
       setParoleSuggerite([]); 
       setParolaScelta(''); 
@@ -202,17 +205,17 @@ export default function MnemotecnichePage() {
   }); 
 
   const salvaMnemonica = () => { 
-    if (!parolaScelta) { 
+    if (!parolaScelta || !numeroConvertito) {
       toast({ 
         title: "Attenzione", 
-        description: "Inserisci o scegli una parola mnemonica", 
+        description: "Inserisci o scegli una parola mnemonica e converti il numero",
         variant: "destructive" 
       }); 
       return; 
     } 
 
     salvaMnemonicaMutation.mutate({ 
-      numeroArticolo, 
+      numeroArticolo: numeroConvertito,
       codiceFonetico, 
       parolaMnemonica: parolaScelta 
     }); 
