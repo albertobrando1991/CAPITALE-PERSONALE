@@ -325,6 +325,7 @@ export default function OralExamPage() {
             const response = await fetch('/api/oral-exam/tts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ text, persona: selectedPersona })
             });
 
