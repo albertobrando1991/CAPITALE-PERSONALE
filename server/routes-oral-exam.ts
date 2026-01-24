@@ -12,6 +12,10 @@ const router = express.Router();
 
 // Non-null assertion: pool should exist in production
 const db = pool!;
+import { userSubscriptions } from '../shared/schema';
+import { isAlwaysPremium } from './utils/auth-helpers';
+import { eq, sql } from 'drizzle-orm';
+import { db as drizzleDb } from './db';
 
 // Helper to get userId from session or user object
 const getUserId = (req: Request): string => {
@@ -43,6 +47,46 @@ Rispondi SOLO in italiano.`
 };
 
 // ============================================================================
+// HELPER: PREMIUM \u0026 LIMITS
+// ============================================================================
+
+async function checkPremiumStatus(userId: string, userEmail?: string): Promise<{ isPremium: boolean; limit: number }> {
+    // 1. Admin Bypass
+    if (isAlwaysPremium(userEmail)) {
+        return { isPremium: true, limit: 100 };
+    }
+
+    // 2. Check Subscription
+    const [sub] = await drizzleDb
+        .select()
+        .from(userSubscriptions)
+        .where(eq(userSubscriptions.userId, userId));
+
+    const isPremium = sub?.tier === 'premium' || sub?.tier === 'enterprise';
+
+    // 3. Define Limits
+    // Free: 0 sessions (Premium Feature)
+    // Premium/Enterprise: 10 sessions/day
+    const limit = isPremium ? 10 : 0;
+
+    return { isPremium, limit };
+}
+
+async function checkDailyLimit(userId: string, limit: number): Promise<boolean> {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+    const result = await db.query(`
+    SELECT COUNT(*) as count 
+    FROM oral_exam_sessions 
+    WHERE user_id = $1 
+    AND DATE(created_at) = $2
+  `, [userId, today]);
+
+    const count = parseInt(result.rows[0].count, 10);
+    return count < limit;
+}
+
+// ============================================================================
 // START SESSION
 // ============================================================================
 
@@ -59,9 +103,25 @@ router.post('/start', isAuthenticatedHybrid, async (req: Request, res: Response)
             return res.status(400).json({ error: 'concorsoId, persona e topics sono obbligatori' });
         }
 
-        // Check premium status (placeholder - integrate with your billing system)
-        // const subscription = await checkPremiumStatus(userId);
-        // if (!subscription.isPremium) return res.status(403).json({ error: 'Premium required' });
+        // 1. Check Premium Status
+        const userEmail = (req as any).user?.email;
+        const { isPremium, limit } = await checkPremiumStatus(userId, userEmail);
+
+        if (!isPremium) {
+            return res.status(403).json({
+                error: 'Questa funzione è riservata agli utenti Premium',
+                code: 'PREMIUM_REQUIRED'
+            });
+        }
+
+        // 2. Check Daily Limit
+        const canStart = await checkDailyLimit(userId, limit);
+        if (!canStart) {
+            return res.status(429).json({
+                error: `Hai raggiunto il limite giornaliero di ${limit} sessioni`,
+                code: 'LIMIT_REACHED'
+            });
+        }
 
         // Create session
         const result = await db.query(`
