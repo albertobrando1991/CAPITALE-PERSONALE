@@ -240,83 +240,82 @@ function parseAndValidateJson(text: string, jsonRoot: AIJsonRoot): { ok: true; v
 }
 
 export async function generateWithFallback(options: GenerateWithFallbackOptions): Promise<string> {
-  export async function generateSpeech(text: string, voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "alloy"): Promise<Buffer> {
-    const client = getOpenRouterClient();
-    const temperature = options.temperature ?? 0.7;
-    const responseMode: AIResponseMode = options.responseMode ?? "text";
-    const jsonRoot: AIJsonRoot = options.jsonRoot ?? "any";
-    const maxOutputTokens = options.maxOutputTokens ?? getDefaultMaxOutputTokens(options.task);
+  const client = getOpenRouterClient();
+  const temperature = options.temperature ?? 0.7;
+  const responseMode: AIResponseMode = options.responseMode ?? "text";
+  const jsonRoot: AIJsonRoot = options.jsonRoot ?? "any";
+  const maxOutputTokens = options.maxOutputTokens ?? getDefaultMaxOutputTokens(options.task);
 
-    const baseMessages = buildMessagesFromPrompts(options);
-    const messages = responseMode === "json" ? ensureJsonInstructionOnLastUserMessage(baseMessages, jsonRoot) : baseMessages;
-    const chain = getModelChain(options.task);
+  const baseMessages = buildMessagesFromPrompts(options);
+  const messages = responseMode === "json" ? ensureJsonInstructionOnLastUserMessage(baseMessages, jsonRoot) : baseMessages;
+  const chain = getModelChain(options.task);
 
-    const errors: string[] = [];
-    for (const model of chain) {
-      try {
-        const completion = await client.chat.completions.create({
-          model,
-          messages,
-          temperature,
-          max_tokens: maxOutputTokens,
-          response_format:
-            responseMode === "json" && jsonRoot === "object" && modelSupportsResponseFormat(model)
-              ? { type: "json_object" }
-              : undefined,
-        });
+  const errors: string[] = [];
+  for (const model of chain) {
+    try {
+      const completion = await client.chat.completions.create({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxOutputTokens,
+        response_format:
+          responseMode === "json" && jsonRoot === "object" && modelSupportsResponseFormat(model)
+            ? { type: "json_object" }
+            : undefined,
+      });
 
-        const text = completion.choices[0]?.message?.content || "";
-        if (!text) {
-          errors.push(`${model}: risposta vuota`);
-          continue;
-        }
-
-        if (responseMode === "json") {
-          const parsed = parseAndValidateJson(text, jsonRoot);
-          if (!parsed.ok) {
-            errors.push(`${model}: JSON non valido (${parsed.error})`);
-
-            const repairMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-              ...messages,
-              {
-                role: "user",
-                content:
-                  "Il JSON precedente non era valido. Restituisci SOLO JSON valido, senza markdown né testo extra.",
-              },
-            ];
-
-            try {
-              const repaired = await client.chat.completions.create({
-                model,
-                messages: repairMessages,
-                temperature: 0.2,
-                max_tokens: maxOutputTokens,
-                response_format: modelSupportsResponseFormat(model) ? { type: "json_object" } : undefined,
-              });
-              const repairedText = repaired.choices[0]?.message?.content || "";
-              const repairedParsed = parseAndValidateJson(repairedText, jsonRoot);
-              if (repairedParsed.ok) return repairedParsed.raw;
-              errors.push(`${model}: JSON repair fallito (${repairedParsed.ok ? "" : repairedParsed.error})`);
-              continue;
-            } catch (e: any) {
-              errors.push(`${model}: JSON repair errore (${e?.message || "errore sconosciuto"})`);
-              continue;
-            }
-          }
-          return parsed.raw;
-        }
-
-        return text;
-      } catch (e: any) {
-        errors.push(`${model}: ${e?.message || "errore sconosciuto"}`);
+      const text = completion.choices[0]?.message?.content || "";
+      if (!text) {
+        errors.push(`${model}: risposta vuota`);
         continue;
       }
-    }
 
-    throw new Error(`AI fallita su tutti i modelli. Dettagli: ${errors.join(" | ")}`);
+      if (responseMode === "json") {
+        const parsed = parseAndValidateJson(text, jsonRoot);
+        if (!parsed.ok) {
+          errors.push(`${model}: JSON non valido (${parsed.error})`);
+
+          const repairMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            ...messages,
+            {
+              role: "user",
+              content:
+                "Il JSON precedente non era valido. Restituisci SOLO JSON valido, senza markdown né testo extra.",
+            },
+          ];
+
+          try {
+            const repaired = await client.chat.completions.create({
+              model,
+              messages: repairMessages,
+              temperature: 0.2,
+              max_tokens: maxOutputTokens,
+              response_format: modelSupportsResponseFormat(model) ? { type: "json_object" } : undefined,
+            });
+            const repairedText = repaired.choices[0]?.message?.content || "";
+            const repairedParsed = parseAndValidateJson(repairedText, jsonRoot);
+            if (repairedParsed.ok) return repairedParsed.raw;
+            errors.push(`${model}: JSON repair fallito (${repairedParsed.ok ? "" : repairedParsed.error})`);
+            continue;
+          } catch (e: any) {
+            errors.push(`${model}: JSON repair errore (${e?.message || "errore sconosciuto"})`);
+            continue;
+          }
+        }
+        return parsed.raw;
+      }
+
+      return text;
+    } catch (e: any) {
+      errors.push(`${model}: ${e?.message || "errore sconosciuto"}`);
+      continue;
+    }
   }
 
+  throw new Error(`AI fallita su tutti i modelli. Dettagli: ${errors.join(" | ")}`);
+}
 
+export async function generateSpeech(text: string, voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "alloy"): Promise<Buffer> {
   const client = getOpenRouterClient();
 
   // Use direct OpenAI endpoint if available for better reliability with binary data

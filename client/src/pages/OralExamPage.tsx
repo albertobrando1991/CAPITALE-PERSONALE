@@ -319,6 +319,7 @@ export default function OralExamPage() {
 
         try {
             setPersonaState('speaking');
+            console.log("Creating TTS request for:", text.substring(0, 50) + "...");
 
             // Call backend TTS
             const response = await fetch('/api/oral-exam/tts', {
@@ -327,11 +328,17 @@ export default function OralExamPage() {
                 body: JSON.stringify({ text, persona: selectedPersona })
             });
 
-            if (!response.ok) throw new Error('TTS Failed');
+            if (!response.ok) {
+                const errDetail = await response.text();
+                console.error('TTS Backend Error:', response.status, errDetail);
+                throw new Error(`TTS Failed: ${response.status} ${errDetail}`);
+            }
 
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);
             const audio = new Audio(url);
+
+            console.log("Audio blob created, size:", blob.size);
 
             audio.onended = () => {
                 setPersonaState('listening');
@@ -350,15 +357,21 @@ export default function OralExamPage() {
 
             audio.onerror = (e) => {
                 console.error("Audio playback error:", e);
+                // Try to play anyway or just log? 
+                // Often this is a codec issue or interaction issue.
                 setPersonaState('listening');
-                // Fallback to WebSpeech in case of format error?
-                // For now, just reset.
+                throw new Error("Audio Object Error");
             };
 
             await audio.play();
+            console.log("Audio playback started successfully");
 
         } catch (error) {
-            console.error('OpenAI TTS failed, falling back to WebSpeech:', error);
+            console.error('OpenAI TTS failed, falling back to WebSpeech. Reason:', error);
+
+            // Show toast for debug purposes so user knows why it failed
+            // toast({ title: "TTS Error", description: "Falling back to system voice", variant: "destructive" }); 
+
             // Fallback to Web Speech API
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'it-IT';
