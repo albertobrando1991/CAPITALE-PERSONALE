@@ -345,3 +345,16 @@ export async function generateSpeech(text: string, voice: "alloy" | "echo" | "fa
     }
   }
 }
+
+export function makeVisionUserMessage(prompt: string, images: AIImageInput[]): OpenAI.Chat.Completions.ChatCompletionMessageParam {
+  return {
+    role: "user",
+    content: [
+      { type: "text", text: prompt },
+      ...images.map((img) => ({
+        type: "image_url",
+        image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+      })),
+    ],
+  } as any;
+}
