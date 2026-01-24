@@ -73,6 +73,7 @@ export default function SimulazioniListPage() {
       <SimulazioniList
         concorsoId={concorsoId}
         onNuovaSimulazione={() => setLocation(`/concorsi/${concorsoId}/simulazione/setup`)}
+        showStartButton={false}
       />
     </div>
   );

@@ -22,9 +22,10 @@ import { SimulazioneReport } from "./SimulazioneReport";
 interface SimulazioniListProps {
   concorsoId: string;
   onNuovaSimulazione: () => void;
+  showStartButton?: boolean;
 }
 
-export function SimulazioniList({ concorsoId, onNuovaSimulazione }: SimulazioniListProps) {
+export function SimulazioniList({ concorsoId, onNuovaSimulazione, showStartButton = true }: SimulazioniListProps) {
   const { toast } = useToast();
   const [simulazioneVisualizzata, setSimulazioneVisualizzata] = useState<Simulazione | null>(null);
   const [simulazioneDaEliminare, setSimulazioneDaEliminare] = useState<string | null>(null);
@@ -128,9 +129,11 @@ export function SimulazioniList({ concorsoId, onNuovaSimulazione }: SimulazioniL
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Storico Simulazioni</h2>
-        <Button onClick={onNuovaSimulazione}>
-          Nuova Simulazione
-        </Button>
+        {showStartButton && (
+          <Button onClick={onNuovaSimulazione}>
+            Nuova Simulazione
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

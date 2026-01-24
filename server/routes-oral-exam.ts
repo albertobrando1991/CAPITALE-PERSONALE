@@ -6,7 +6,7 @@
 import express, { Request, Response } from 'express';
 import { pool } from './db';
 import { isAuthenticatedHybrid } from './services/supabase-auth';
-import { generateWithFallback } from './services/ai';
+import { generateWithFallback, generateSpeech } from './services/ai';
 
 const router = express.Router();
 
@@ -503,6 +503,41 @@ router.post('/upload-pdf', isAuthenticatedHybrid, upload.single('file'), async (
     } catch (error: any) {
         console.error('Errore upload PDF:', error);
         res.status(500).json({ error: 'Errore processamento PDF', details: error.message });
+    }
+
+});
+
+// ============================================================================
+// TEXT TO SPEECH
+// ============================================================================
+
+router.post('/tts', isAuthenticatedHybrid, async (req: Request, res: Response) => {
+    try {
+        const { text, persona } = req.body;
+
+        if (!text) {
+            return res.status(400).json({ error: 'Text required' });
+        }
+
+        // Map persona to voice
+        // Rigorous (Male) -> onyx or echo
+        // Empathetic (Female/Neutral) -> shimmer or nova or alloy
+        let voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "alloy";
+
+        if (persona === 'rigorous') {
+            voice = "onyx"; // Deep, authoritative male
+        } else if (persona === 'empathetic') {
+            voice = "nova"; // Warm, natural female/neutral
+        }
+
+        const audioBuffer = await generateSpeech(text, voice);
+
+        res.set('Content-Type', 'audio/mpeg');
+        res.send(audioBuffer);
+
+    } catch (error: any) {
+        console.error('TTS Error:', error);
+        res.status(500).json({ error: 'TTS Failed', details: error.message });
     }
 });
 

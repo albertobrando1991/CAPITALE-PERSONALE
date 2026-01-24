@@ -304,35 +304,72 @@ export default function OralExamPage() {
     // SPEECH SYNTHESIS (TTS)
     // ============================================================================
 
-    const speakText = (text: string) => {
-        if (!('speechSynthesis' in window)) return;
+    const speakText = async (text: string) => {
+        if (!text) return;
 
-        // Stop any ongoing speech
+        // Stop any current audio
         window.speechSynthesis.cancel();
 
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'it-IT';
-        utterance.rate = 0.95;
-        utterance.pitch = selectedPersona === 'rigorous' ? 0.9 : 1.1;
+        // Mobile audio context unlock (best effort)
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContext) {
+            const ctx = new AudioContext();
+            ctx.resume().catch(() => { });
+        }
 
-        utterance.onstart = () => setIsSpeaking(true);
-        utterance.onend = () => {
-            setIsSpeaking(false);
-            setPersonaState('listening');
+        try {
+            setPersonaState('speaking');
 
-            // Auto-start listening if fluid mode is on
-            if (fluidMode && phase === 'session' && session?.status === 'active') {
-                setTimeout(() => {
-                    toggleListening();
-                }, 500); // Small delay to avoid capturing system audio
-            }
-        };
-        utterance.onerror = () => {
-            setIsSpeaking(false);
-            setPersonaState('listening');
-        };
+            // Call backend TTS
+            const response = await fetch('/api/oral-exam/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, persona: selectedPersona })
+            });
 
-        window.speechSynthesis.speak(utterance);
+            if (!response.ok) throw new Error('TTS Failed');
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+
+            audio.onended = () => {
+                setPersonaState('listening');
+                URL.revokeObjectURL(url);
+
+                // FLUID MODE: Auto-restart recognition if enabled
+                if (fluidMode && phase === 'session') {
+                    // Small delay to ensure state is clean
+                    setTimeout(() => {
+                        if (phase === 'session') { // Double check phase
+                            toggleListening();
+                        }
+                    }, 500);
+                }
+            };
+
+            audio.onerror = (e) => {
+                console.error("Audio playback error:", e);
+                setPersonaState('listening');
+                // Fallback to WebSpeech in case of format error?
+                // For now, just reset.
+            };
+
+            await audio.play();
+
+        } catch (error) {
+            console.error('OpenAI TTS failed, falling back to WebSpeech:', error);
+            // Fallback to Web Speech API
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'it-IT';
+            utterance.onend = () => {
+                setPersonaState('listening');
+                if (fluidMode && phase === 'session') {
+                    setTimeout(() => toggleListening(), 500);
+                }
+            };
+            window.speechSynthesis.speak(utterance);
+        }
     };
 
     // ============================================================================
@@ -658,7 +695,7 @@ export default function OralExamPage() {
                 <div
                     className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat transition-transform duration-1000 scale-100 dark:brightness-75"
                     style={{
-                        backgroundImage: "url('/images/exam-room.png')",
+                        backgroundImage: "url('/images/exam-room-hq.jpg')",
                         transform: personaState === 'speaking' ? 'scale(1.02)' : 'scale(1)'
                     }}
                 />
