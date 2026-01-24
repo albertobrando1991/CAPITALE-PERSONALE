@@ -5,8 +5,10 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 import { app, httpServer, initializeApp, log } from "./app";
+import { runMigrations } from "./migrate";
 
 (async () => {
+  await runMigrations();
   await initializeApp();
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
