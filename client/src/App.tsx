@@ -59,6 +59,7 @@ import { Fase3Provider } from '@/contexts/Fase3Context';
 import Fase3Dashboard from '@/pages/concorsi/Fase3Dashboard';
 import DrillSessionPage from '@/pages/concorsi/fase3/DrillSessionPage';
 import ReviewCalendarPage from '@/pages/concorsi/fase3/ReviewCalendarPage';
+import OralExamPage from '@/pages/OralExamPage';
 
 function ProtectedRoutes() {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
@@ -125,6 +126,7 @@ function ProtectedRoutes() {
               <Route path="/concorsi/:concorsoId/fase3" component={Fase3Dashboard} />
               <Route path="/concorsi/:concorsoId/fase3/drill" component={DrillSessionPage} />
               <Route path="/concorsi/:concorsoId/fase3/review" component={ReviewCalendarPage} />
+              <Route path="/concorsi/:concorsoId/oral-exam" component={OralExamPage} />
               <Route path="/admin" component={AdminDashboard} />
               <Route path="/admin/overview" component={AdminOverviewPage} />
               <Route path="/admin/users" component={AdminUsersPage} />
