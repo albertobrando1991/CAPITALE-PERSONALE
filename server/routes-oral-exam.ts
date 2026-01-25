@@ -519,18 +519,28 @@ router.post('/tts', isAuthenticatedHybrid, async (req: Request, res: Response) =
             return res.status(400).json({ error: 'Text required' });
         }
 
-        // Map persona to voice
-        // Rigorous (Male) -> onyx or echo
-        // Empathetic (Female/Neutral) -> shimmer or nova or alloy
-        let voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "alloy";
+        // Map persona to voice - optimized for Italian speech
+        // Available OpenAI voices: alloy, echo, fable, onyx, nova, shimmer
+        // For natural Italian pronunciation:
+        // - "onyx" is deep and authoritative (best for Prof. Bianchi - male)
+        // - "shimmer" is soft, warm and pleasant (best for Prof.ssa Verdi - female)
+        // - "fable" is expressive and conversational
+        let voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "fable";
+        let speed = 0.95; // Slightly slower for clearer Italian pronunciation
 
         if (persona === 'rigorous') {
-            voice = "onyx"; // Deep, authoritative male
+            voice = "onyx"; // Deep, authoritative male professor voice
+            speed = 0.90; // Slower, more deliberate for authoritative tone
         } else if (persona === 'empathetic') {
-            voice = "nova"; // Warm, natural female/neutral
+            voice = "shimmer"; // Soft, warm female voice - natural for Italian
+            speed = 1.0; // Natural conversational speed
         }
 
-        const audioBuffer = await generateSpeech(text, voice);
+        // Use HD model for more natural, fluid Italian speech
+        const audioBuffer = await generateSpeech(text, voice, {
+            speed,
+            useHD: true
+        });
 
         res.set('Content-Type', 'audio/mpeg');
         res.send(audioBuffer);

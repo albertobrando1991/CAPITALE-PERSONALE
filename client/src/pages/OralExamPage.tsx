@@ -416,14 +416,18 @@ export default function OralExamPage() {
         recognition.onend = () => {
             setIsListening(false);
             // If fluid mode and we have input, send it automatically
-            // "Fluidmode" auto-send logic
+            // "Fluidmode" auto-send logic - use longer delay (4 seconds) to allow user to finish speaking
             const currentInput = (document.getElementById('speech-input') as HTMLTextAreaElement)?.value;
-            // Only auto-send if substantial input is present
-            if (fluidMode && currentInput && currentInput.trim().length > 3) {
+            // Only auto-send if substantial input is present (at least 10 chars for a meaningful response)
+            if (fluidMode && currentInput && currentInput.trim().length > 10) {
+                // Wait 4 seconds before sending - gives user time to continue if they paused briefly
                 setTimeout(() => {
-                    const btn = document.getElementById('send-button');
-                    btn?.click();
-                }, 1000);
+                    // Double-check user hasn't started speaking again
+                    if (!recognitionRef.current || recognitionRef.current.readyState !== 'listening') {
+                        const btn = document.getElementById('send-button');
+                        btn?.click();
+                    }
+                }, 4000);
             }
         };
 
@@ -742,9 +746,10 @@ export default function OralExamPage() {
                     </div>
                 </div>
 
-                {/* Professor Avatar - Positioned behind desk */}
-                <div className="absolute inset-0 z-10 flex items-end justify-center pointer-events-none pb-20 md:pb-10">
-                    <div className="relative w-[300px] h-[300px] md:w-[450px] md:h-[450px] transition-all duration-500">
+                {/* Main Content Area - Professor on left, Message on right */}
+                <div className="absolute inset-0 z-10 flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 pt-20 pb-44 md:pb-32 px-4">
+                    {/* Professor Avatar - Left side on desktop, center on mobile */}
+                    <div className="relative w-[250px] h-[250px] md:w-[350px] md:h-[350px] lg:w-[400px] lg:h-[400px] flex-shrink-0 transition-all duration-500">
                         <div
                             className={`w-full h-full rounded-full overflow-hidden border-4 border-white/20 bg-slate-900/50 shadow-2xl backdrop-blur-sm
                             transition-all duration-300 ${personaState === 'speaking' ? 'ring-4 ring-primary/50 scale-105' : 'scale-100'}
@@ -756,16 +761,26 @@ export default function OralExamPage() {
                                 className="w-full h-full object-cover"
                             />
                         </div>
+                        {/* Professor name badge */}
+                        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-sm px-4 py-1.5 rounded-full border border-white/20">
+                            <span className="text-white text-sm font-medium">
+                                {selectedPersona === 'rigorous' ? 'Prof. Bianchi' : 'Prof.ssa Verdi'}
+                            </span>
+                        </div>
                     </div>
-                </div>
 
-                {/* Subtitles / Latest Message Overlay */}
-                <div className="absolute top-24 left-1/2 -translate-x-1/2 z-20 w-full max-w-2xl px-4 pointer-events-none">
+                    {/* Message Panel - Right side on desktop, below on mobile */}
                     {session.messages.length > 0 && session.messages[session.messages.length - 1].role === 'instructor' && (
-                        <div className="bg-black/60 backdrop-blur-md p-6 rounded-xl border border-white/10 text-white text-center shadow-2xl animate-in fade-in slide-in-from-top-4">
-                            <p className="text-lg md:text-xl font-medium leading-relaxed">
-                                "{session.messages[session.messages.length - 1].content}"
-                            </p>
+                        <div className="w-full md:w-[400px] lg:w-[500px] max-h-[200px] md:max-h-[350px] overflow-y-auto">
+                            <div className="bg-white/10 backdrop-blur-md p-5 md:p-6 rounded-2xl border border-white/20 text-white shadow-2xl animate-in fade-in slide-in-from-right-4">
+                                <div className="flex items-center gap-2 mb-3 text-sm text-white/60">
+                                    <Volume2 className="h-4 w-4" />
+                                    <span>Il professore dice:</span>
+                                </div>
+                                <p className="text-base md:text-lg font-medium leading-relaxed italic">
+                                    "{session.messages[session.messages.length - 1].content}"
+                                </p>
+                            </div>
                         </div>
                     )}
                 </div>

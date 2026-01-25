@@ -337,7 +337,11 @@ export async function generateWithFallback(options: GenerateWithFallbackOptions)
   throw new Error(`AI fallita su tutti i modelli. Dettagli: ${errors.join(" | ")}`);
 }
 
-export async function generateSpeech(text: string, voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "alloy"): Promise<Buffer> {
+export async function generateSpeech(
+  text: string,
+  voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "alloy",
+  options?: { speed?: number; useHD?: boolean }
+): Promise<Buffer> {
   // IMPORTANT: OpenRouter does NOT support the audio/speech TTS API.
   // We must use the direct OpenAI client for TTS.
   const directClient = getOpenAIDirectClient();
@@ -346,13 +350,20 @@ export async function generateSpeech(text: string, voice: "alloy" | "echo" | "fa
     throw new Error("TTS non disponibile: OPENAI_API_KEY non configurata. La voce naturale richiede una chiave API OpenAI diretta.");
   }
 
+  // Default to HD model for more natural, fluid Italian speech
+  const useHD = options?.useHD ?? true;
+  // Speed: 0.25 to 4.0, default 1.0. Slightly slower (0.95) sounds more natural for Italian
+  const speed = options?.speed ?? 0.95;
+  const model = useHD ? "tts-1-hd" : "tts-1";
+
   try {
-    console.log(`🎤 Generating TTS with voice "${voice}" for text: "${text.substring(0, 50)}..."`);
+    console.log(`🎤 Generating TTS (${model}) with voice "${voice}", speed ${speed} for text: "${text.substring(0, 50)}..."`);
 
     const mp3 = await directClient.audio.speech.create({
-      model: "tts-1", // Standard quality, faster
+      model: model,
       voice: voice,
       input: text,
+      speed: speed,
     });
 
     const buffer = Buffer.from(await mp3.arrayBuffer());
@@ -361,20 +372,24 @@ export async function generateSpeech(text: string, voice: "alloy" | "echo" | "fa
   } catch (error: any) {
     console.error("❌ TTS Error:", error.message);
 
-    // Try with tts-1-hd for higher quality if standard fails
-    try {
-      console.log("Retrying with tts-1-hd model...");
-      const mp3 = await directClient.audio.speech.create({
-        model: "tts-1-hd", // Higher quality
-        voice: voice,
-        input: text,
-      });
-      const buffer = Buffer.from(await mp3.arrayBuffer());
-      console.log(`✅ TTS (HD) generated successfully, size: ${buffer.length} bytes`);
-      return buffer;
-    } catch (retryError: any) {
-      throw new Error(`TTS Failed: ${error.message} | HD Retry: ${retryError.message}`);
+    // Fallback to standard model if HD fails
+    if (useHD) {
+      try {
+        console.log("HD failed, retrying with tts-1 standard model...");
+        const mp3 = await directClient.audio.speech.create({
+          model: "tts-1",
+          voice: voice,
+          input: text,
+          speed: speed,
+        });
+        const buffer = Buffer.from(await mp3.arrayBuffer());
+        console.log(`✅ TTS (standard) generated successfully, size: ${buffer.length} bytes`);
+        return buffer;
+      } catch (retryError: any) {
+        throw new Error(`TTS Failed: ${error.message} | Standard Retry: ${retryError.message}`);
+      }
     }
+    throw new Error(`TTS Failed: ${error.message}`);
   }
 }
 
