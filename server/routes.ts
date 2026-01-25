@@ -7,7 +7,7 @@ import { registerLibreriaRoutes } from './routes-libreria';
 import { authRoutes } from './routes-auth';
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { isAdmin } from "./utils/auth-helpers";
-import { insertConcorsoSchema, insertMaterialSchema, insertCalendarEventSchema, userRoles, userSubscriptions, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "../shared/schema";
+import { insertConcorsoSchema, insertMaterialSchema, insertCalendarEventSchema, userRoles, userSubscriptions, flashcardCache, type Simulazione, type InsertSimulazione, type DomandaSimulazione, type DettagliMateria, type Concorso } from "../shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 import { calculateSM2, initializeSM2 } from "./sm2-algorithm";
