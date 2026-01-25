@@ -341,27 +341,32 @@ router.post('/:sessionId/end', isAuthenticatedHybrid, async (req: Request, res: 
 
         const evaluationPrompt = `
 Sei un valutatore esperto di esami universitari.
-
 Analizza questa sessione di esame orale:
 
 ${conversationText}
 
 Genera una valutazione strutturata IN FORMATO JSON:
 {
-  "score": [numero da 18 a 30, scala universitaria italiana],
+  "score": [numero intero da 0 a 30],
   "strengths": ["punto di forza 1", "punto di forza 2"],
   "weaknesses": ["area da migliorare 1", "area da migliorare 2"],
   "suggestions": ["suggerimento 1", "suggerimento 2"],
   "overallComment": "Commento complessivo di 2-3 frasi"
 }
 
-Criteri:
-- 18-20: Sufficiente, conoscenze di base
-- 21-24: Buono, argomentazioni discrete
-- 25-27: Molto buono, padronanza della materia
-- 28-30: Eccellente, approfondimento e collegamenti
+CRITERI DI VALUTAZIONE (Scala Universitaria Italiana):
+- < 18: RESPINTO/INSUFFICIENTE. Gravi lacune, risposte errate o scena muta. (Assegna un voto < 18, es. 10-17).
+- 18-21: Sufficiente. Conoscenza basilare, qualche incertezza ma concetti fondamentali presenti.
+- 22-24: Discreto. Buona conoscenza ma esposizione non sempre fluida o qualche imprecisione.
+- 25-27: Buono/Molto Buono. Padronanza della materia, linguaggio appropriato.
+- 28-30: Eccellente. Esposizione brillante, collegamenti interdisciplinari, nessun errore.
 
-Rispondi SOLO con il JSON, senza markdown.
+IMPORTANTE:
+- Sii RIGOROSO e REALISTICO. Se lo studente ha risposto male o vagamente, NON dare la sufficienza.
+- Se ha saltato domande o detto "non so", penalizza pesantemente.
+- Voti sotto il 18 sono ASSOLUTAMENTE AMMESSI e incoraggiati se la performance è scarsa.
+
+Rispondi SOLO con il JSON valido.
 `;
 
         const evaluationRaw = await generateWithFallback({
@@ -513,7 +518,7 @@ router.post('/upload-pdf', isAuthenticatedHybrid, upload.single('file'), async (
 
 router.post('/tts', isAuthenticatedHybrid, async (req: Request, res: Response) => {
     try {
-        const { text, persona } = req.body;
+        const { text, persona, speed: userSpeed } = req.body;
 
         if (!text) {
             return res.status(400).json({ error: 'Text required' });
@@ -526,15 +531,18 @@ router.post('/tts', isAuthenticatedHybrid, async (req: Request, res: Response) =
         // - "shimmer" is soft, warm and pleasant (best for Prof.ssa Verdi - female)
         // - "fable" is expressive and conversational
         let voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "fable";
-        let speed = 0.95; // Slightly slower for clearer Italian pronunciation
+        let defaultSpeed = 1.0;
 
         if (persona === 'rigorous') {
-            voice = "onyx"; // Deep, authoritative male professor voice
-            speed = 0.90; // Slower, more deliberate for authoritative tone
+            voice = "onyx"; // Deep, authoritative male
+            defaultSpeed = 0.95;
         } else if (persona === 'empathetic') {
-            voice = "shimmer"; // Soft, warm female voice - natural for Italian
-            speed = 1.0; // Natural conversational speed
+            voice = "nova"; // Nova is actually very good for Italian female (better than shimmer often)
+            defaultSpeed = 1.0;
         }
+
+        // Use user provided speed or default
+        const speed = userSpeed ? parseFloat(userSpeed) : defaultSpeed;
 
         // Use HD model for more natural, fluid Italian speech
         const audioBuffer = await generateSpeech(text, voice, {

@@ -119,8 +119,12 @@ export default function OralExamPage() {
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isListening, setIsListening] = useState(false);
     const [fluidMode, setFluidMode] = useState(true); // Default to fluid mode
+    const [voiceSpeed, setVoiceSpeed] = useState(1.0); // Default speed
+    const [countdown, setCountdown] = useState<number | null>(null); // For fluid mode countdown
+
     const recognitionRef = useRef<any>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
     // Fetch concorso data
     const { data: concorso, isLoading: loadingConcorso } = useQuery<Concorso>({
@@ -141,6 +145,28 @@ export default function OralExamPage() {
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [session?.messages]);
+
+    // Cleanup countdown on unmount
+    useEffect(() => {
+        return () => {
+            if (countdownRef.current) clearTimeout(countdownRef.current);
+        };
+    }, []);
+
+    // Countdown effect
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (countdown !== null && countdown > 0) {
+            interval = setInterval(() => {
+                setCountdown((prev) => (prev !== null && prev > 0 ? prev - 1 : 0));
+            }, 1000);
+        } else if (countdown === 0) {
+            // Timer finished, send message
+            setCountdown(null);
+            document.getElementById('send-button')?.click();
+        }
+        return () => clearInterval(interval);
+    }, [countdown]);
 
     // ============================================================================
     // START SESSION
@@ -210,6 +236,14 @@ export default function OralExamPage() {
 
     const sendMessage = async () => {
         if (!userInput.trim() || !session || isLoading) return;
+
+        // Cancel any pending countdown
+        if (countdownRef.current) clearTimeout(countdownRef.current);
+        setCountdown(null);
+        if (isListening) {
+            recognitionRef.current?.stop();
+            setIsListening(false);
+        }
 
         const userMessage = userInput.trim();
         setUserInput('');
@@ -321,16 +355,20 @@ export default function OralExamPage() {
             setPersonaState('speaking');
             console.log("Creating TTS request for:", text.substring(0, 50) + "...");
 
-            // Call backend TTS
+            // Call backend TTS with speed param
             const response = await fetch('/api/oral-exam/tts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, persona: selectedPersona })
+                body: JSON.stringify({
+                    text,
+                    persona: selectedPersona,
+                    speed: voiceSpeed // Pass user selected speed
+                })
             });
 
             if (!response.ok) {
                 const errDetail = await response.text();
-                console.error('TTS Backend Error:', response.status, errDetail);
+                // console.error('TTS Backend Error:', response.status, errDetail);
                 throw new Error(`TTS Failed: ${response.status} ${errDetail}`);
             }
 
@@ -338,43 +376,40 @@ export default function OralExamPage() {
             const url = URL.createObjectURL(blob);
             const audio = new Audio(url);
 
-            console.log("Audio blob created, size:", blob.size);
+            // console.log("Audio blob created, size:", blob.size);
 
             audio.onended = () => {
                 setPersonaState('listening');
                 URL.revokeObjectURL(url);
 
                 // FLUID MODE: Auto-restart recognition if enabled
+                // Only if session is still active
                 if (fluidMode && phase === 'session') {
                     // Small delay to ensure state is clean
                     setTimeout(() => {
-                        if (phase === 'session') { // Double check phase
-                            toggleListening();
-                        }
+                        // Double check we are still in session
+                        // (Use ref or check DOM element presence to be safe, but toggleListening checks internally too)
+                        toggleListening();
                     }, 500);
                 }
             };
 
             audio.onerror = (e) => {
                 console.error("Audio playback error:", e);
-                // Try to play anyway or just log? 
-                // Often this is a codec issue or interaction issue.
                 setPersonaState('listening');
                 throw new Error("Audio Object Error");
             };
 
             await audio.play();
-            console.log("Audio playback started successfully");
+            // console.log("Audio playback started successfully");
 
         } catch (error) {
             console.error('OpenAI TTS failed, falling back to WebSpeech. Reason:', error);
 
-            // Show toast for debug purposes so user knows why it failed
-            // toast({ title: "TTS Error", description: "Falling back to system voice", variant: "destructive" }); 
-
             // Fallback to Web Speech API
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'it-IT';
+            utterance.rate = voiceSpeed; // Use rate for WebSpeech too
             utterance.onend = () => {
                 setPersonaState('listening');
                 if (fluidMode && phase === 'session') {
@@ -395,6 +430,12 @@ export default function OralExamPage() {
             return;
         }
 
+        // Cancel countdown if manually toggling
+        if (countdown !== null) {
+            setCountdown(null);
+            if (countdownRef.current) clearTimeout(countdownRef.current);
+        }
+
         if (isListening) {
             recognitionRef.current?.stop();
             setIsListening(false);
@@ -405,8 +446,8 @@ export default function OralExamPage() {
         const recognition = new SpeechRecognition();
 
         recognition.lang = 'it-IT';
-        recognition.continuous = false; // Stop after one sentence/pause
-        recognition.interimResults = true; // Show interim results
+        recognition.continuous = false;
+        recognition.interimResults = true;
 
         recognition.onstart = () => {
             setIsListening(true);
@@ -415,19 +456,14 @@ export default function OralExamPage() {
 
         recognition.onend = () => {
             setIsListening(false);
-            // If fluid mode and we have input, send it automatically
-            // "Fluidmode" auto-send logic - use longer delay (4 seconds) to allow user to finish speaking
+
+            // FLUID MODE LOGIC
             const currentInput = (document.getElementById('speech-input') as HTMLTextAreaElement)?.value;
-            // Only auto-send if substantial input is present (at least 10 chars for a meaningful response)
-            if (fluidMode && currentInput && currentInput.trim().length > 10) {
-                // Wait 4 seconds before sending - gives user time to continue if they paused briefly
-                setTimeout(() => {
-                    // Double-check user hasn't started speaking again
-                    if (!recognitionRef.current || recognitionRef.current.readyState !== 'listening') {
-                        const btn = document.getElementById('send-button');
-                        btn?.click();
-                    }
-                }, 4000);
+
+            // Only trigger countdown if input is sufficient
+            if (fluidMode && currentInput && currentInput.trim().length > 5) {
+                // START VISUAL COUNTDOWN instead of immediate send
+                setCountdown(5); // 5 seconds to cancel or resume
             }
         };
 
@@ -438,17 +474,26 @@ export default function OralExamPage() {
             for (let i = event.resultIndex; i < event.results.length; ++i) {
                 if (event.results[i].isFinal) {
                     finalTranscript += event.results[i][0].transcript;
-                } else {
-                    // Interim
                 }
             }
             if (finalTranscript) {
                 setUserInput((prev) => prev ? prev + ' ' + finalTranscript : finalTranscript);
+
+                // If user speaks while countdown is active (conceptually), we basically want to reset things
+                // But speech API usually stops before this.
+                // If we are here, it means we are recognizing new text, so we assume activity.
             }
         };
 
         recognitionRef.current = recognition;
         recognition.start();
+    };
+
+    const handleResumeSpeaking = () => {
+        // If countdown is active and user clicks "Speak Again"
+        setCountdown(null);
+        if (countdownRef.current) clearTimeout(countdownRef.current);
+        toggleListening();
     };
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -644,7 +689,7 @@ export default function OralExamPage() {
                     <CardHeader>
                         <CardTitle>Impostazioni</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
+                    <CardContent className="space-y-6">
                         <div className="flex items-center justify-between">
                             <span>Difficoltà</span>
                             <Select value={difficulty} onValueChange={(v) => setDifficulty(v as any)}>
@@ -672,7 +717,32 @@ export default function OralExamPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="flex items-center justify-between">
+
+                        {/* Voice Speed Slider */}
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <span className="flex items-center gap-2">
+                                    <Settings className="h-4 w-4" />
+                                    Velocità Voce
+                                </span>
+                                <span className="text-sm text-muted-foreground">{voiceSpeed.toFixed(2)}x</span>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <span className="text-xs text-muted-foreground">Lenta</span>
+                                <input
+                                    type="range"
+                                    min="0.75"
+                                    max="1.25"
+                                    step="0.05"
+                                    value={voiceSpeed}
+                                    className="w-full accent-primary h-2 bg-secondary rounded-lg appearance-none cursor-pointer"
+                                    onChange={(e) => setVoiceSpeed(parseFloat(e.target.value))}
+                                />
+                                <span className="text-xs text-muted-foreground">Veloce</span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t">
                             <span className="flex items-center gap-2">
                                 <Mic2 className="h-4 w-4" />
                                 Modalità Fluida
@@ -803,7 +873,7 @@ export default function OralExamPage() {
                                 size="lg"
                                 className={`h-14 w-14 rounded-full shadow-xl transition-all ${isListening ? 'animate-pulse ring-4 ring-red-500/30' : ''}`}
                                 onClick={toggleListening}
-                                disabled={isLoading || session.status === 'completed'}
+                                disabled={isLoading || session.status === 'completed' || (countdown !== null)}
                             >
                                 {isListening ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
                             </Button>
@@ -852,6 +922,39 @@ export default function OralExamPage() {
                     </div>
                 </div>
 
+                {/* COUNTDOWN OVERLAY FOR FLUID MODE */}
+                {countdown !== null && (
+                    <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                        <div className="bg-white/10 p-8 rounded-3xl border border-white/20 text-center shadow-2xl backdrop-blur-md max-w-sm w-full mx-4">
+                            <div className="text-5xl font-bold text-white mb-2 font-mono">
+                                {countdown}
+                            </div>
+                            <p className="text-white/80 text-lg mb-6">Invio risposta automatico...</p>
+
+                            <div className="flex flex-col gap-3">
+                                <Button
+                                    size="lg"
+                                    onClick={handleResumeSpeaking}
+                                    className="w-full bg-primary hover:bg-primary/90 text-white font-medium"
+                                >
+                                    <Mic className="h-5 w-5 mr-2" />
+                                    Continua a Parlare
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        setCountdown(null);
+                                        if (countdownRef.current) clearTimeout(countdownRef.current);
+                                    }}
+                                    className="w-full border-white/20 text-white hover:bg-white/10"
+                                >
+                                    Annulla Invio
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Status Indicators */}
                 {isLoading && (
                     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -886,7 +989,11 @@ export default function OralExamPage() {
                     <CardContent className="py-8">
                         <Award className={`h-16 w-16 mx-auto mb-4 ${scoreColor}`} />
                         <h1 className={`text-5xl font-bold ${scoreColor}`}>{session.feedback.score}/30</h1>
-                        <p className="text-muted-foreground mt-2">Esame Completato</p>
+                        {session.feedback.score < 18 ? (
+                            <p className="text-red-500 font-bold mt-2">NON SUPERATO</p>
+                        ) : (
+                            <p className="text-muted-foreground mt-2">Esame Completato</p>
+                        )}
                     </CardContent>
                 </Card>
 
