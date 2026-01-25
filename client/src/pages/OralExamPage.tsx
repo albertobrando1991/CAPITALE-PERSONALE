@@ -412,7 +412,7 @@ export default function OralExamPage() {
             // console.log("Audio playback started successfully");
 
         } catch (error) {
-            console.error('OpenAI TTS failed, falling back to WebSpeech. Reason:', error);
+            console.error('TTS failed, falling back to WebSpeech. Reason:', error);
 
             // Fallback to Web Speech API
             const utterance = new SpeechSynthesisUtterance(text);
