@@ -27,6 +27,28 @@ export interface AIImageInput {
 }
 
 let openRouterClient: OpenAI | null = null;
+let openAIDirectClient: OpenAI | null = null;
+
+/**
+ * Get a direct OpenAI client for TTS (Text-to-Speech).
+ * OpenRouter does NOT support the audio/speech API, so we need to use OpenAI directly.
+ */
+export function getOpenAIDirectClient(): OpenAI | null {
+  if (openAIDirectClient) return openAIDirectClient;
+
+  const apiKey = process.env.OPENAI_API_KEY || process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  if (!apiKey) {
+    console.warn("OPENAI_API_KEY not configured - TTS will not work with natural voices");
+    return null;
+  }
+
+  openAIDirectClient = new OpenAI({
+    apiKey,
+    // Use default OpenAI base URL (https://api.openai.com/v1)
+  });
+
+  return openAIDirectClient;
+}
 
 export function getOpenRouterClient(): OpenAI {
   if (openRouterClient) return openRouterClient;
@@ -316,32 +338,42 @@ export async function generateWithFallback(options: GenerateWithFallbackOptions)
 }
 
 export async function generateSpeech(text: string, voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "alloy"): Promise<Buffer> {
-  const client = getOpenRouterClient();
+  // IMPORTANT: OpenRouter does NOT support the audio/speech TTS API.
+  // We must use the direct OpenAI client for TTS.
+  const directClient = getOpenAIDirectClient();
 
-  // Use direct OpenAI endpoint if available for better reliability with binary data
-  // or use the client if configured for OpenAI compatibility
+  if (!directClient) {
+    throw new Error("TTS non disponibile: OPENAI_API_KEY non configurata. La voce naturale richiede una chiave API OpenAI diretta.");
+  }
+
   try {
-    const mp3 = await client.audio.speech.create({
-      model: "tts-1", // Standard OpenAI model name. OpenRouter often maps "openai/tts-1"
+    console.log(`🎤 Generating TTS with voice "${voice}" for text: "${text.substring(0, 50)}..."`);
+
+    const mp3 = await directClient.audio.speech.create({
+      model: "tts-1", // Standard quality, faster
       voice: voice,
       input: text,
     });
 
     const buffer = Buffer.from(await mp3.arrayBuffer());
+    console.log(`✅ TTS generated successfully, size: ${buffer.length} bytes`);
     return buffer;
   } catch (error: any) {
-    console.warn("TTS Error with default client, trying with 'openai/tts-1' model name explicitly...");
+    console.error("❌ TTS Error:", error.message);
+
+    // Try with tts-1-hd for higher quality if standard fails
     try {
-      // Fallback or explicit OpenRouter naming
-      const mp3 = await client.audio.speech.create({
-        model: "openai/tts-1",
+      console.log("Retrying with tts-1-hd model...");
+      const mp3 = await directClient.audio.speech.create({
+        model: "tts-1-hd", // Higher quality
         voice: voice,
         input: text,
       });
       const buffer = Buffer.from(await mp3.arrayBuffer());
+      console.log(`✅ TTS (HD) generated successfully, size: ${buffer.length} bytes`);
       return buffer;
     } catch (retryError: any) {
-      throw new Error(`TTS Failed: ${error.message} | Retry: ${retryError.message}`);
+      throw new Error(`TTS Failed: ${error.message} | HD Retry: ${retryError.message}`);
     }
   }
 }
