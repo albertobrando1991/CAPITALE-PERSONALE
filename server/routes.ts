@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 // Force Vercel rebuild
 import { createServer, type Server } from "http";
 import { storage, simulazioniStorage } from "./storage";
@@ -1078,6 +1079,9 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       const rawText = material.contenuto;
       const maxCharsToAnalyze = Math.min(rawText.length, 180_000);
       const contentToAnalyze = rawText.slice(0, maxCharsToAnalyze);
+
+      // Generate Hash for Caching (Hive Memory)
+      const contentHash = crypto.createHash('sha256').update(contentToAnalyze).digest('hex');
 
       const totalWords = normalizeForMatch(contentToAnalyze).split(" ").filter(Boolean).length;
       const desiredCount = Math.max(20, Math.min(100, Math.round(totalWords / 120)));
