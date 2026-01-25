@@ -13,6 +13,10 @@ import { extractTextFromPDFRobust } from "./services/pdf-extraction";
 let ttsClient: TextToSpeechClient;
 
 try {
+    console.log("[GOOGLE-TTS] Checking credentials...");
+    console.log("[GOOGLE-TTS] GOOGLE_APPLICATION_CREDENTIALS:", process.env.GOOGLE_APPLICATION_CREDENTIALS);
+    console.log("[GOOGLE-TTS] GOOGLE_TTS_CREDENTIALS length:", process.env.GOOGLE_TTS_CREDENTIALS ? process.env.GOOGLE_TTS_CREDENTIALS.length : "undefined");
+
     // Method 1: Using credentials file (development)
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
         ttsClient = new TextToSpeechClient({
@@ -20,16 +24,32 @@ try {
         });
         console.log("[GOOGLE-TTS] Initialized with credentials file");
     }
-    // Method 2: Using inline JSON (production - Vercel)
+    // Method 2: Using inline JSON (production - Vercel/Railway)
     else if (process.env.GOOGLE_TTS_CREDENTIALS) {
-        const credentials = JSON.parse(process.env.GOOGLE_TTS_CREDENTIALS);
+        let credentialsString = process.env.GOOGLE_TTS_CREDENTIALS.trim();
+        // Remove surrounding single or double quotes if present (common copy-paste error)
+        if (credentialsString.startsWith("'") && credentialsString.endsWith("'")) {
+            credentialsString = credentialsString.slice(1, -1);
+        } else if (credentialsString.startsWith('"') && credentialsString.endsWith('"')) {
+            // Check if it's not just a JSON valid quote start (JSON starts with {)
+            // But usually env vars shouldn't be double quoted unless shell requires it.
+            // If the first char is " and last is ", AND the **second** char is NOT { (escaped json), it might be a shell quote.
+            // However, safe JSON usually starts with "{" if it is a stringified JSON object.
+            // Let's rely on JSON.parse failing if we don't strip.
+            // Better approach: if it doesn't start with { or [, try stripping quotes.
+            if (!credentialsString.startsWith('{') && !credentialsString.startsWith('[')) {
+                credentialsString = credentialsString.slice(1, -1);
+            }
+        }
+
+        const credentials = JSON.parse(credentialsString);
         ttsClient = new TextToSpeechClient({ credentials });
         console.log("[GOOGLE-TTS] Initialized with inline credentials");
     } else {
-        console.warn("Google TTS credentials not configured - TTS features will be disabled");
+        console.warn("[GOOGLE-TTS] WARNING: Credentials not configured - TTS features will be disabled");
     }
 } catch (error: any) {
-    console.error("[GOOGLE-TTS] Initialization failed:", error.message);
+    console.error("[GOOGLE-TTS] Initialization failed:", error);
 }
 
 // ============================================================================
