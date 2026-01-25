@@ -324,7 +324,9 @@ ${isLastTurn
 - REGOLE CRITICHE: 
   1. **NON scrivere "DOCENTE:" all'inizio.**
   2. Parla come una persona reale, non un robot.
-  3. RISPONDI DIRETTAMENTE CON LA PROSSIMA DOMANDA.`}`;
+  3. RISPONDI DIRETTAMENTE CON LA PROSSIMA DOMANDA.
+  4. **CONTROLLO NOVITÀ GENERALE**: Analizza la STORIA ESAME. Se una domanda concettualmente simile è già stata fatta, DEVI SCARTARLA e chiederne una completamente diversa.
+  5. **VARIAZIONE**: Se l'argomento è lo stesso, cambia angolo (es. dalla teoria passa alla pratica/esempi). NON chiedere la stessa definizione due volte.`}`;
 
             const rawAiResponse = await generateWithFallback({
                 task: "oral_exam_question",
