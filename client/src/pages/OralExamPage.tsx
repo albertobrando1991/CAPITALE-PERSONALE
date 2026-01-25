@@ -122,6 +122,14 @@ export default function OralExamPage() {
     const [voiceSpeed, setVoiceSpeed] = useState(1.0); // Default speed
     const [countdown, setCountdown] = useState<number | null>(null); // For fluid mode countdown
 
+    // NEW: Intelligent speech recognition with Whisper
+    const [isRecording, setIsRecording] = useState(false);
+    const [transcriptionInProgress, setTranscriptionInProgress] = useState(false);
+    const [interimTranscript, setInterimTranscript] = useState('');
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const audioLevelCheckInterval = useRef<NodeJS.Timeout | null>(null);
+
     const recognitionRef = useRef<any>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
@@ -421,72 +429,225 @@ export default function OralExamPage() {
     };
 
     // ============================================================================
-    // SPEECH RECOGNITION (STT)
+    // INTELLIGENT SPEECH RECOGNITION SYSTEM (Whisper API)
     // ============================================================================
 
-    const toggleListening = () => {
-        if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-            toast({ title: 'Riconoscimento vocale non supportato', variant: 'destructive' });
+    const toggleListening = async () => {
+        // Stop recording if already recording
+        if (isRecording) {
+            console.log('[REC] Stopping recording...');
+            stopRecording();
             return;
         }
 
-        // Cancel countdown if manually toggling
+        // Cancel any countdown
         if (countdown !== null) {
             setCountdown(null);
             if (countdownRef.current) clearTimeout(countdownRef.current);
         }
 
-        if (isListening) {
-            recognitionRef.current?.stop();
-            setIsListening(false);
-            return;
-        }
+        // Start recording
+        try {
+            console.log('[REC] Starting recording...');
 
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                }
+            });
 
-        recognition.lang = 'it-IT';
-        recognition.continuous = false;
-        recognition.interimResults = true;
+            // Setup MediaRecorder for high-quality recording
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus'
+                : 'audio/webm';
 
-        recognition.onstart = () => {
+            const mediaRecorder = new MediaRecorder(stream, {
+                mimeType,
+                audioBitsPerSecond: 128000, // 128kbps for good quality
+            });
+
+            const chunks: Blob[] = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    chunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = async () => {
+                console.log('[REC] Recording stopped, processing...');
+
+                // Combine all chunks into a blob
+                const audioBlob = new Blob(chunks, { type: mimeType });
+                console.log(`[REC] Audio blob created: ${audioBlob.size} bytes`);
+
+                // Transcribe with Whisper
+                await transcribeAudio(audioBlob);
+
+                // Cleanup
+                stream.getTracks().forEach(track => track.stop());
+                stopSilenceDetection();
+            };
+
+            mediaRecorder.start(100); // Collect data every 100ms
+            mediaRecorderRef.current = mediaRecorder;
+            setIsRecording(true);
             setIsListening(true);
             setPersonaState('listening');
-        };
 
-        recognition.onend = () => {
-            setIsListening(false);
+            // Setup real-time silence detection
+            setupSilenceDetection(stream);
 
-            // FLUID MODE LOGIC
-            const currentInput = (document.getElementById('speech-input') as HTMLTextAreaElement)?.value;
+            console.log('[REC] Recording started successfully');
 
-            // Only trigger countdown if input is sufficient
-            if (fluidMode && currentInput && currentInput.trim().length > 5) {
-                // START VISUAL COUNTDOWN instead of immediate send
-                setCountdown(5); // 5 seconds to cancel or resume
-            }
-        };
+        } catch (error) {
+            console.error('[REC] Failed to start recording:', error);
+            toast({
+                title: 'Errore Microfono',
+                description: 'Impossibile accedere al microfono. Verifica i permessi.',
+                variant: 'destructive',
+            });
+        }
+    };
 
-        recognition.onerror = () => setIsListening(false);
+    // ============================================================================
+    // SILENCE DETECTION (Smart Pause Detection)
+    // ============================================================================
 
-        recognition.onresult = (event: any) => {
-            let finalTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) {
-                    finalTranscript += event.results[i][0].transcript;
+    const setupSilenceDetection = (stream: MediaStream) => {
+        const audioContext = new AudioContext();
+        const analyser = audioContext.createAnalyser();
+        const source = audioContext.createMediaStreamSource(stream);
+
+        source.connect(analyser);
+        analyser.fftSize = 2048;
+
+        audioContextRef.current = audioContext;
+
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        let silenceStart: number | null = null;
+        let lastSoundTime = Date.now();
+        const SILENCE_THRESHOLD = 30; // Volume threshold
+        const MIN_SPEECH_DURATION = 2000; // Minimum 2 seconds of speech
+        const SILENCE_DURATION = 2500; // 2.5 seconds of silence for end of speech
+
+        const checkAudioLevel = () => {
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b) / bufferLength;
+
+            // Detect if speaking
+            if (average > SILENCE_THRESHOLD) {
+                lastSoundTime = Date.now();
+                silenceStart = null;
+                setInterimTranscript('🎤 Ti ascolto...'); // Visual feedback
+            } else {
+                // Silence detected
+                if (silenceStart === null) {
+                    silenceStart = Date.now();
+                }
+
+                const silenceDuration = Date.now() - silenceStart;
+                const speechDuration = lastSoundTime - (Date.now() - silenceDuration);
+
+                // Smart logic: only if spoke enough AND silence is prolonged
+                if (speechDuration > MIN_SPEECH_DURATION && silenceDuration > SILENCE_DURATION) {
+                    console.log(`[REC] Natural pause detected after ${speechDuration}ms of speech`);
+                    stopRecording();
                 }
             }
-            if (finalTranscript) {
-                setUserInput((prev) => prev ? prev + ' ' + finalTranscript : finalTranscript);
-
-                // If user speaks while countdown is active (conceptually), we basically want to reset things
-                // But speech API usually stops before this.
-                // If we are here, it means we are recognizing new text, so we assume activity.
-            }
         };
 
-        recognitionRef.current = recognition;
-        recognition.start();
+        // Check audio level every 100ms
+        audioLevelCheckInterval.current = setInterval(checkAudioLevel, 100);
+    };
+
+    const stopSilenceDetection = () => {
+        if (audioLevelCheckInterval.current) {
+            clearInterval(audioLevelCheckInterval.current);
+            audioLevelCheckInterval.current = null;
+        }
+        if (audioContextRef.current) {
+            audioContextRef.current.close();
+            audioContextRef.current = null;
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
+        setIsRecording(false);
+        setIsListening(false);
+        setInterimTranscript('');
+        stopSilenceDetection();
+    };
+
+    // ============================================================================
+    // TRANSCRIPTION WITH WHISPER (High Accuracy)
+    // ============================================================================
+
+    const transcribeAudio = async (audioBlob: Blob) => {
+        setTranscriptionInProgress(true);
+        setPersonaState('thinking');
+
+        try {
+            console.log('[STT] Sending audio to Whisper API...');
+
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.webm');
+
+            const response = await fetch('/api/oral-exam/transcribe', {
+                method: 'POST',
+                body: formData,
+                credentials: 'include',
+            });
+
+            if (!response.ok) {
+                throw new Error(`Transcription failed: ${response.status}`);
+            }
+
+            const result = await response.json();
+            const transcribedText = result.text.trim();
+
+            console.log(`[STT] Transcription: "${transcribedText}"`);
+
+            if (transcribedText) {
+                setUserInput((prev) => prev ? `${prev} ${transcribedText}` : transcribedText);
+
+                toast({
+                    title: 'Trascrizione completata',
+                    description: transcribedText.substring(0, 100) + (transcribedText.length > 100 ? '...' : ''),
+                    duration: 3000,
+                });
+
+                // In fluid mode, auto-send after visual confirmation
+                if (fluidMode && transcribedText.length > 20) {
+                    // Start countdown for auto-send
+                    setCountdown(3); // 3 seconds to cancel
+                }
+            } else {
+                toast({
+                    title: 'Nessun audio rilevato',
+                    description: 'Riprova parlando più vicino al microfono',
+                    variant: 'destructive',
+                });
+            }
+
+        } catch (error: any) {
+            console.error('[STT] Transcription error:', error);
+            toast({
+                title: 'Errore trascrizione',
+                description: error.message || 'Riprova',
+                variant: 'destructive',
+            });
+        } finally {
+            setTranscriptionInProgress(false);
+            setPersonaState('listening');
+        }
     };
 
     const handleResumeSpeaking = () => {
@@ -859,23 +1020,48 @@ export default function OralExamPage() {
                 <div className="absolute bottom-0 left-0 right-0 z-30 p-4 pb-8 md:p-6 bg-gradient-to-t from-black via-black/80 to-transparent">
                     <div className="max-w-3xl mx-auto space-y-4">
 
-                        {/* User Output / Preview */}
-                        {userInput && (
+                        {/* User Output / Preview - Enhanced */}
+                        {(userInput || interimTranscript || transcriptionInProgress) && (
                             <div className="bg-primary/20 backdrop-blur-sm border border-primary/30 p-3 rounded-lg text-white mb-2 animate-in fade-in slide-in-from-bottom-2">
-                                <p className="text-sm font-medium opacity-80 mb-1">Tu stai dicendo:</p>
-                                <p className="text-lg">{userInput}</p>
+                                {transcriptionInProgress ? (
+                                    <>
+                                        <p className="text-sm font-medium opacity-80 mb-1 flex items-center gap-2">
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            Trascrizione in corso...
+                                        </p>
+                                        <p className="text-lg opacity-60">Elaborando audio con Whisper AI...</p>
+                                    </>
+                                ) : interimTranscript ? (
+                                    <>
+                                        <p className="text-sm font-medium opacity-80 mb-1">🎤 Registrazione attiva:</p>
+                                        <p className="text-lg italic">{interimTranscript}</p>
+                                    </>
+                                ) : userInput ? (
+                                    <>
+                                        <p className="text-sm font-medium opacity-80 mb-1">La tua risposta:</p>
+                                        <p className="text-lg">{userInput}</p>
+                                    </>
+                                ) : null}
                             </div>
                         )}
 
                         <div className="flex gap-2 items-center">
                             <Button
-                                variant={isListening ? "destructive" : "secondary"}
+                                variant={isRecording ? "destructive" : "secondary"}
                                 size="lg"
-                                className={`h-14 w-14 rounded-full shadow-xl transition-all ${isListening ? 'animate-pulse ring-4 ring-red-500/30' : ''}`}
+                                className={`h-14 w-14 rounded-full shadow-xl transition-all ${
+                                    isRecording ? 'animate-pulse ring-4 ring-red-500/30' : ''
+                                } ${transcriptionInProgress ? 'opacity-50' : ''}`}
                                 onClick={toggleListening}
-                                disabled={isLoading || session.status === 'completed' || (countdown !== null)}
+                                disabled={isLoading || transcriptionInProgress || session.status === 'completed'}
                             >
-                                {isListening ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+                                {transcriptionInProgress ? (
+                                    <Loader2 className="h-6 w-6 animate-spin" />
+                                ) : isRecording ? (
+                                    <MicOff className="h-6 w-6" />
+                                ) : (
+                                    <Mic className="h-6 w-6" />
+                                )}
                             </Button>
 
                             <div className="flex-1 relative">
@@ -906,9 +1092,18 @@ export default function OralExamPage() {
                         </div>
 
                         <div className="flex justify-center items-center gap-4 text-xs text-white/40">
-                            <span className={`flex items-center gap-1.5 ${isListening ? 'text-red-400 font-medium' : ''}`}>
-                                <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-red-500 animate-ping' : 'bg-white/20'}`} />
-                                {isListening ? 'Microfono Attivo' : 'Microfono Pronto'}
+                            <span className={`flex items-center gap-1.5 ${
+                                isRecording ? 'text-red-400 font-medium' :
+                                transcriptionInProgress ? 'text-blue-400 font-medium' : ''
+                            }`}>
+                                <div className={`w-2 h-2 rounded-full ${
+                                    isRecording ? 'bg-red-500 animate-ping' :
+                                    transcriptionInProgress ? 'bg-blue-500 animate-pulse' :
+                                    'bg-white/20'
+                                }`} />
+                                {transcriptionInProgress ? 'Trascrizione Whisper...' :
+                                 isRecording ? 'Registrazione Attiva (Parla liberamente)' :
+                                 'Pronto per Registrare'}
                             </span>
                             <span className="flex items-center gap-1.5">
                                 <Switch

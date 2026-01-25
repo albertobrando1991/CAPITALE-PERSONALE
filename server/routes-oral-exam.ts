@@ -516,6 +516,97 @@ router.post('/upload-pdf', isAuthenticatedHybrid, upload.single('file'), async (
 // TEXT TO SPEECH
 // ============================================================================
 
+// ============================================================================
+// SPEECH-TO-TEXT WITH WHISPER API (High Accuracy)
+// ============================================================================
+
+// Audio upload configuration for STT
+const audioUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max
+    fileFilter: (req, file, cb) => {
+        // Accept audio in various formats
+        const allowedMimes = ['audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm;codecs=opus'];
+        if (allowedMimes.some(mime => file.mimetype.includes(mime.split(';')[0]))) {
+            cb(null, true);
+        } else {
+            cb(new Error('Formato audio non supportato'));
+        }
+    }
+});
+
+/**
+ * POST /api/oral-exam/transcribe
+ * Transcribe audio using OpenAI Whisper API
+ */
+router.post('/transcribe', isAuthenticatedHybrid, audioUpload.single('audio'), async (req: Request, res: Response) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No audio file provided' });
+        }
+
+        console.log(`[STT] Transcribing audio: ${req.file.size} bytes, ${req.file.mimetype}`);
+
+        // Get OpenAI API key
+        const apiKey = process.env.OPENAI_API_KEY || process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+        if (!apiKey) {
+            return res.status(500).json({ error: 'OpenAI API key not configured for STT' });
+        }
+
+        // Create FormData for Whisper API
+        const formData = new FormData();
+        const audioBlob = new Blob([req.file.buffer], { type: req.file.mimetype });
+        formData.append('file', audioBlob, 'audio.webm');
+        formData.append('model', 'whisper-1');
+        formData.append('language', 'it'); // Italian
+        formData.append('response_format', 'verbose_json'); // Include confidence scores
+        formData.append('temperature', '0'); // More deterministic = more accurate
+
+        // Call Whisper API
+        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[STT] Whisper API Error: ${response.status} - ${errorText}`);
+            throw new Error(`Transcription failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        console.log(`[STT] Transcription successful: "${result.text?.substring(0, 100)}..."`);
+
+        // Return transcription with metadata
+        res.json({
+            text: result.text || '',
+            language: result.language || 'it',
+            duration: result.duration,
+            // Segments with timestamps for debug (optional)
+            segments: result.segments?.map((s: any) => ({
+                text: s.text,
+                start: s.start,
+                end: s.end,
+            })) || [],
+        });
+
+    } catch (error: any) {
+        console.error('[STT] Transcription error:', error);
+        res.status(500).json({
+            error: 'Transcription failed',
+            details: error.message
+        });
+    }
+});
+
+// ============================================================================
+// TEXT TO SPEECH
+// ============================================================================
+
 router.post('/tts', isAuthenticatedHybrid, async (req: Request, res: Response) => {
     try {
         const { text, persona, speed: userSpeed } = req.body;
