@@ -18,7 +18,7 @@ import {
 } from "../shared/schema";
 import { users, concorsi, userProgress, materials, flashcards, simulazioni, calendarEvents, officialConcorsi } from "../shared/schema";
 import { db } from "./db";
-import { eq, and, desc, or } from "drizzle-orm";
+import { eq, and, desc, or, sql } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -41,6 +41,7 @@ export interface IStorage {
   getMaterial(id: string, userId: string): Promise<Material | undefined>;
   deleteMaterial(id: string, userId: string): Promise<boolean>;
   updateMaterial(id: string, userId: string, data: Partial<InsertMaterial>): Promise<Material | undefined>;
+  updateMaterialFlashcardStatus(id: string, addedCount: number): Promise<void>;
 
   createFlashcards(flashcards: InsertFlashcard[]): Promise<Flashcard[]>;
   getFlashcards(userId: string, concorsoId?: string): Promise<Flashcard[]>;
@@ -281,6 +282,28 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(materials.id, id), eq(materials.userId, userId)))
       .returning();
     return updated;
+  }
+
+  async updateMaterialFlashcardStatus(id: string, addedCount: number): Promise<void> {
+    // 1. Get current material to increment generation count
+    const [material] = await db.select().from(materials).where(eq(materials.id, id));
+    if (!material) return;
+
+    // 2. Count ACTUAL flashcards for this material to fix any sync issues
+    const [result] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(flashcards)
+      .where(eq(flashcards.materialId, id));
+
+    const actualCount = Number(result.count);
+
+    // 3. Update material
+    await db.update(materials)
+      .set({
+        flashcardGenerate: actualCount,
+        flashcardGenerationCount: (material.flashcardGenerationCount || 0) + 1
+      })
+      .where(eq(materials.id, id));
   }
 
   async createFlashcards(newFlashcards: InsertFlashcard[]): Promise<Flashcard[]> {

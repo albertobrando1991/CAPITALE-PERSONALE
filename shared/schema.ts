@@ -145,6 +145,27 @@ export * from "./schema-audit";
 export * from "./schema-oral-exam";
 
 // ============================================
+// CACHE SYSTEM (The Hive)
+// ============================================
+
+export const flashcardCache = pgTable("flashcard_cache", {
+  id: serial("id").primaryKey(),
+  contentHash: varchar("content_hash", { length: 64 }).notNull(), // SHA-256
+  topic: varchar("topic", { length: 255 }),
+  flashcardsJson: jsonb("flashcards_json").notNull(),
+  sourceType: varchar("source_type", { length: 50 }), // 'text', 'pdf', 'topic_name'
+  generationCount: integer("generation_count").default(1),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertFlashcardCacheSchema = createInsertSchema(flashcardCache).omit({
+  id: true,
+  createdAt: true
+});
+export type FlashcardCache = typeof flashcardCache.$inferSelect;
+export type InsertFlashcardCache = typeof flashcardCache.$inferInsert;
+
+// ============================================
 // MNEMOTECNICHE TABLES
 // ============================================
 
