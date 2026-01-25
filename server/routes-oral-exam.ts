@@ -1,653 +1,593 @@
+import type { Express, Request } from "express";
+import { TextToSpeechClient } from "@google-cloud/text-to-speech";
+import { z } from "zod";
+import multer from "multer";
+import { isAuthenticated } from "./replitAuth";
+import { generateWithFallback } from "./services/ai";
+import { extractTextFromPDFRobust } from "./services/pdf-extraction";
+
 // ============================================================================
-// ORAL EXAM AI: Premium Feature - API ROUTES
-// File: server/routes-oral-exam.ts
+// GOOGLE TTS CLIENT INITIALIZATION
 // ============================================================================
 
-import express, { Request, Response } from 'express';
-import { pool } from './db';
-import { isAuthenticatedHybrid } from './services/supabase-auth';
-import { generateWithFallback, generateSpeech } from './services/ai';
+let ttsClient: TextToSpeechClient;
 
-const router = express.Router();
+try {
+    // Method 1: Using credentials file (development)
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+        ttsClient = new TextToSpeechClient({
+            keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+        });
+        console.log("[GOOGLE-TTS] Initialized with credentials file");
+    }
+    // Method 2: Using inline JSON (production - Vercel)
+    else if (process.env.GOOGLE_TTS_CREDENTIALS) {
+        const credentials = JSON.parse(process.env.GOOGLE_TTS_CREDENTIALS);
+        ttsClient = new TextToSpeechClient({ credentials });
+        console.log("[GOOGLE-TTS] Initialized with inline credentials");
+    } else {
+        console.warn("Google TTS credentials not configured - TTS features will be disabled");
+    }
+} catch (error: any) {
+    console.error("[GOOGLE-TTS] Initialization failed:", error.message);
+}
 
-// Non-null assertion: pool should exist in production
-const db = pool!;
-import { userSubscriptions } from '../shared/schema';
-import { isAlwaysPremium } from './utils/auth-helpers';
-import { eq, sql } from 'drizzle-orm';
-import { db as drizzleDb } from './db';
-import multer from 'multer';
-import pdf from 'pdf-parse';
-import fs from 'fs';
+// ============================================================================
+// ITALIAN VOICE CONFIGURATION
+// ============================================================================
 
-// Multer setup for temporary file storage
-const upload = multer({ dest: 'uploads/' });
-
-// Helper to get userId from session or user object
-const getUserId = (req: Request): string => {
-    // @ts-ignore
-    return req.session?.userId || (req as any).user?.id;
+const ITALIAN_VOICES = {
+    rigorous: {
+        name: "Prof. Bianchi",
+        voiceName: "it-IT-Neural2-C", // Male voice
+        description: "Professore rigoroso e preciso",
+    },
+    empathetic: {
+        name: "Prof.ssa Verdi",
+        voiceName: "it-IT-Neural2-A", // Female voice
+        description: "Professoressa empatica e incoraggiante",
+    },
 };
 
 // ============================================================================
-// PERSONA SYSTEM PROMPTS
+// IN-MEMORY SESSION STORAGE (Replace with database in production)
 // ============================================================================
 
-const PERSONA_PROMPTS = {
-    rigorous: `Sei il Professor Bianchi, un docente universitario estremamente rigoroso.
-Conduci l'esame orale in modo formale e preciso. 
-- Fai domande dirette e non accetti risposte vaghe.
-- Se la risposta è incompleta, chiedi di approfondire.
-- Sei giusto ma esigente. Non fai complimenti eccessivi.
-- Usa un tono formale ma non ostile.
-- La tua valutazione è severa ma equa.
-Rispondi SOLO in italiano.`,
-
-    empathetic: `Sei la Professoressa Verdi, una tutor universitaria empatica e incoraggiante.
-Conduci l'esame orale come una conversazione guidata.
-- Incoraggi lo studente e riconosci i progressi.
-- Se la risposta è incompleta, guidi verso la risposta corretta con suggerimenti.
-- Mantieni un tono cordiale e supportivo.
-- Celebri le risposte corrette ma correggi gentilmente gli errori.
-Rispondi SOLO in italiano.`
-};
-
-// ============================================================================
-// HELPER: PREMIUM \u0026 LIMITS
-// ============================================================================
-
-async function checkPremiumStatus(userId: string, userEmail?: string): Promise<{ isPremium: boolean; limit: number }> {
-    // 1. Admin Bypass
-    if (isAlwaysPremium(userEmail)) {
-        return { isPremium: true, limit: 100 };
-    }
-
-    // 2. Check Subscription
-    const [sub] = await drizzleDb
-        .select()
-        .from(userSubscriptions)
-        .where(eq(userSubscriptions.userId, userId));
-
-    const isPremium = sub?.tier === 'premium' || sub?.tier === 'enterprise';
-
-    // 3. Define Limits
-    // Free: 0 sessions (Premium Feature)
-    // Premium/Enterprise: 10 sessions/day
-    const limit = isPremium ? 10 : 0;
-
-    return { isPremium, limit };
+interface OralExamSession {
+    id: string;
+    userId: string;
+    concorsoId: string;
+    persona: "rigorous" | "empathetic";
+    topics: string[];
+    difficulty: "easy" | "medium" | "hard";
+    maxTurns: number;
+    currentTurn: number;
+    messages: Array<{ role: "user" | "instructor"; content: string }>;
+    context: string;
+    status: "active" | "completed";
+    createdAt: Date;
 }
 
-async function checkDailyLimit(userId: string, limit: number): Promise<boolean> {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+const sessions = new Map<string, OralExamSession>();
 
-    const result = await db.query(`
-    SELECT COUNT(*) as count 
-    FROM oral_exam_sessions 
-    WHERE user_id = $1 
-    AND DATE(created_at) = $2
-  `, [userId, today]);
+// ============================================================================
+// REALISTIC EVALUATION SYSTEM
+// ============================================================================
 
-    const count = parseInt(result.rows[0].count, 10);
-    return count < limit;
+interface EvaluationCriteria {
+    completeness: number; // 0-10: risposta completa?
+    accuracy: number; // 0-10: risposta corretta?
+    clarity: number; // 0-10: espressione chiara?
+    depth: number; // 0-10: approfondimento?
+}
+
+function evaluateResponse(
+    question: string,
+    userAnswer: string,
+    expectedTopics: string[]
+): EvaluationCriteria {
+    const answerLength = userAnswer.trim().split(/\s+/).length;
+
+    // Penalizza risposte troppo brevi o troppo lunghe
+    let completeness = 5;
+    if (answerLength < 20) completeness = 3;
+    else if (answerLength < 50) completeness = 5;
+    else if (answerLength < 100) completeness = 7;
+    else if (answerLength < 200) completeness = 9;
+    else completeness = 10;
+
+    // Valuta presenza di parole chiave
+    const topicMentioned = expectedTopics.some((topic) =>
+        userAnswer.toLowerCase().includes(topic.toLowerCase())
+    );
+    const accuracy = topicMentioned ? 7 : 4;
+
+    // Valuta chiarezza (presenza di frasi strutturate)
+    const hasPunctuation = /[.!?]/.test(userAnswer);
+    const clarity = hasPunctuation ? 7 : 5;
+
+    // Profondità (presenza di esempi o dettagli)
+    const hasExamples = /ad esempio|per esempio|infatti|inoltre/i.test(userAnswer);
+    const depth = hasExamples ? 8 : 5;
+
+    return { completeness, accuracy, clarity, depth };
+}
+
+function calculateRealisticScore(
+    allEvaluations: EvaluationCriteria[]
+): number {
+    if (allEvaluations.length === 0) return 18; // Minimo sindacale
+
+    const avgCompleteness =
+        allEvaluations.reduce((sum, e) => sum + e.completeness, 0) /
+        allEvaluations.length;
+    const avgAccuracy =
+        allEvaluations.reduce((sum, e) => sum + e.accuracy, 0) /
+        allEvaluations.length;
+    const avgClarity =
+        allEvaluations.reduce((sum, e) => sum + e.clarity, 0) /
+        allEvaluations.length;
+    const avgDepth =
+        allEvaluations.reduce((sum, e) => sum + e.depth, 0) / allEvaluations.length;
+
+    // Formula realistica: peso maggiore su accuratezza e completezza
+    const rawScore =
+        avgAccuracy * 0.4 +
+        avgCompleteness * 0.3 +
+        avgClarity * 0.2 +
+        avgDepth * 0.1;
+
+    // Converti in scala 18-30
+    const finalScore = Math.round(18 + (rawScore / 10) * 12);
+
+    // Applica soglie realistiche
+    if (avgAccuracy < 4 || avgCompleteness < 4) return 18; // Insufficiente grave
+    if (avgAccuracy < 6) return Math.min(finalScore, 23); // Cap a 23 se impreciso
+    if (avgAccuracy >= 9 && avgCompleteness >= 9) return Math.max(finalScore, 28); // Premio eccellenza
+
+    return Math.max(18, Math.min(30, finalScore));
 }
 
 // ============================================================================
-// START SESSION
+// HELPER FUNCTIONS
 // ============================================================================
 
-/**
- * POST /api/oral-exam/start
- * Inizia una nuova sessione di esame orale
- */
-router.post('/start', isAuthenticatedHybrid, async (req: Request, res: Response) => {
-    try {
-        const userId = getUserId(req);
-        const { concorsoId, persona, topics, difficulty, maxTurns } = req.body;
-
-        if (!concorsoId || !persona || !topics?.length) {
-            return res.status(400).json({ error: 'concorsoId, persona e topics sono obbligatori' });
-        }
-
-        // 1. Check Premium Status
-        const userEmail = (req as any).user?.email;
-        const { isPremium, limit } = await checkPremiumStatus(userId, userEmail);
-
-        if (!isPremium) {
-            return res.status(403).json({
-                error: 'Questa funzione è riservata agli utenti Premium',
-                code: 'PREMIUM_REQUIRED'
-            });
-        }
-
-        // 2. Check Daily Limit
-        const canStart = await checkDailyLimit(userId, limit);
-        if (!canStart) {
-            return res.status(429).json({
-                error: `Hai raggiunto il limite giornaliero di ${limit} sessioni`,
-                code: 'LIMIT_REACHED'
-            });
-        }
-
-        // Create session
-        const result = await db.query(`
-      INSERT INTO oral_exam_sessions (user_id, concorso_id, persona, topics, difficulty, max_turns)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING *
-    `, [userId, concorsoId, persona, JSON.stringify(topics), difficulty || 'medium', maxTurns || 5]);
-
-        const session = result.rows[0];
-
-        // Generate first question
-        const systemPrompt = PERSONA_PROMPTS[persona as keyof typeof PERSONA_PROMPTS] || PERSONA_PROMPTS.rigorous;
-        const topicList = topics.join(', ');
-
-        const firstQuestionPrompt = `
-Stai iniziando un esame orale sugli argomenti: ${topicList}.
-Difficoltà: ${difficulty || 'media'}.
-
-Saluta brevemente lo studente (1 frase) e poni la PRIMA DOMANDA aperta per valutare la sua preparazione di base su uno degli argomenti.
-La domanda deve essere chiara e richiedere una risposta articolata.
-NON elencare opzioni, è un esame ORALE.
-`;
-
-        const firstQuestion = await generateWithFallback({
-            task: 'oral_exam_question',
-            systemPrompt,
-            userPrompt: firstQuestionPrompt,
-            temperature: 0.7,
-            responseMode: 'text'
-        });
-
-        // Save first message
-        const messages = [{
-            role: 'instructor',
-            content: firstQuestion,
-            timestamp: new Date().toISOString()
-        }];
-
-        await db.query(`
-      UPDATE oral_exam_sessions
-      SET messages = $1, current_turn = 1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2
-    `, [JSON.stringify(messages), session.id]);
-
-        res.status(201).json({
-            sessionId: session.id,
-            persona,
-            topics,
-            firstMessage: firstQuestion,
-            currentTurn: 1,
-            maxTurns: session.max_turns
-        });
-
-    } catch (error: any) {
-        console.error('Errore avvio sessione orale:', error);
-        res.status(500).json({ error: 'Errore avvio sessione', details: error.message });
-    }
-});
-
-// ============================================================================
-// SEND MESSAGE (User responds, AI replies)
-// ============================================================================
-
-/**
- * POST /api/oral-exam/:sessionId/message
- * Invia risposta utente e ricevi replica del docente
- */
-router.post('/:sessionId/message', isAuthenticatedHybrid, async (req: Request, res: Response) => {
-    try {
-        const { sessionId } = req.params;
-        const userId = getUserId(req);
-        const { content } = req.body;
-
-        if (!content?.trim()) {
-            return res.status(400).json({ error: 'Contenuto risposta vuoto' });
-        }
-
-        // Fetch session
-        const sessionResult = await db.query(`
-      SELECT * FROM oral_exam_sessions WHERE id = $1 AND user_id = $2 AND status = 'active'
-    `, [sessionId, userId]);
-
-        if (sessionResult.rows.length === 0) {
-            return res.status(404).json({ error: 'Sessione non trovata o già conclusa' });
-        }
-
-        const session = sessionResult.rows[0];
-        const messages = session.messages || [];
-        const currentTurn = session.current_turn || 1;
-        const maxTurns = session.max_turns || 5;
-
-        // Add user message
-        messages.push({
-            role: 'user',
-            content: content.trim(),
-            timestamp: new Date().toISOString()
-        });
-
-        // Check if this is the last turn
-        const isLastTurn = currentTurn >= maxTurns;
-
-        // Build conversation context for AI
-        const systemPrompt = PERSONA_PROMPTS[session.persona as keyof typeof PERSONA_PROMPTS] || PERSONA_PROMPTS.rigorous;
-        const topicList = (session.topics || []).join(', ');
-
-        const conversationContext = messages
-            .map((m: any) => `${m.role === 'instructor' ? 'Docente' : 'Studente'}: ${m.content}`)
-            .join('\n\n');
-
-        let userPrompt: string;
-
-        if (isLastTurn) {
-            userPrompt = `
-Argomenti esame: ${topicList}
-
-Conversazione finora:
-${conversationContext}
-
-Lo studente ha appena risposto. Questa è L'ULTIMA DOMANDA.
-1. Commenta brevemente la risposta (corretta/parziale/errata).
-2. Concludi l'esame con un breve commento di chiusura.
-3. NON fare altre domande.
-`;
-        } else {
-            userPrompt = `
-Argomenti esame: ${topicList}
-Turno ${currentTurn + 1} di ${maxTurns}.
-
-Conversazione finora:
-${conversationContext}
-
-Lo studente ha appena risposto. 
-1. Valuta brevemente la risposta (corretta, parziale, o errata).
-2. Se errata/parziale, correggi in modo costruttivo.
-3. Poni la PROSSIMA DOMANDA su un aspetto diverso degli argomenti.
-`;
-        }
-
-        const aiReply = await generateWithFallback({
-            task: 'oral_exam_question',
-            systemPrompt,
-            userPrompt,
-            temperature: 0.7,
-            responseMode: 'text'
-        });
-
-        // Add AI message
-        messages.push({
-            role: 'instructor',
-            content: aiReply,
-            timestamp: new Date().toISOString()
-        });
-
-        // Update session
-        const newTurn = currentTurn + 1;
-        const newStatus = isLastTurn ? 'completed' : 'active';
-
-        await db.query(`
-      UPDATE oral_exam_sessions
-      SET messages = $1, current_turn = $2, status = $3, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $4
-    `, [JSON.stringify(messages), newTurn, newStatus, sessionId]);
-
-        res.json({
-            message: aiReply,
-            currentTurn: newTurn,
-            maxTurns,
-            isCompleted: isLastTurn
-        });
-
-    } catch (error: any) {
-        console.error('Errore messaggio sessione:', error);
-        res.status(500).json({ error: 'Errore elaborazione risposta', details: error.message });
-    }
-});
-
-// ============================================================================
-// END SESSION & GET FEEDBACK
-// ============================================================================
-
-/**
- * POST /api/oral-exam/:sessionId/end
- * Termina sessione e genera valutazione finale
- */
-router.post('/:sessionId/end', isAuthenticatedHybrid, async (req: Request, res: Response) => {
-    try {
-        const { sessionId } = req.params;
-        const userId = getUserId(req);
-
-        // Fetch session
-        const sessionResult = await db.query(`
-      SELECT * FROM oral_exam_sessions WHERE id = $1 AND user_id = $2
-    `, [sessionId, userId]);
-
-        if (sessionResult.rows.length === 0) {
-            return res.status(404).json({ error: 'Sessione non trovata' });
-        }
-
-        const session = sessionResult.rows[0];
-        const messages = session.messages || [];
-
-        if (session.feedback) {
-            // Already evaluated
-            return res.json({ feedback: session.feedback, score: session.score });
-        }
-
-        // Build evaluation prompt
-        const conversationText = messages
-            .map((m: any) => `${m.role === 'instructor' ? 'Docente' : 'Studente'}: ${m.content}`)
-            .join('\n\n');
-
-        const evaluationPrompt = `
-Sei un valutatore esperto di esami universitari.
-Analizza questa sessione di esame orale:
-
-${conversationText}
-
-Genera una valutazione strutturata IN FORMATO JSON:
-{
-  "score": [numero intero da 0 a 30],
-  "strengths": ["punto di forza 1", "punto di forza 2"],
-  "weaknesses": ["area da migliorare 1", "area da migliorare 2"],
-  "suggestions": ["suggerimento 1", "suggerimento 2"],
-  "overallComment": "Commento complessivo di 2-3 frasi"
+function getUserId(req: Request): string {
+    const user = req.user as any;
+    return user?.id || user?.claims?.sub;
 }
 
-CRITERI DI VALUTAZIONE (Scala Universitaria Italiana):
-- < 18: RESPINTO/INSUFFICIENTE. Gravi lacune, risposte errate o scena muta. (Assegna un voto < 18, es. 10-17).
-- 18-21: Sufficiente. Conoscenza basilare, qualche incertezza ma concetti fondamentali presenti.
-- 22-24: Discreto. Buona conoscenza ma esposizione non sempre fluida o qualche imprecisione.
-- 25-27: Buono/Molto Buono. Padronanza della materia, linguaggio appropriato.
-- 28-30: Eccellente. Esposizione brillante, collegamenti interdisciplinari, nessun errore.
-
-IMPORTANTE:
-- Sii RIGOROSO e REALISTICO. Se lo studente ha risposto male o vagamente, NON dare la sufficienza.
-- Se ha saltato domande o detto "non so", penalizza pesantemente.
-- Voti sotto il 18 sono ASSOLUTAMENTE AMMESSI e incoraggiati se la performance è scarsa.
-
-Rispondi SOLO con il JSON valido.
-`;
-
-        const evaluationRaw = await generateWithFallback({
-            task: 'oral_exam_evaluate',
-            userPrompt: evaluationPrompt,
-            temperature: 0.3,
-            responseMode: 'json',
-            jsonRoot: 'object'
-        });
-
-        let feedback;
-        try {
-            feedback = JSON.parse(evaluationRaw);
-        } catch (e) {
-            console.error('Failed to parse feedback JSON:', evaluationRaw);
-            feedback = {
-                score: 22,
-                strengths: ['Partecipazione attiva'],
-                weaknesses: ['Area da approfondire'],
-                suggestions: ['Continua a esercitarti'],
-                overallComment: 'Esame completato. Continua a studiare per migliorare.'
-            };
-        }
-
-        // Calculate duration
-        const startTime = new Date(session.started_at).getTime();
-        const endTime = Date.now();
-        const durationSeconds = Math.floor((endTime - startTime) / 1000);
-
-        // Save feedback
-        await db.query(`
-      UPDATE oral_exam_sessions
-      SET 
-        feedback = $1,
-        score = $2,
-        status = 'completed',
-        ended_at = CURRENT_TIMESTAMP,
-        total_duration_seconds = $3,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $4
-    `, [JSON.stringify(feedback), feedback.score, durationSeconds, sessionId]);
-
-        res.json({
-            feedback,
-            score: feedback.score,
-            durationSeconds
-        });
-
-    } catch (error: any) {
-        console.error('Errore valutazione finale:', error);
-        res.status(500).json({ error: 'Errore generazione valutazione', details: error.message });
-    }
-});
+function generateSessionId(): string {
+    return `oral-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+}
 
 // ============================================================================
-// GET SESSION (transcript)
+// MULTER SETUP FOR PDF UPLOAD
 // ============================================================================
 
-/**
- * GET /api/oral-exam/:sessionId
- * Recupera sessione con trascrizione
- */
-router.get('/:sessionId', isAuthenticatedHybrid, async (req: Request, res: Response) => {
-    try {
-        const { sessionId } = req.params;
-        const userId = getUserId(req);
-
-        const result = await db.query(`
-      SELECT * FROM oral_exam_sessions WHERE id = $1 AND user_id = $2
-    `, [sessionId, userId]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Sessione non trovata' });
-        }
-
-        res.json(result.rows[0]);
-
-    } catch (error: any) {
-        console.error('Errore recupero sessione:', error);
-        res.status(500).json({ error: 'Errore recupero sessione' });
-    }
-});
-
-// ============================================================================
-// LIST SESSIONS
-// ============================================================================
-
-/**
- * GET /api/oral-exam/concorso/:concorsoId
- * Lista sessioni per un concorso
- */
-router.get('/concorso/:concorsoId', isAuthenticatedHybrid, async (req: Request, res: Response) => {
-    try {
-        const { concorsoId } = req.params;
-        const userId = getUserId(req);
-
-        const result = await db.query(`
-      SELECT id, persona, topics, difficulty, status, score, started_at, ended_at, total_duration_seconds
-      FROM oral_exam_sessions
-      WHERE user_id = $1 AND concorso_id = $2
-      ORDER BY created_at DESC
-      LIMIT 20
-    `, [userId, concorsoId]);
-
-        res.json(result.rows);
-
-    } catch (error: any) {
-        console.error('Errore lista sessioni:', error);
-        res.status(500).json({ error: 'Errore recupero lista sessioni' });
-    }
-});
-
-// ============================================================================
-// UPLOAD CONTENT (PDF)
-// ============================================================================
-
-router.post('/upload-pdf', isAuthenticatedHybrid, upload.single('file'), async (req: Request, res: Response) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ error: 'Nessun file caricato' });
-        }
-
-        const dataBuffer = fs.readFileSync(req.file.path);
-        const data = await pdf(dataBuffer);
-
-        // Cleanup temp file
-        fs.unlinkSync(req.file.path);
-
-        // Limit text length if needed (e.g. 100k chars)
-        const text = data.text.slice(0, 100000);
-
-        res.json({
-            success: true,
-            text,
-            pages: data.numpages,
-            info: data.info
-        });
-
-    } catch (error: any) {
-        console.error('Errore upload PDF:', error);
-        res.status(500).json({ error: 'Errore processamento PDF', details: error.message });
-    }
-
-});
-
-// ============================================================================
-// TEXT TO SPEECH
-// ============================================================================
-
-// ============================================================================
-// SPEECH-TO-TEXT WITH WHISPER API (High Accuracy)
-// ============================================================================
-
-// Audio upload configuration for STT
-const audioUpload = multer({
+const pdfUpload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
     fileFilter: (req, file, cb) => {
-        // Accept audio in various formats
-        const allowedMimes = ['audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm;codecs=opus'];
-        if (allowedMimes.some(mime => file.mimetype.includes(mime.split(';')[0]))) {
+        if (file.mimetype === "application/pdf") {
             cb(null, true);
         } else {
-            cb(new Error('Formato audio non supportato'));
+            cb(new Error("Solo file PDF sono supportati"));
         }
-    }
-});
-
-/**
- * POST /api/oral-exam/transcribe
- * Transcribe audio using OpenAI Whisper API
- */
-router.post('/transcribe', isAuthenticatedHybrid, audioUpload.single('audio'), async (req: Request, res: Response) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No audio file provided' });
-        }
-
-        console.log(`[STT] Transcribing audio: ${req.file.size} bytes, ${req.file.mimetype}`);
-
-        // Get OpenAI API key
-        const apiKey = process.env.OPENAI_API_KEY || process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-        if (!apiKey) {
-            return res.status(500).json({ error: 'OpenAI API key not configured for STT' });
-        }
-
-        // Create FormData for Whisper API
-        const formData = new FormData();
-        const audioBlob = new Blob([req.file.buffer], { type: req.file.mimetype });
-        formData.append('file', audioBlob, 'audio.webm');
-        formData.append('model', 'whisper-1');
-        formData.append('language', 'it'); // Italian
-        formData.append('response_format', 'verbose_json'); // Include confidence scores
-        formData.append('temperature', '0'); // More deterministic = more accurate
-
-        // Call Whisper API
-        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-            },
-            body: formData,
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`[STT] Whisper API Error: ${response.status} - ${errorText}`);
-            throw new Error(`Transcription failed: ${response.status}`);
-        }
-
-        const result = await response.json();
-
-        console.log(`[STT] Transcription successful: "${result.text?.substring(0, 100)}..."`);
-
-        // Return transcription with metadata
-        res.json({
-            text: result.text || '',
-            language: result.language || 'it',
-            duration: result.duration,
-            // Segments with timestamps for debug (optional)
-            segments: result.segments?.map((s: any) => ({
-                text: s.text,
-                start: s.start,
-                end: s.end,
-            })) || [],
-        });
-
-    } catch (error: any) {
-        console.error('[STT] Transcription error:', error);
-        res.status(500).json({
-            error: 'Transcription failed',
-            details: error.message
-        });
-    }
+    },
 });
 
 // ============================================================================
-// TEXT TO SPEECH
+// AUDIO TRANSCRIPTION SETUP (Whisper)
 // ============================================================================
 
-router.post('/tts', isAuthenticatedHybrid, async (req: Request, res: Response) => {
-    try {
-        const { text, persona, speed: userSpeed } = req.body;
-
-        if (!text) {
-            return res.status(400).json({ error: 'Text required' });
-        }
-
-        // Map persona to voice - optimized for Italian speech
-        // Available OpenAI voices: alloy, echo, fable, onyx, nova, shimmer
-        // For natural Italian pronunciation:
-        // - "onyx" is deep and authoritative (best for Prof. Bianchi - male)
-        // - "shimmer" is soft, warm and pleasant (best for Prof.ssa Verdi - female)
-        // - "fable" is expressive and conversational
-        let voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "fable";
-        let defaultSpeed = 1.0;
-
-        if (persona === 'rigorous') {
-            voice = "onyx"; // Deep, authoritative male
-            defaultSpeed = 0.95;
-        } else if (persona === 'empathetic') {
-            voice = "nova"; // Nova is actually very good for Italian female (better than shimmer often)
-            defaultSpeed = 1.0;
-        }
-
-        // Use user provided speed or default
-        const speed = userSpeed ? parseFloat(userSpeed) : defaultSpeed;
-
-        // Use HD model for more natural, fluid Italian speech
-        const audioBuffer = await generateSpeech(text, voice, {
-            speed,
-            useHD: true
-        });
-
-        res.set('Content-Type', 'audio/mpeg');
-        res.send(audioBuffer);
-
-    } catch (error: any) {
-        console.error('TTS Error:', error);
-        res.status(500).json({ error: 'TTS Failed', details: error.message });
-    }
+const audioUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
 });
 
-export default router;
+// ============================================================================
+// ROUTES
+// ============================================================================
+
+export function registerOralExamRoutes(app: Express) {
+
+    // ==========================================================================
+    // START ORAL EXAM SESSION
+    // ==========================================================================
+
+    app.post("/api/oral-exam/start", isAuthenticated, async (req, res) => {
+        try {
+            const userId = getUserId(req);
+            const schema = z.object({
+                concorsoId: z.string(),
+                persona: z.enum(["rigorous", "empathetic"]),
+                topics: z.array(z.string()).min(1),
+                difficulty: z.enum(["easy", "medium", "hard"]).default("medium"),
+                maxTurns: z.number().min(3).max(10).default(5),
+                context: z.string().optional(),
+            });
+
+            const data = schema.parse(req.body);
+            const sessionId = generateSessionId();
+
+            // Generate first question with NATURAL, DIRECT tone
+            const systemPrompt = `Sei ${ITALIAN_VOICES[data.persona].name}, ${ITALIAN_VOICES[data.persona].description}.
+
+RUOLO: Stai conducendo un esame orale con uno STUDENTE seduto davanti a te.
+
+TONO RICHIESTO:
+- Parla DIRETTAMENTE allo studente usando "tu" o "lei" (formale)
+- Sii NATURALE e COLLOQUIALE, come in un vero esame
+- NON parlare in terza persona
+- NON usare tono robotico o formale eccessivo
+
+STILE CONVERSAZIONE:
+${data.persona === "rigorous"
+                    ? `- Diretto e professionale
+- Vai dritto al punto
+- Esempio: "Spiegami il principio di..."`
+                    : `- Incoraggiante e supportivo
+- Rassicurante ma competente
+- Esempio: "Iniziamo con una domanda: puoi dirmi..."`
+                }
+
+CONTESTO ESAME:
+Argomenti: ${data.topics.join(", ")}
+${data.context ? `Materiale di riferimento: ${data.context.substring(0, 500)}` : ""}
+
+COMPITO:
+Genera LA PRIMA DOMANDA dell'esame orale.
+- Domanda chiara e specifica su uno degli argomenti
+- Linguaggio diretto rivolto allo studente
+- NO introduzioni lunghe, vai alla domanda`;
+
+            const firstQuestion = await generateWithFallback({
+                // @ts-ignore - 'oral_exam_question' might not be in the Task type definition yet
+                task: "oral_exam_question",
+                systemPrompt,
+                userPrompt: `Genera la prima domanda d'esame per lo studente.`,
+                temperature: 0.7,
+                responseMode: "text",
+            });
+
+            // Store session
+            const session: OralExamSession = {
+                id: sessionId,
+                userId,
+                concorsoId: data.concorsoId,
+                persona: data.persona,
+                topics: data.topics,
+                difficulty: data.difficulty,
+                maxTurns: data.maxTurns,
+                currentTurn: 1,
+                messages: [{ role: "instructor", content: firstQuestion || "Buongiorno, iniziamo l'esame. Mi parli del primo argomento in programma." }],
+                context: data.context || "",
+                status: "active",
+                createdAt: new Date(),
+            };
+
+            sessions.set(sessionId, session);
+
+            res.json({
+                sessionId,
+                firstMessage: firstQuestion,
+                currentTurn: 1,
+                maxTurns: data.maxTurns,
+            });
+        } catch (error: any) {
+            console.error("[ORAL-EXAM] Start error:", error);
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    // ==========================================================================
+    // SEND MESSAGE (Student Answer)
+    // ==========================================================================
+
+    app.post("/api/oral-exam/:sessionId/message", isAuthenticated, async (req, res) => {
+        try {
+            const { sessionId } = req.params;
+            const { content } = req.body;
+            const userId = getUserId(req);
+
+            const session = sessions.get(sessionId);
+            if (!session || session.userId !== userId) {
+                return res.status(404).json({ error: "Sessione non trovata" });
+            }
+
+            if (session.status === "completed") {
+                return res.status(400).json({ error: "Esame già completato" });
+            }
+
+            // Add user message
+            session.messages.push({ role: "user", content });
+
+            // Evaluate response
+            const evaluation = evaluateResponse(
+                session.messages[session.messages.length - 2]?.content || "",
+                content,
+                session.topics
+            );
+
+            // Generate next question or feedback with FULL CONTEXT
+            const isLastTurn = session.currentTurn >= session.maxTurns;
+
+            const systemPrompt = `Sei ${ITALIAN_VOICES[session.persona].name}, ${ITALIAN_VOICES[session.persona].description}.
+
+CONTESTO COMPLETO CONVERSAZIONE:
+${session.messages.map((m, i) => `${i % 2 === 0 ? "TU" : "STUDENTE"}: ${m.content}`).join("\n\n")}
+
+ULTIMA RISPOSTA STUDENTE:
+"${content}"
+
+VALUTAZIONE AUTOMATICA:
+- Completezza: ${evaluation.completeness}/10
+- Accuratezza: ${evaluation.accuracy}/10
+- Chiarezza: ${evaluation.clarity}/10
+- Profondità: ${evaluation.depth}/10
+
+COMPITO:
+${isLastTurn
+                    ? `Concludi l'esame con un commento finale breve e diretto sulle risposte dello studente.`
+                    : `Genera la PROSSIMA domanda basandoti su:
+1. La risposta appena data
+2. Le domande precedenti
+3. Gli argomenti ancora da coprire: ${session.topics.join(", ")}
+
+STILE:
+- Parla DIRETTAMENTE allo studente
+- Sii NATURALE come in un vero esame
+- Se la risposta era incompleta, fai una domanda di approfondimento
+- Se la risposta era buona, passa ad un nuovo aspetto
+- NO tono robotico`
+                }`;
+
+            const aiResponse = await generateWithFallback({
+                // @ts-ignore
+                task: "oral_exam_followup",
+                systemPrompt,
+                userPrompt: isLastTurn
+                    ? "Concludi l'esame con feedback finale diretto"
+                    : "Genera la prossima domanda basandoti sulla risposta dello studente",
+                temperature: 0.8,
+                responseMode: "text",
+            });
+
+            // Add AI response
+            session.messages.push({ role: "instructor", content: aiResponse || "Grazie per la risposta. Proseguiamo." });
+            session.currentTurn++;
+
+            if (isLastTurn) {
+                session.status = "completed";
+            }
+
+            res.json({
+                message: aiResponse,
+                currentTurn: session.currentTurn,
+                isCompleted: session.status === "completed",
+            });
+        } catch (error: any) {
+            console.error("[ORAL-EXAM] Message error:", error);
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    // ==========================================================================
+    // END SESSION & GET FEEDBACK
+    // ==========================================================================
+
+    app.post("/api/oral-exam/:sessionId/end", isAuthenticated, async (req, res) => {
+        try {
+            const { sessionId } = req.params;
+            const userId = getUserId(req);
+
+            const session = sessions.get(sessionId);
+            if (!session || session.userId !== userId) {
+                return res.status(404).json({ error: "Sessione non trovata" });
+            }
+
+            // Evaluate all user responses
+            const evaluations: EvaluationCriteria[] = [];
+            for (let i = 1; i < session.messages.length; i += 2) {
+                if (session.messages[i]?.role === "user") {
+                    const question = session.messages[i - 1]?.content || "";
+                    const answer = session.messages[i].content;
+                    evaluations.push(evaluateResponse(question, answer, session.topics));
+                }
+            }
+
+            // Calculate REALISTIC score
+            const finalScore = calculateRealisticScore(evaluations);
+
+            // Generate detailed feedback
+            const avgEval = evaluations.reduce(
+                (acc, e) => ({
+                    completeness: acc.completeness + e.completeness,
+                    accuracy: acc.accuracy + e.accuracy,
+                    clarity: acc.clarity + e.clarity,
+                    depth: acc.depth + e.depth,
+                }),
+                { completeness: 0, accuracy: 0, clarity: 0, depth: 0 }
+            );
+
+            Object.keys(avgEval).forEach((key) => {
+                avgEval[key as keyof typeof avgEval] /= evaluations.length;
+            });
+
+            const strengths: string[] = [];
+            const weaknesses: string[] = [];
+
+            if (avgEval.completeness >= 7) strengths.push("Risposte complete e articolate");
+            else weaknesses.push("Sviluppare risposte più complete");
+
+            if (avgEval.accuracy >= 7) strengths.push("Contenuti corretti e pertinenti");
+            else weaknesses.push("Rivedere accuratezza dei concetti");
+
+            if (avgEval.clarity >= 7) strengths.push("Esposizione chiara e organizzata");
+            else weaknesses.push("Migliorare chiarezza espositiva");
+
+            if (avgEval.depth >= 7) strengths.push("Buon livello di approfondimento");
+            else weaknesses.push("Approfondire maggiormente gli argomenti");
+
+            const feedback = {
+                score: finalScore,
+                overallComment:
+                    finalScore >= 27
+                        ? "Ottima preparazione. Hai dimostrato padronanza degli argomenti."
+                        : finalScore >= 24
+                            ? "Buona preparazione. Alcuni aspetti possono essere migliorati."
+                            : finalScore >= 21
+                                ? "Preparazione discreta. Necessario maggiore studio su alcuni temi."
+                                : "Preparazione insufficiente. Rivedere approfonditamente gli argomenti.",
+                strengths,
+                weaknesses,
+            };
+
+            session.status = "completed";
+
+            res.json({ feedback, score: finalScore });
+        } catch (error: any) {
+            console.error("[ORAL-EXAM] End error:", error);
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    // ==========================================================================
+    // GOOGLE TTS ENDPOINT (Italian Native Voice)
+    // ==========================================================================
+
+    app.post("/api/oral-exam/tts", async (req, res) => {
+        try {
+            if (!ttsClient) {
+                return res.status(503).json({ error: "Google TTS non configurato" });
+            }
+
+            const { text, persona, speed = 1.0 } = req.body;
+
+            if (!text) {
+                return res.status(400).json({ error: "Text required" });
+            }
+
+            const voiceConfig = ITALIAN_VOICES[persona as keyof typeof ITALIAN_VOICES] || ITALIAN_VOICES.rigorous;
+
+            const [response] = await ttsClient.synthesizeSpeech({
+                input: { text },
+                voice: {
+                    languageCode: "it-IT",
+                    name: voiceConfig.voiceName,
+                },
+                audioConfig: {
+                    audioEncoding: "MP3",
+                    speakingRate: Math.max(0.25, Math.min(4.0, speed)), // Clamp between 0.25 and 4.0
+                    pitch: 0,
+                    volumeGainDb: 0,
+                },
+            });
+
+            if (!response.audioContent) {
+                throw new Error("No audio generated");
+            }
+
+            res.set({
+                "Content-Type": "audio/mpeg",
+                "Content-Length": response.audioContent.length,
+            });
+
+            res.send(response.audioContent);
+        } catch (error: any) {
+            console.error("[GOOGLE-TTS] Error:", error);
+            res.status(500).json({ error: "TTS generation failed", details: error.message });
+        }
+    });
+
+    // ==========================================================================
+    // WHISPER TRANSCRIPTION ENDPOINT
+    // ==========================================================================
+
+    app.post(
+        "/api/oral-exam/transcribe",
+        isAuthenticated,
+        audioUpload.single("audio"),
+        async (req: any, res) => {
+            try {
+                if (!req.file) {
+                    return res.status(400).json({ error: "No audio file provided" });
+                }
+
+                console.log(`[WHISPER] Transcribing audio: ${req.file.size} bytes`);
+
+                // Call OpenAI Whisper API
+                const formData = new FormData();
+                const audioBlob = new Blob([req.file.buffer], { type: req.file.mimetype });
+                formData.append("file", audioBlob, "audio.webm");
+                formData.append("model", "whisper-1");
+                formData.append("language", "it");
+                formData.append("response_format", "verbose_json");
+                formData.append("temperature", "0");
+
+                const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY;
+                if (!apiKey) {
+                    throw new Error("OpenAI API key not configured");
+                }
+
+                const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${apiKey}`,
+                    },
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(`Whisper API error: ${error}`);
+                }
+
+                const result = await response.json();
+
+                console.log(`[WHISPER] Transcription: "${result.text}"`);
+
+                res.json({
+                    text: result.text,
+                    language: result.language,
+                    duration: result.duration,
+                    segments: result.segments,
+                });
+            } catch (error: any) {
+                console.error("[WHISPER] Transcription error:", error);
+                res.status(500).json({ error: "Transcription failed", details: error.message });
+            }
+        }
+    );
+
+    // ==========================================================================
+    // PDF UPLOAD ENDPOINT
+    // ==========================================================================
+
+    app.post(
+        "/api/oral-exam/upload-pdf",
+        isAuthenticated,
+        pdfUpload.single("file"),
+        async (req: any, res) => {
+            try {
+                if (!req.file) {
+                    return res.status(400).json({ error: "No file uploaded" });
+                }
+
+                const result = await extractTextFromPDFRobust(req.file.buffer);
+
+                res.json({
+                    text: result.text,
+                    pages: result.pageCount,
+                    method: result.method,
+                });
+            } catch (error: any) {
+                console.error("[PDF-UPLOAD] Error:", error);
+                res.status(500).json({ error: "PDF processing failed" });
+            }
+        }
+    );
+
+    console.log("[ORAL-EXAM] Routes registered successfully");
+}

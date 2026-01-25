@@ -624,10 +624,13 @@ export default function OralExamPage() {
                     duration: 3000,
                 });
 
-                // In fluid mode, auto-send after visual confirmation
+                // In fluid mode, auto-send after 1.5s (user can cancel)
                 if (fluidMode && transcribedText.length > 20) {
-                    // Start countdown for auto-send
-                    setCountdown(3); // 3 seconds to cancel
+                    setTimeout(() => {
+                        if (userInput || transcribedText) {
+                            sendMessage();
+                        }
+                    }, 1500);
                 }
             } else {
                 toast({
@@ -1049,9 +1052,8 @@ export default function OralExamPage() {
                             <Button
                                 variant={isRecording ? "destructive" : "secondary"}
                                 size="lg"
-                                className={`h-14 w-14 rounded-full shadow-xl transition-all ${
-                                    isRecording ? 'animate-pulse ring-4 ring-red-500/30' : ''
-                                } ${transcriptionInProgress ? 'opacity-50' : ''}`}
+                                className={`h-14 w-14 rounded-full shadow-xl transition-all ${isRecording ? 'animate-pulse ring-4 ring-red-500/30' : ''
+                                    } ${transcriptionInProgress ? 'opacity-50' : ''}`}
                                 onClick={toggleListening}
                                 disabled={isLoading || transcriptionInProgress || session.status === 'completed'}
                             >
@@ -1092,18 +1094,16 @@ export default function OralExamPage() {
                         </div>
 
                         <div className="flex justify-center items-center gap-4 text-xs text-white/40">
-                            <span className={`flex items-center gap-1.5 ${
-                                isRecording ? 'text-red-400 font-medium' :
+                            <span className={`flex items-center gap-1.5 ${isRecording ? 'text-red-400 font-medium' :
                                 transcriptionInProgress ? 'text-blue-400 font-medium' : ''
-                            }`}>
-                                <div className={`w-2 h-2 rounded-full ${
-                                    isRecording ? 'bg-red-500 animate-ping' :
+                                }`}>
+                                <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-500 animate-ping' :
                                     transcriptionInProgress ? 'bg-blue-500 animate-pulse' :
-                                    'bg-white/20'
-                                }`} />
+                                        'bg-white/20'
+                                    }`} />
                                 {transcriptionInProgress ? 'Trascrizione Whisper...' :
-                                 isRecording ? 'Registrazione Attiva (Parla liberamente)' :
-                                 'Pronto per Registrare'}
+                                    isRecording ? 'Registrazione Attiva (Parla liberamente)' :
+                                        'Pronto per Registrare'}
                             </span>
                             <span className="flex items-center gap-1.5">
                                 <Switch
@@ -1117,19 +1117,24 @@ export default function OralExamPage() {
                     </div>
                 </div>
 
-                {/* COUNTDOWN OVERLAY FOR FLUID MODE */}
                 {countdown !== null && (
                     <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
                         <div className="bg-white/10 p-8 rounded-3xl border border-white/20 text-center shadow-2xl backdrop-blur-md max-w-sm w-full mx-4">
                             <div className="text-5xl font-bold text-white mb-2 font-mono">
                                 {countdown}
                             </div>
-                            <p className="text-white/80 text-lg mb-6">Invio risposta automatico...</p>
+                            <p className="text-white/80 text-lg mb-6">
+                                Invio automatico della risposta...
+                            </p>
 
                             <div className="flex flex-col gap-3">
                                 <Button
                                     size="lg"
-                                    onClick={handleResumeSpeaking}
+                                    onClick={() => {
+                                        setCountdown(null);
+                                        if (countdownRef.current) clearTimeout(countdownRef.current);
+                                        toggleListening(); // Riprendi a parlare
+                                    }}
                                     className="w-full bg-primary hover:bg-primary/90 text-white font-medium"
                                 >
                                     <Mic className="h-5 w-5 mr-2" />

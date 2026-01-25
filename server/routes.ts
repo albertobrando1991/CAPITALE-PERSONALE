@@ -103,6 +103,7 @@ import { registerPodcastAdminRoutes } from './routes-podcast-admin';
 import { registerSubscriptionRoutes } from './routes-subscription';
 import { registerAdminRoutes } from './routes-admin';
 import { registerStorageRoutes } from './routes-storage';
+import { registerOralExamRoutes } from './routes-oral-exam';
 
 export async function registerRoutes(
   httpServer: Server,
@@ -114,6 +115,7 @@ export async function registerRoutes(
   console.log("Registering routes...");
 
   // Registra routes
+  registerOralExamRoutes(app);
   // app.use('/api/fase3', fase3Routes); // Moved to index.ts
   registerSQ3RRoutes(app);
   registerLibreriaRoutes(app);
