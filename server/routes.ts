@@ -1309,7 +1309,7 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
 
 
       // Filter valid flashcards
-      const cleaned = collected.filter(f => f.fronte && f.retro);
+
 
       // --- END LOGIC ---
 
@@ -1381,9 +1381,14 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
 
     } catch (error: any) {
       console.error("Error generating flashcards:", error);
-      res.status(500).json({
+      const message = (error as any)?.message || "Errore sconosciuto";
+      const looksLikeMissingKey =
+        /api key not configured|api key|key not configured/i.test(message);
+
+      res.status(looksLikeMissingKey ? 503 : 500).json({
         error: "Errore nella generazione flashcards",
-          ?"Funzioni AI non configurate su Vercel (mancano le API key)."
+        details: looksLikeMissingKey
+          ? "Funzioni AI non configurate su Vercel (mancano le API key)."
           : message,
       });
     }
