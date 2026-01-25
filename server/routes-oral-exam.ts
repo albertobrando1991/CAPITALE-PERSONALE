@@ -3,7 +3,7 @@ import { TextToSpeechClient } from "@google-cloud/text-to-speech";
 import { z } from "zod";
 import multer from "multer";
 import { isAuthenticated } from "./replitAuth";
-import { generateWithFallback } from "./services/ai"; // Import generateSpeech removed as unused
+import { generateWithFallback } from "./services/ai";
 import { extractTextFromPDFRobust } from "./services/pdf-extraction";
 
 // ============================================================================
@@ -13,7 +13,7 @@ import { extractTextFromPDFRobust } from "./services/pdf-extraction";
 const ITALIAN_VOICES = {
     rigorous: {
         name: "Prof. Bianchi",
-        voiceName: "it-IT-Neural2-C", // Male voice (Deep) -> Changed to C for authority
+        voiceName: "it-IT-Neural2-C", // Male voice (Deep)
         description: "Professore rigoroso e preciso",
     },
     empathetic: {
@@ -40,7 +40,7 @@ interface OralExamSession {
     context: string;
     status: "active" | "completed";
     createdAt: Date;
-    evaluations: EvaluationCriteria[]; // Store detailed AI evaluations
+    evaluations: EvaluationCriteria[];
 }
 
 const sessions = new Map<string, OralExamSession>();
@@ -54,7 +54,7 @@ interface EvaluationCriteria {
     accuracy: number; // 0-10
     clarity: number; // 0-10
     depth: number; // 0-10
-    comment: string; // Brief internal critique
+    comment: string;
 }
 
 async function evaluateResponseWithAI(
@@ -91,7 +91,7 @@ Rispondi SOLO con un JSON valido nel seguente formato:
             task: "oral_exam_evaluate",
             systemPrompt,
             userPrompt: "Valuta la risposta dello studente.",
-            temperature: 0.1, // Deterministic
+            temperature: 0.1,
             responseMode: "json",
             jsonRoot: "object"
         });
@@ -106,7 +106,6 @@ Rispondi SOLO con un JSON valido nel seguente formato:
         };
     } catch (error) {
         console.error("[ORAL-EXAM] AI Evaluation failed, using fallback:", error);
-        // Fallback to basic length-based heuristic if AI fails
         const length = userAnswer.length;
         const score = Math.min(10, Math.floor(length / 20));
         return {
@@ -133,11 +132,6 @@ function calculateFinalScore(evaluations: EvaluationCriteria[]): number {
     // Weighted average: Accuracy is king
     const rawScore0to10 = (accuracy * 0.45) + (completeness * 0.3) + (clarity * 0.15) + (depth * 0.1);
 
-    // Map 0-10 to 18-30 scale
-    // < 5.0 -> Fail (<18)
-    // 5.0 -> 18
-    // 10.0 -> 30
-    // Linear interpolation for passing scores
     let finalScore;
     if (rawScore0to10 < 5) {
         finalScore = 17; // Insufficient
@@ -152,6 +146,15 @@ function calculateFinalScore(evaluations: EvaluationCriteria[]): number {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+function cleanAIResponse(text: string): string {
+    if (!text) return "";
+    // Remove prefixes like "DOCENTE:", "Prof. Bianchi:", "RISPOSTA:", etc.
+    return text
+        .replace(/^(DOCENTE|PROFESSORE|PROF\.|INTERVISTATORE|TUTOR|BIANCHI|VERDI|MODERATORE)(\s*:|\s+-|\s+)/i, '')
+        .replace(/^["']|["']$/g, '')
+        .trim();
+}
 
 function getUserId(req: Request): string {
     const user = req.user as any;
@@ -210,7 +213,6 @@ export function registerOralExamRoutes(app: Express) {
 
             const voice = ITALIAN_VOICES[data.persona];
 
-            // Generate Context-Aware First Question
             const systemPrompt = `Sei ${voice.name}, ${voice.description}.
 Stai esaminando uno studente universitario.
 
@@ -221,17 +223,23 @@ Materiale Extra: ${data.context ? data.context.substring(0, 500) : "Nessuno"}
 
 OBIETTIVO:
 Inizia l'esame con una domanda specifica e pertinente su uno degli argomenti.
-- Sii naturale, non robotico.
-- NON salutare o presentarti ("Buongiorno, iniziamo..."). Vai DRITTO ALLA DOMANDA.
-- Usa il "Lei" o il "Tu" in base al tuo personaggio (${data.persona === 'rigorous' ? 'Lei formale' : 'Tu informale'}).
-- Domanda aperta ma focalizzata concettualmente.`;
 
-            const firstQuestion = await generateWithFallback({
+REGOLE DI TONO (CRITICHE):
+1. **NON iniziare MAI la frase con "DOCENTE:", "PROFESSORE:" o il tuo nome.**
+2. Parla DIRETTAMENTE allo studente.
+3. Usa un tono parlato naturale, con pause (virgole) e intonazione adatta.
+4. Sii colloquiale ma professionale. Evita "Buongiorno" o saluti standard. Vai DRITTO ALLA DOMANDA.
+5. Usa il "Lei" o il "Tu" in base al tuo personaggio (${data.persona === 'rigorous' ? 'Lei formale' : 'Tu informale'}).
+6. Domanda aperta ma focalizzata concettualmente.`;
+
+            const rawFirstQuestion = await generateWithFallback({
                 task: "oral_exam_question",
                 systemPrompt,
                 userPrompt: "Fai la prima domanda allo studente.",
                 temperature: 0.8,
             });
+
+            const firstQuestion = cleanAIResponse(rawFirstQuestion); // Apply cleaning
 
             const session: OralExamSession = {
                 id: sessionId,
@@ -285,14 +293,14 @@ Inizia l'esame con una domanda specifica e pertinente su uno degli argomenti.
             // 1. Store User Answer
             session.messages.push({ role: "user", content });
 
-            // 2. AI Evaluation of the answer
+            // 2. AI Evaluation
             const lastQuestion = session.messages[session.messages.length - 2]?.content || "";
             const evaluation = await evaluateResponseWithAI(lastQuestion, content, session.topics.join(", "));
             session.evaluations.push(evaluation);
 
             console.log(`[ORAL-EXAM] Eval Turn ${session.currentTurn}:`, evaluation);
 
-            // 3. Generate Next Question or Conclusion
+            // 3. Generate Next Question
             const isLastTurn = session.currentTurn >= session.maxTurns;
             const voice = ITALIAN_VOICES[session.persona];
 
@@ -313,14 +321,19 @@ ${isLastTurn
 - Se l'accuratezza è BASSA (<6): Incalza lo studente sullo stesso punto o chiedi chiarimenti. Sii severo.
 - Se l'accuratezza è ALTA (>8): Passa a un altro argomento o fai una domanda più difficile per testare l'eccellenza.
 - Stile: Naturale, fluido, incalzante. Evita ripetizioni ("Bene", "Ok").
-- RISPONDI DIRETTAMENTE CON LA PROSSIMA DOMANDA.`}`;
+- REGOLE CRITICHE: 
+  1. **NON scrivere "DOCENTE:" all'inizio.**
+  2. Parla come una persona reale, non un robot.
+  3. RISPONDI DIRETTAMENTE CON LA PROSSIMA DOMANDA.`}`;
 
-            const aiResponse = await generateWithFallback({
+            const rawAiResponse = await generateWithFallback({
                 task: "oral_exam_question",
                 systemPrompt,
                 userPrompt: isLastTurn ? "Concludi esame." : "Fai la prossima domanda.",
                 temperature: 0.7,
             });
+
+            const aiResponse = cleanAIResponse(rawAiResponse); // Apply cleaning
 
             session.messages.push({ role: "instructor", content: aiResponse });
             session.currentTurn++;
@@ -333,7 +346,6 @@ ${isLastTurn
                 message: aiResponse,
                 currentTurn: session.currentTurn,
                 isCompleted: session.status === "completed",
-                // Debug info can be removed in prod
                 debugEval: evaluation
             });
 
@@ -357,10 +369,8 @@ ${isLastTurn
                 return res.status(404).json({ error: "Sessione non trovata" });
             }
 
-            // Calculate Final Score
             const finalScore = calculateFinalScore(session.evaluations);
 
-            // Generate Qualitative Feedback
             const systemPrompt = `Sei il Presidente della commissione d'esame.
 Analizza l'andamento dell'esame orale e scrivi un report finale per lo studente.
 
@@ -369,9 +379,9 @@ VOTO CALCOLATO: ${finalScore}/30
 VALUTAZIONI PARZIALI: ${JSON.stringify(session.evaluations)}
 
 CREA UN JSON CON:
-- overallComment: Commento discorsivo generale (non menzionare numeri precisi, parla della preparazione).
-- strengths: Array di 2-3 punti di forza emersi.
-- weaknesses: Array di 2-3 lacune o aspetti da migliorare.
+- overallComment: Commento discorsivo generale.
+- strengths: Array di 2-3 punti di forza.
+- weaknesses: Array di 2-3 lacune.
 
 Stile: Professionale, accademico, costruttivo.`;
 
@@ -409,46 +419,33 @@ Stile: Professionale, accademico, costruttivo.`;
 
     try {
         console.log("[GOOGLE-TTS] Checking credentials...");
-        console.log("[GOOGLE-TTS] GOOGLE_APPLICATION_CREDENTIALS:", process.env.GOOGLE_APPLICATION_CREDENTIALS);
-        console.log("[GOOGLE-TTS] GOOGLE_TTS_CREDENTIALS length:", process.env.GOOGLE_TTS_CREDENTIALS ? process.env.GOOGLE_TTS_CREDENTIALS.length : "undefined");
-
-        // Method 1: Using credentials file (development)
         if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
             ttsClient = new TextToSpeechClient({
                 keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
             });
             console.log("[GOOGLE-TTS] Initialized with credentials file");
         }
-        // Method 2: Using inline JSON (production - Vercel/Railway)
         else if (process.env.GOOGLE_TTS_CREDENTIALS) {
             let credentialsString = process.env.GOOGLE_TTS_CREDENTIALS.trim();
-            // Remove surrounding single or double quotes if present (common copy-paste error)
             if (credentialsString.startsWith("'") && credentialsString.endsWith("'")) {
                 credentialsString = credentialsString.slice(1, -1);
             } else if (credentialsString.startsWith('"') && credentialsString.endsWith('"')) {
-                // Check if it's not just a JSON valid quote start (JSON starts with {)
-                // But usually env vars shouldn't be double quoted unless shell requires it.
-                // If the first char is " and last is ", AND the **second** char is NOT { (escaped json), it might be a shell quote.
-                // However, safe JSON usually starts with "{" if it is a stringified JSON object.
-                // Let's rely on JSON.parse failing if we don't strip.
-                // Better approach: if it doesn't start with { or [, try stripping quotes.
                 if (!credentialsString.startsWith('{') && !credentialsString.startsWith('[')) {
                     credentialsString = credentialsString.slice(1, -1);
                 }
             }
-
             const credentials = JSON.parse(credentialsString);
             ttsClient = new TextToSpeechClient({ credentials });
             console.log("[GOOGLE-TTS] Initialized with inline credentials");
         } else {
-            console.warn("[GOOGLE-TTS] WARNING: Credentials not configured - TTS features will be disabled");
+            console.warn("[GOOGLE-TTS] WARNING: Credentials not configured");
         }
     } catch (error: any) {
         console.error("[GOOGLE-TTS] Initialization failed:", error);
     }
 
     // ==========================================================================
-    // GOOGLE TTS ENDPOINT (Italian Native Voice)
+    // GOOGLE TTS ENDPOINT
     // ==========================================================================
 
     app.post("/api/oral-exam/tts", async (req, res) => {
@@ -458,10 +455,7 @@ Stile: Professionale, accademico, costruttivo.`;
             }
 
             const { text, persona, speed = 1.0 } = req.body;
-
-            if (!text) {
-                return res.status(400).json({ error: "Text required" });
-            }
+            if (!text) return res.status(400).json({ error: "Text required" });
 
             const voiceConfig = ITALIAN_VOICES[persona as keyof typeof ITALIAN_VOICES] || ITALIAN_VOICES.rigorous;
 
@@ -473,23 +467,18 @@ Stile: Professionale, accademico, costruttivo.`;
                 },
                 audioConfig: {
                     audioEncoding: "MP3",
-                    // Google TTS ranges 0.25 to 4.0.
-                    // 1.0 is default. slightly slower might be better for exam.
                     speakingRate: Math.max(0.25, Math.min(4.0, speed)),
                     pitch: 0,
                     volumeGainDb: 0,
                 },
             });
 
-            if (!response.audioContent) {
-                throw new Error("No audio generated");
-            }
+            if (!response.audioContent) throw new Error("No audio generated");
 
             res.set({
                 "Content-Type": "audio/mpeg",
                 "Content-Length": response.audioContent.length,
             });
-
             res.send(response.audioContent);
         } catch (error: any) {
             console.error("[GOOGLE-TTS] Error:", error);
@@ -498,82 +487,51 @@ Stile: Professionale, accademico, costruttivo.`;
     });
 
     // ==========================================================================
-    // WHISPER TRANSCRIPTION (Existing)
+    // WHISPER TRANSCRIPTION
     // ==========================================================================
 
-    app.post(
-        "/api/oral-exam/transcribe",
-        isAuthenticated,
-        audioUpload.single("audio"),
-        async (req: any, res) => {
-            try {
-                if (!req.file) {
-                    return res.status(400).json({ error: "No audio file provided" });
-                }
+    app.post("/api/oral-exam/transcribe", isAuthenticated, audioUpload.single("audio"), async (req: any, res) => {
+        try {
+            if (!req.file) return res.status(400).json({ error: "No audio file provided" });
 
-                console.log(`[WHISPER] Transcribing audio: ${req.file.size} bytes`);
+            const formData = new FormData();
+            const audioBlob = new Blob([req.file.buffer], { type: req.file.mimetype });
+            formData.append("file", audioBlob, "audio.webm");
+            formData.append("model", "whisper-1");
+            formData.append("language", "it");
+            formData.append("response_format", "verbose_json");
 
-                const formData = new FormData();
-                const audioBlob = new Blob([req.file.buffer], { type: req.file.mimetype });
-                formData.append("file", audioBlob, "audio.webm");
-                formData.append("model", "whisper-1");
-                formData.append("language", "it");
-                formData.append("response_format", "verbose_json");
-                formData.append("temperature", "0");
+            const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY;
+            const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${apiKey}` },
+                body: formData,
+            });
 
-                const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY;
-                if (!apiKey) throw new Error("OpenAI API key not configured");
+            if (!response.ok) throw new Error(await response.text());
+            const result = await response.json();
 
-                const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${apiKey}` },
-                    body: formData,
-                });
-
-                if (!response.ok) {
-                    const error = await response.text();
-                    throw new Error(`Whisper API error: ${error}`);
-                }
-
-                const result = await response.json();
-                console.log(`[WHISPER] Transcription: "${result.text}"`);
-
-                res.json({
-                    text: result.text,
-                    language: result.language,
-                });
-            } catch (error: any) {
-                console.error("[WHISPER] Transcription error:", error);
-                res.status(500).json({ error: "Transcription failed", details: error.message });
-            }
+            res.json({ text: result.text, language: result.language });
+        } catch (error: any) {
+            console.error("[WHISPER] Transcription error:", error);
+            res.status(500).json({ error: "Transcription failed" });
         }
-    );
+    });
 
     // ==========================================================================
-    // PDF UPLOAD (Existing)
+    // PDF UPLOAD
     // ==========================================================================
 
-    app.post(
-        "/api/oral-exam/upload-pdf",
-        isAuthenticated,
-        pdfUpload.single("file"),
-        async (req: any, res) => {
-            try {
-                if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-                const result = await extractTextFromPDFRobust(req.file.buffer);
-
-                res.json({
-                    text: result.text,
-                    pages: result.pageCount,
-                    method: result.method,
-                });
-            } catch (error: any) {
-                console.error("[PDF-UPLOAD] Error:", error);
-                res.status(500).json({ error: "PDF processing failed" });
-            }
+    app.post("/api/oral-exam/upload-pdf", isAuthenticated, pdfUpload.single("file"), async (req: any, res) => {
+        try {
+            if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+            const result = await extractTextFromPDFRobust(req.file.buffer);
+            res.json({ text: result.text, pages: result.pageCount, method: result.method });
+        } catch (error: any) {
+            console.error("[PDF-UPLOAD] Error:", error);
+            res.status(500).json({ error: "PDF processing failed" });
         }
-    );
+    });
 
-    console.log("[ORAL-EXAM] Routes registered successfully (OpenAI Powered)");
+    console.log("[ORAL-EXAM] Routes registered successfully (Realism v2.2)");
 }
