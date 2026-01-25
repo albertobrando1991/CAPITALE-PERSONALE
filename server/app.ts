@@ -10,7 +10,7 @@ import { registerRoutes } from "./routes";
 import mnemotecnicheRoutes from './routes-mnemotecniche';
 import benessereRoutes from './routes-benessere';
 import fase3Routes from './routes-fase3';
-import oralExamRoutes from './routes-oral-exam';
+
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { isAdmin } from './utils/auth-helpers';
@@ -246,9 +246,7 @@ export async function initializeApp() {
   console.log('Mounting /api/fase3 routes...');
   app.use('/api/fase3', fase3Routes);
 
-  // Register Oral Exam Routes (Premium Feature)
-  console.log('Mounting /api/oral-exam routes...');
-  app.use('/api/oral-exam', oralExamRoutes);
+
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
