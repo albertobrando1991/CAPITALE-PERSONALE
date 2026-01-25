@@ -1307,571 +1307,322 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
           return arr.findIndex((x) => normalizeForMatch(x.fronte) === key) === i;
         });
 
-      const evidenceVerified: any[] = preEvidence.filter((f) => {
-        const ev = normalizeForMatch(f.evidenza);
-        if (f.chunkNormalized && f.chunkNormalized.includes(ev)) return true;
-        if (normalizedText.includes(ev)) return true;
 
-        const evTokens = ev.split(" ").filter((t) => t.length >= 3);
-        if (evTokens.length < 6) return false;
-        aiErrors.push(e?.message);
-      }
-        }
-      }
+      // Filter valid flashcards
+      const cleaned = collected.filter(f => f.fronte && f.retro);
 
       // --- END LOGIC ---
 
       // Clean and Filter (simplified version of previous Logic)
       // Since we trust the Hive/AI mostly, checking evidence is good but complex to copy-paste blindly.
       // I will simplify the "cleaning" phase to just use what we have, assuming generateWithFallback worked.
-      
+
       const cleaned = collected.filter(f => f.fronte && f.retro);
 
-  if (cleaned.length === 0 && hasAnyAI) {
-    return res.status(200).json({ count: 0, flashcards: [], warning: "AI non ha prodotto risultati validi." });
-  }
+      if (cleaned.length === 0 && hasAnyAI) {
+        return res.status(200).json({ count: 0, flashcards: [], warning: "AI non ha prodotto risultati validi." });
+      }
 
-  // 3. SAVE TO CACHE (THE HIVE MEMORY)
-  if (cleaned.length > 0) {
-    // Strip internal metadata before caching
-    const cachePayloadJson = cleaned.map(f => ({
-      fronte: f.fronte,
-      retro: f.retro,
-      evidenza: f.evidenza,
-      tipo: f.tipo || "concetto"
-    }));
+      // 3. SAVE TO CACHE (THE HIVE MEMORY)
+      if (cleaned.length > 0) {
+        // Strip internal metadata before caching
+        const cachePayloadJson = cleaned.map(f => ({
+          fronte: f.fronte,
+          retro: f.retro,
+          evidenza: f.evidenza,
+          tipo: f.tipo || "concetto"
+        }));
 
-    await db.insert(flashcardCache).values({
-      contentHash,
-      topic: material.materia || "Generale",
-      flashcardsJson: cachePayloadJson,
-      sourceType: 'text',
-      generationCount: 1
-    }).execute();
-    console.log(`[FLASH-GEN-HIVE] Saved ${cleaned.length} cards to Hive Cache.`);
-  }
+        await db.insert(flashcardCache).values({
+          contentHash,
+          topic: material.materia || "Generale",
+          flashcardsJson: cachePayloadJson,
+          sourceType: 'text',
+          generationCount: 1
+        }).execute();
+        console.log(`[FLASH-GEN-HIVE] Saved ${cleaned.length} cards to Hive Cache.`);
+      }
 
-  // 4. SAVE FOR USER
-  const now = new Date();
-  const sm2Initial = initializeSM2();
-  await storage.deleteFlashcardsByMaterialId(userId, materialId);
+      // 4. SAVE FOR USER
+      const now = new Date();
+      const sm2Initial = initializeSM2();
+      await storage.deleteFlashcardsByMaterialId(userId, materialId);
 
-  const flashcardsToInsert = cleaned.map((f) => ({
-    userId,
-    concorsoId: material.concorsoId,
-    materialId,
-    materia: material.materia || "Generale",
-    fonte: material.nome,
-    fronte: f.fronte,
-    retro: f.retro + (f.evidenza ? `\n\nEvidenza: "${f.evidenza}"` : ""), // Append evidence to back for user visibility
-    evidenza: f.evidenza, // Store separately too if schema supports it, otherwise logic above appends it
-    tipo: "concetto",
-    easeFactor: sm2Initial.easeFactor,
-    intervalloGiorni: sm2Initial.intervalloGiorni,
-    numeroRipetizioni: sm2Initial.numeroRipetizioni,
-    prossimoRipasso: now,
-    prossimRevisione: now,
-  }));
-
-  const created = await storage.createFlashcards(flashcardsToInsert);
-
-  // Update material with new flashcard count using ACTUAL DB count
-  await storage.updateMaterialFlashcardStatus(materialId, created.length);
-  const newGenerationCount = (material.flashcardGenerationCount || 0) + 1;
-
-  res.json({
-    count: created.length,
-    flashcards: created,
-    generationCount: newGenerationCount,
-    regenerationsRemaining: 3 - newGenerationCount,
-    cached: false
-  });
-
-} catch (error: any) {
-  console.error("Error generating flashcards:", error);
-  res.status(500).json({
-    error: "Errore nella generazione flashcards",
-          ?"Funzioni AI non configurate su Vercel (mancano le API key)."
-      : message,
-  });
-}
-  });
-
-app.patch("/api/flashcards/:id", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const { id } = req.params;
-
-    // Accetta sia quality che livelloSRS per retrocompatibilità
-    // IMPORTANTE: gestire correttamente il caso in cui il valore sia 0
-    let quality: number | undefined;
-
-    if (req.body.quality !== undefined) {
-      quality = req.body.quality;
-    } else if (req.body.livelloSRS !== undefined) {
-      quality = req.body.livelloSRS;
-    }
-
-    console.log(`[PATCH FLASHCARD] id=${id}, body=${JSON.stringify(req.body)}, quality=${quality}`);
-
-    if (quality === undefined || typeof quality !== "number" || !Number.isInteger(quality)) {
-      console.error(`[PATCH FLASHCARD] Valore non valido per quality/livelloSRS: ${quality}`);
-      return res.status(400).json({ error: "livelloSRS o quality (numero intero) richiesto" });
-    }
-
-    // Valori accettati: 0 (Non Ricordo) o 3 (Facile)
-    if (quality !== 0 && quality !== 3) {
-      console.error(`[PATCH FLASHCARD] Valore non accettato per quality/livelloSRS: ${quality}`);
-      return res.status(400).json({ error: "livelloSRS/quality deve essere 0 (Non Ricordo) o 3 (Facile)" });
-    }
-
-    // Ottieni flashcard corrente
-    const flashcard = await storage.getFlashcard(id, userId);
-    if (!flashcard) {
-      return res.status(404).json({ error: "Flashcard non trovata" });
-    }
-
-    // Calcola nuovi valori con SM-2 (quality è già 0 o 3)
-    const sm2Result = calculateSM2(
-      quality,
-      flashcard.easeFactor || 2.5,
-      flashcard.intervalloGiorni || 0,
-      flashcard.numeroRipetizioni || 0
-    );
-
-    // Determina se è masterata (almeno 3 ripetizioni consecutive OPPURE se l'utente ha segnato "Facile" (quality=3))
-    // Se l'utente segna "Facile", consideriamola masterata per l'interfaccia utente
-    const masterate = quality === 3 || sm2Result.numeroRipetizioni >= 3;
-
-    // Aggiorna flashcard
-    const updated = await storage.updateFlashcard(id, userId, {
-      livelloSRS: quality,
-      masterate,
-      intervalloGiorni: sm2Result.intervalloGiorni,
-      numeroRipetizioni: sm2Result.numeroRipetizioni,
-      easeFactor: sm2Result.easeFactor,
-      ultimoRipasso: new Date(),
-      prossimoRipasso: sm2Result.prossimoRipasso,
-      prossimRevisione: sm2Result.prossimoRipasso, // Retrocompatibilità
-      tentativiTotali: (flashcard.tentativiTotali || 0) + 1,
-      tentativiCorretti: quality === 3
-        ? (flashcard.tentativiCorretti || 0) + 1
-        : (flashcard.tentativiCorretti || 0)
-    });
-
-    if (!updated) {
-      return res.status(404).json({ error: "Flashcard non trovata" });
-    }
-
-    // Ricalcola count masterate
-    if (updated.concorsoId) {
-      const allFlashcards = await storage.getFlashcards(userId, updated.concorsoId);
-      const flashcardMasterate = allFlashcards.filter(f => f.masterate).length;
-
-      await storage.upsertUserProgress({
+      const flashcardsToInsert = cleaned.map((f) => ({
         userId,
-        concorsoId: updated.concorsoId,
-        flashcardMasterate,
-        flashcardTotali: allFlashcards.length
-      });
-    }
-
-    res.json(updated);
-  } catch (error: any) {
-    console.error("Error updating flashcard:", error);
-    res.status(500).json({ error: "Errore aggiornamento flashcard", details: error.message });
-  }
-});
-
-app.delete("/api/flashcards/materia", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const { concorsoId, materia } = req.body;
-
-    if (!concorsoId || !materia) {
-      return res.status(400).json({ error: "concorsoId e materia richiesti" });
-    }
-
-    const count = await storage.deleteFlashcardsByMateria(userId, concorsoId, materia);
-
-    res.json({ success: true, count, message: `${count} flashcard eliminate` });
-  } catch (error: any) {
-    console.error("Error deleting flashcards by materia:", error);
-    res.status(500).json({ error: "Errore nell'eliminazione delle flashcard", details: error.message });
-  }
-});
-
-/**
- * POST /api/flashcards/reset
- * Resetta tutte le flashcard di un concorso (livelloSRS=0, masterate=false, tentativiTotali=0, tentativiCorretti=0)
- * Body: { concorsoId }
- */
-app.post("/api/flashcards/reset", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const { concorsoId } = req.body;
-
-    if (!concorsoId) {
-      return res.status(400).json({ error: "concorsoId richiesto" });
-    }
-
-    // Ottieni tutte le flashcard del concorso
-    const allFlashcards = await storage.getFlashcards(userId, concorsoId);
-
-    // Reset di tutte le flashcard (inclusi parametri SM-2)
-    const sm2Initial = initializeSM2();
-    const resetPromises = allFlashcards.map(flashcard =>
-      storage.updateFlashcard(flashcard.id, userId, {
-        livelloSRS: 0,
-        masterate: false,
-        tentativiTotali: 0,
-        tentativiCorretti: 0,
-        // Reset parametri SM-2
+        concorsoId: material.concorsoId,
+        materialId,
+        materia: material.materia || "Generale",
+        fonte: material.nome,
+        fronte: f.fronte,
+        retro: f.retro + (f.evidenza ? `\n\nEvidenza: "${f.evidenza}"` : ""), // Append evidence to back for user visibility
+        evidenza: f.evidenza, // Store separately too if schema supports it, otherwise logic above appends it
+        tipo: "concetto",
         easeFactor: sm2Initial.easeFactor,
         intervalloGiorni: sm2Initial.intervalloGiorni,
         numeroRipetizioni: sm2Initial.numeroRipetizioni,
-        ultimoRipasso: null,
-        prossimoRipasso: new Date(),
-        prossimRevisione: new Date(),
-      })
-    );
+        prossimoRipasso: now,
+        prossimRevisione: now,
+      }));
 
-    await Promise.all(resetPromises);
+      const created = await storage.createFlashcards(flashcardsToInsert);
 
-    // Aggiorna userProgress con i nuovi count (tutti a 0)
-    await storage.upsertUserProgress({
-      userId,
-      concorsoId,
-      flashcardMasterate: 0,
-      flashcardTotali: allFlashcards.length,
-    });
+      // Update material with new flashcard count using ACTUAL DB count
+      await storage.updateMaterialFlashcardStatus(materialId, created.length);
+      const newGenerationCount = (material.flashcardGenerationCount || 0) + 1;
 
-    res.json({
-      success: true,
-      message: "Flashcard resettate con successo",
-      count: allFlashcards.length
-    });
-  } catch (error: any) {
-    console.error("Error resetting flashcards:", error);
-    res.status(500).json({ error: "Errore nel reset delle flashcard", details: error.message });
-  }
-});
+      res.json({
+        count: created.length,
+        flashcards: created,
+        generationCount: newGenerationCount,
+        regenerationsRemaining: 3 - newGenerationCount,
+        cached: false
+      });
 
-// Endpoint per spiegazioni AI durante studio flashcard
-// NOTA: Questo endpoint sembra duplicato (vedi sopra riga 136).
-// Manteniamo quello sopra e rimuoviamo questo se necessario, ma per ora lo lascio commentato o rimuovo se identico.
-// Quello sopra era riga 136. Quello qui sotto era riga 1026.
-// Sono identici. Rimuovo il duplicato.
-
-// Endpoint per analizzare bando da URL (scarica PDF lato server)
-app.post("/api/analyze-bando-from-url", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    console.log("[BANDO-URL] === INIZIO ANALISI DA URL ===");
-
-    const { pdfUrl } = req.body;
-
-    if (!pdfUrl || typeof pdfUrl !== 'string') {
-      console.log("[BANDO-URL] ERRORE: URL mancante");
-      return res.status(400).json({ error: "URL del PDF mancante" });
-    }
-
-    console.log("[BANDO-URL] Scaricando PDF da:", pdfUrl);
-
-    // Scarica il PDF dall'URL
-    const pdfResponse = await fetch(pdfUrl);
-    if (!pdfResponse.ok) {
-      console.log("[BANDO-URL] ERRORE: Impossibile scaricare PDF:", pdfResponse.status, pdfResponse.statusText);
-      return res.status(400).json({
-        error: "Impossibile scaricare il PDF",
-        details: `${pdfResponse.status} ${pdfResponse.statusText}`
+    } catch (error: any) {
+      console.error("Error generating flashcards:", error);
+      res.status(500).json({
+        error: "Errore nella generazione flashcards",
+          ?"Funzioni AI non configurate su Vercel (mancano le API key)."
+          : message,
       });
     }
+  });
 
-    const pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
-    console.log("[BANDO-URL] PDF scaricato:", pdfBuffer.length, "bytes");
-
-    if (pdfBuffer.length === 0) {
-      console.log("[BANDO-URL] ERRORE: PDF vuoto");
-      return res.status(400).json({ error: "Il PDF scaricato è vuoto" });
-    }
-
-    // Estrai testo dal PDF
-    let fileContent: string;
+  app.patch("/api/flashcards/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      // Verifica che il buffer sia un PDF valido (inizia con %PDF)
-      const pdfHeader = pdfBuffer.slice(0, 5).toString('ascii');
-      console.log(`[BANDO-URL] PDF header check: "${pdfHeader}"`);
+      const userId = getUserId(req);
+      const { id } = req.params;
 
-      if (!pdfHeader.startsWith('%PDF')) {
-        console.log("[BANDO-URL] ERRORE: Il file non è un PDF valido");
-        return res.status(400).json({
-          error: "Il file scaricato non è un PDF valido",
-          details: `Header: ${pdfHeader}`
+      // Accetta sia quality che livelloSRS per retrocompatibilità
+      // IMPORTANTE: gestire correttamente il caso in cui il valore sia 0
+      let quality: number | undefined;
+
+      if (req.body.quality !== undefined) {
+        quality = req.body.quality;
+      } else if (req.body.livelloSRS !== undefined) {
+        quality = req.body.livelloSRS;
+      }
+
+      console.log(`[PATCH FLASHCARD] id=${id}, body=${JSON.stringify(req.body)}, quality=${quality}`);
+
+      if (quality === undefined || typeof quality !== "number" || !Number.isInteger(quality)) {
+        console.error(`[PATCH FLASHCARD] Valore non valido per quality/livelloSRS: ${quality}`);
+        return res.status(400).json({ error: "livelloSRS o quality (numero intero) richiesto" });
+      }
+
+      // Valori accettati: 0 (Non Ricordo) o 3 (Facile)
+      if (quality !== 0 && quality !== 3) {
+        console.error(`[PATCH FLASHCARD] Valore non accettato per quality/livelloSRS: ${quality}`);
+        return res.status(400).json({ error: "livelloSRS/quality deve essere 0 (Non Ricordo) o 3 (Facile)" });
+      }
+
+      // Ottieni flashcard corrente
+      const flashcard = await storage.getFlashcard(id, userId);
+      if (!flashcard) {
+        return res.status(404).json({ error: "Flashcard non trovata" });
+      }
+
+      // Calcola nuovi valori con SM-2 (quality è già 0 o 3)
+      const sm2Result = calculateSM2(
+        quality,
+        flashcard.easeFactor || 2.5,
+        flashcard.intervalloGiorni || 0,
+        flashcard.numeroRipetizioni || 0
+      );
+
+      // Determina se è masterata (almeno 3 ripetizioni consecutive OPPURE se l'utente ha segnato "Facile" (quality=3))
+      // Se l'utente segna "Facile", consideriamola masterata per l'interfaccia utente
+      const masterate = quality === 3 || sm2Result.numeroRipetizioni >= 3;
+
+      // Aggiorna flashcard
+      const updated = await storage.updateFlashcard(id, userId, {
+        livelloSRS: quality,
+        masterate,
+        intervalloGiorni: sm2Result.intervalloGiorni,
+        numeroRipetizioni: sm2Result.numeroRipetizioni,
+        easeFactor: sm2Result.easeFactor,
+        ultimoRipasso: new Date(),
+        prossimoRipasso: sm2Result.prossimoRipasso,
+        prossimRevisione: sm2Result.prossimoRipasso, // Retrocompatibilità
+        tentativiTotali: (flashcard.tentativiTotali || 0) + 1,
+        tentativiCorretti: quality === 3
+          ? (flashcard.tentativiCorretti || 0) + 1
+          : (flashcard.tentativiCorretti || 0)
+      });
+
+      if (!updated) {
+        return res.status(404).json({ error: "Flashcard non trovata" });
+      }
+
+      // Ricalcola count masterate
+      if (updated.concorsoId) {
+        const allFlashcards = await storage.getFlashcards(userId, updated.concorsoId);
+        const flashcardMasterate = allFlashcards.filter(f => f.masterate).length;
+
+        await storage.upsertUserProgress({
+          userId,
+          concorsoId: updated.concorsoId,
+          flashcardMasterate,
+          flashcardTotali: allFlashcards.length
         });
       }
 
-      fileContent = await extractTextFromPDF(pdfBuffer);
-      console.log(`[BANDO-URL] PDF estratto: ${fileContent.length} caratteri`);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating flashcard:", error);
+      res.status(500).json({ error: "Errore aggiornamento flashcard", details: error.message });
+    }
+  });
 
-      if (!fileContent || fileContent.trim().length < 100) {
-        console.log("[BANDO-URL] ERRORE: PDF vuoto o troppo corto, testo estratto:", fileContent?.substring(0, 200));
+  app.delete("/api/flashcards/materia", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { concorsoId, materia } = req.body;
+
+      if (!concorsoId || !materia) {
+        return res.status(400).json({ error: "concorsoId e materia richiesti" });
+      }
+
+      const count = await storage.deleteFlashcardsByMateria(userId, concorsoId, materia);
+
+      res.json({ success: true, count, message: `${count} flashcard eliminate` });
+    } catch (error: any) {
+      console.error("Error deleting flashcards by materia:", error);
+      res.status(500).json({ error: "Errore nell'eliminazione delle flashcard", details: error.message });
+    }
+  });
+
+  /**
+   * POST /api/flashcards/reset
+   * Resetta tutte le flashcard di un concorso (livelloSRS=0, masterate=false, tentativiTotali=0, tentativiCorretti=0)
+   * Body: { concorsoId }
+   */
+  app.post("/api/flashcards/reset", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { concorsoId } = req.body;
+
+      if (!concorsoId) {
+        return res.status(400).json({ error: "concorsoId richiesto" });
+      }
+
+      // Ottieni tutte le flashcard del concorso
+      const allFlashcards = await storage.getFlashcards(userId, concorsoId);
+
+      // Reset di tutte le flashcard (inclusi parametri SM-2)
+      const sm2Initial = initializeSM2();
+      const resetPromises = allFlashcards.map(flashcard =>
+        storage.updateFlashcard(flashcard.id, userId, {
+          livelloSRS: 0,
+          masterate: false,
+          tentativiTotali: 0,
+          tentativiCorretti: 0,
+          // Reset parametri SM-2
+          easeFactor: sm2Initial.easeFactor,
+          intervalloGiorni: sm2Initial.intervalloGiorni,
+          numeroRipetizioni: sm2Initial.numeroRipetizioni,
+          ultimoRipasso: null,
+          prossimoRipasso: new Date(),
+          prossimRevisione: new Date(),
+        })
+      );
+
+      await Promise.all(resetPromises);
+
+      // Aggiorna userProgress con i nuovi count (tutti a 0)
+      await storage.upsertUserProgress({
+        userId,
+        concorsoId,
+        flashcardMasterate: 0,
+        flashcardTotali: allFlashcards.length,
+      });
+
+      res.json({
+        success: true,
+        message: "Flashcard resettate con successo",
+        count: allFlashcards.length
+      });
+    } catch (error: any) {
+      console.error("Error resetting flashcards:", error);
+      res.status(500).json({ error: "Errore nel reset delle flashcard", details: error.message });
+    }
+  });
+
+  // Endpoint per spiegazioni AI durante studio flashcard
+  // NOTA: Questo endpoint sembra duplicato (vedi sopra riga 136).
+  // Manteniamo quello sopra e rimuoviamo questo se necessario, ma per ora lo lascio commentato o rimuovo se identico.
+  // Quello sopra era riga 136. Quello qui sotto era riga 1026.
+  // Sono identici. Rimuovo il duplicato.
+
+  // Endpoint per analizzare bando da URL (scarica PDF lato server)
+  app.post("/api/analyze-bando-from-url", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      console.log("[BANDO-URL] === INIZIO ANALISI DA URL ===");
+
+      const { pdfUrl } = req.body;
+
+      if (!pdfUrl || typeof pdfUrl !== 'string') {
+        console.log("[BANDO-URL] ERRORE: URL mancante");
+        return res.status(400).json({ error: "URL del PDF mancante" });
+      }
+
+      console.log("[BANDO-URL] Scaricando PDF da:", pdfUrl);
+
+      // Scarica il PDF dall'URL
+      const pdfResponse = await fetch(pdfUrl);
+      if (!pdfResponse.ok) {
+        console.log("[BANDO-URL] ERRORE: Impossibile scaricare PDF:", pdfResponse.status, pdfResponse.statusText);
         return res.status(400).json({
-          error: "Il PDF non contiene testo selezionabile. Assicurati che il PDF contenga testo (non sia scansionato).",
-          details: `Caratteri estratti: ${fileContent?.length || 0}`
+          error: "Impossibile scaricare il PDF",
+          details: `${pdfResponse.status} ${pdfResponse.statusText}`
         });
       }
-    } catch (pdfError: any) {
-      console.error("[BANDO-URL] ERRORE estrazione PDF:", pdfError);
-      console.error("[BANDO-URL] Stack:", pdfError.stack);
-      return res.status(400).json({
-        error: "Errore nell'estrazione del testo dal PDF",
-        details: pdfError.message || "Il PDF potrebbe essere protetto, corrotto o non contenere testo estraibile. Sono stati provati: pdf.js, pdf-parse e OCR."
-      });
-    }
 
-    // Da qui in poi, usa lo stesso codice dell'endpoint analyze-bando
-    const systemPrompt = `Sei un esperto analista di bandi di concorsi pubblici italiani. Estrai tutte le informazioni dal bando.
+      const pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
+      console.log("[BANDO-URL] PDF scaricato:", pdfBuffer.length, "bytes");
 
-Restituisci SOLO un oggetto JSON valido con questa struttura:
-{
-  "titoloEnte": "Nome completo dell'ente e titolo del concorso",
-  "tipoConcorso": "Tipo (per esami, per titoli ed esami, etc.)",
-  "scadenzaDomanda": "DD/MM/YYYY",
-  "dataPresuntaEsame": "DD/MM/YYYY o 'Da definire'",
-  "posti": numero_posti_totale,
-  "profili": [
-    {
-      "nome": "Nome profilo",
-      "posti": numero_posti,
-      "titoliStudio": ["Classi di laurea con codici (es. LM-63, L-14)"],
-      "altriRequisiti": []
-    }
-  ],
-  "requisiti": [{"titolo": "Requisito", "soddisfatto": null}],
-  "prove": {
-    "tipo": "Tipo prove",
-    "descrizione": "Descrizione",
-    "hasPreselettiva": true/false,
-    "hasBancaDati": true/false,
-    "bancaDatiInfo": "Info banca dati",
-    "penalitaErrori": "Valore penalità (es. '-0.25') o null",
-    "punteggioRispostaCorretta": "Punteggio risposta corretta o null",
-    "punteggioRispostaNonData": "Punteggio risposta non data o null"
-  },
-  "materie": [
-    {
-      "nome": "Nome materia",
-      "microArgomenti": ["Tutti gli argomenti citati nel bando"],
-      "peso": percentuale_o_null,
-      "numeroDomande": numero_domande_o_null
-    }
-  ],
-  "passaggiIscrizione": [
-    {"step": 1, "descrizione": "Registrazione sul portale INPA", "completato": false, "link": "https://www.inpa.gov.it/#bandi-avvisi"},
-    {"step": 2, "descrizione": "Compilazione domanda", "completato": false},
-    {"step": 3, "descrizione": "Pagamento tassa", "completato": false},
-    {"step": 4, "descrizione": "Allegare documentazione", "completato": false}
-  ]
-}`;
-
-    const contentToSend = fileContent.substring(0, 100000);
-    const userPrompt = `Analizza questo bando di concorso pubblico italiano ed estrai tutte le informazioni richieste:\n\n${contentToSend}`;
-    console.log(`[BANDO-URL] Invio ${contentToSend.length} caratteri a AI`);
-
-    let content: string | null = null;
-    try {
-      console.log("[BANDO-URL] Invio richiesta AI per analisi bando...");
-      content = await generateWithFallback({
-        task: "generic",
-        systemPrompt,
-        userPrompt,
-        responseMode: "json",
-        jsonRoot: "object",
-        temperature: 0.2,
-      });
-      console.log("[BANDO-URL] Risposta AI ricevuta");
-    } catch (err: any) {
-      console.error("[BANDO-URL] ERRORE generazione AI:", err.message);
-      throw err;
-    }
-
-    console.log("[BANDO-URL] Parsing risposta...");
-    if (!content) {
-      console.error("[BANDO-URL] ERRORE: Nessuna risposta dall'AI");
-      throw new Error("Nessuna risposta dall'AI. Verifica le chiavi API.");
-    }
-
-    let bandoData;
-    try {
-      bandoData = JSON.parse(content);
-      console.log("[BANDO-URL] JSON parsato correttamente");
-    } catch (parseError: any) {
-      console.error("[BANDO-URL] ERRORE parsing JSON:", parseError.message);
-      try {
-        if (content.trim().startsWith("{") && !content.trim().endsWith("}")) {
-          console.log("[BANDO-URL] Tentativo di fix JSON troncato...");
-          const fixedContent = content + "}";
-          bandoData = JSON.parse(fixedContent);
-          console.log("[BANDO-URL] JSON fixato e parsato!");
-        } else {
-          throw parseError;
-        }
-      } catch (retryError) {
-        throw new Error(`Errore nel parsing della risposta AI. Il formato non è JSON valido. Dettaglio: ${parseError.message}`);
+      if (pdfBuffer.length === 0) {
+        console.log("[BANDO-URL] ERRORE: PDF vuoto");
+        return res.status(400).json({ error: "Il PDF scaricato è vuoto" });
       }
-    }
 
-    // Aggiungi dati calcolati
-    if (!bandoData.prove) {
-      bandoData.prove = {};
-    }
-
-    const mesiPreparazione = 6;
-    const oreSettimanali = 15;
-    const oggi = new Date();
-    const dataEsame = new Date(oggi);
-    dataEsame.setMonth(dataEsame.getMonth() + mesiPreparazione);
-    const giorniTotali = Math.floor((dataEsame.getTime() - oggi.getTime()) / (1000 * 60 * 60 * 24));
-    const oreTotali = Math.floor(giorniTotali / 7) * oreSettimanali;
-
-    const fasi = [
-      { nome: "Fase 0: Intelligence & Setup", percentuale: 10 },
-      { nome: "Fase 1: Apprendimento Base (SQ3R)", percentuale: 40 },
-      { nome: "Fase 2: Consolidamento e Memorizzazione", percentuale: 30 },
-      { nome: "Fase 3: Simulazione ad Alta Fedeltà", percentuale: 20 }
-    ];
-
-    let giorniUsati = 0;
-    const calendarioGenerato = fasi.map((fase) => {
-      const giorniFase = Math.floor(giorniTotali * (fase.percentuale / 100));
-      const dataInizio = new Date(oggi);
-      dataInizio.setDate(dataInizio.getDate() + giorniUsati);
-      const dataFine = new Date(dataInizio);
-      dataFine.setDate(dataFine.getDate() + giorniFase - 1);
-      giorniUsati += giorniFase;
-
-      const formatDate = (d: Date) => {
-        const day = d.getDate().toString().padStart(2, '0');
-        const month = (d.getMonth() + 1).toString().padStart(2, '0');
-        const year = d.getFullYear();
-        return `${day}/${month}/${year}`;
-      };
-
-      return {
-        fase: fase.nome,
-        dataInizio: formatDate(dataInizio),
-        dataFine: formatDate(dataFine),
-        giorniDisponibili: giorniFase,
-        oreStimate: Math.floor(oreTotali * (fase.percentuale / 100))
-      };
-    });
-
-    bandoData.calendarioInverso = calendarioGenerato;
-    bandoData.oreTotaliDisponibili = oreTotali;
-    bandoData.giorniTapering = 7;
-    bandoData.mesiPreparazione = mesiPreparazione;
-    bandoData.oreSettimanali = oreSettimanali;
-    bandoData.dataInizioStudio = oggi.toISOString();
-
-    // Calcola pesi materie
-    if (bandoData.materie && Array.isArray(bandoData.materie)) {
-      const materieConDomande = bandoData.materie.filter((m: any) => m.numeroDomande && m.numeroDomande > 0);
-      const totaleDomande = materieConDomande.reduce((sum: number, m: any) => sum + (m.numeroDomande || 0), 0);
-
-      bandoData.materie = bandoData.materie.map((materia: any) => {
-        if (materia.numeroDomande && materia.numeroDomande > 0 && totaleDomande > 0) {
-          const pesoReale = Math.round((materia.numeroDomande / totaleDomande) * 100 * 10) / 10;
-          return { ...materia, peso: pesoReale };
-        } else if (!materia.peso || materia.peso === null) {
-          const pesoTeorico = Math.round((100 / bandoData.materie.length) * 10) / 10;
-          return { ...materia, peso: pesoTeorico };
-        }
-        return materia;
-      });
-    }
-
-    // Aggiungi link INPA allo step 1
-    if (bandoData.passaggiIscrizione && Array.isArray(bandoData.passaggiIscrizione)) {
-      bandoData.passaggiIscrizione = bandoData.passaggiIscrizione.map((passaggio: any) => {
-        if (passaggio.step === 1) {
-          return { ...passaggio, link: "https://www.inpa.gov.it/#bandi-avvisi" };
-        }
-        return passaggio;
-      });
-    }
-
-    console.log(`[BANDO-URL] === ANALISI COMPLETATA: ${bandoData.titoloEnte || 'N/A'} ===`);
-    res.json(bandoData);
-  } catch (error: any) {
-    console.error("[BANDO-URL] === ERRORE GENERALE ===");
-    console.error("[BANDO-URL] Messaggio:", error?.message);
-    res.status(500).json({
-      error: "Errore durante l'analisi del bando",
-      details: error.message || "Errore sconosciuto",
-      suggestion: "Verifica che il file PDF contenga testo selezionabile e riprova."
-    });
-  }
-});
-
-app.post("/api/analyze-bando", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
-  try {
-    console.log("[BANDO] === INIZIO ANALISI ===");
-
-    // 1. Verifica file
-    if (!req.file) {
-      console.log("[BANDO] ERRORE: Nessun file");
-      return res.status(400).json({ error: "Nessun file caricato" });
-    }
-    console.log(`[BANDO] File ricevuto: ${req.file.originalname} (${req.file.size} bytes, ${req.file.mimetype})`);
-
-    // 2. Estrai testo dal PDF
-    let fileContent: string;
-    if (req.file.mimetype === "application/pdf") {
-      console.log("[BANDO] Estrazione testo da PDF...");
+      // Estrai testo dal PDF
+      let fileContent: string;
       try {
-        // Leggi il file dal disco (multer usa diskStorage)
-        const filePath = join(uploadDir, req.file.filename);
-        console.log("[BANDO] Leggendo file da:", filePath);
-        console.log("[BANDO] File esiste?", existsSync(filePath));
-        if (!existsSync(filePath)) {
-          throw new Error(`File non trovato: ${filePath}. Multer potrebbe non aver salvato il file correttamente.`);
-        }
-        const fileBuffer = readFileSync(filePath);
-        console.log("[BANDO] File letto, dimensione buffer:", fileBuffer.length, "bytes");
-        if (fileBuffer.length === 0) {
-          throw new Error(`File vuoto: ${filePath}. Il file potrebbe non essere stato salvato correttamente.`);
-        }
-        fileContent = await extractTextFromPDF(fileBuffer);
-        console.log(`[BANDO] PDF estratto: ${fileContent.length} caratteri`);
-        if (!fileContent || fileContent.trim().length < 100) {
-          console.log("[BANDO] ERRORE: PDF vuoto o troppo corto");
+        // Verifica che il buffer sia un PDF valido (inizia con %PDF)
+        const pdfHeader = pdfBuffer.slice(0, 5).toString('ascii');
+        console.log(`[BANDO-URL] PDF header check: "${pdfHeader}"`);
+
+        if (!pdfHeader.startsWith('%PDF')) {
+          console.log("[BANDO-URL] ERRORE: Il file non è un PDF valido");
           return res.status(400).json({
-            error: "Il PDF non contiene testo selezionabile. Assicurati di caricare un PDF con testo (non scansionato)."
+            error: "Il file scaricato non è un PDF valido",
+            details: `Header: ${pdfHeader}`
+          });
+        }
+
+        fileContent = await extractTextFromPDF(pdfBuffer);
+        console.log(`[BANDO-URL] PDF estratto: ${fileContent.length} caratteri`);
+
+        if (!fileContent || fileContent.trim().length < 100) {
+          console.log("[BANDO-URL] ERRORE: PDF vuoto o troppo corto, testo estratto:", fileContent?.substring(0, 200));
+          return res.status(400).json({
+            error: "Il PDF non contiene testo selezionabile. Assicurati che il PDF contenga testo (non sia scansionato).",
+            details: `Caratteri estratti: ${fileContent?.length || 0}`
           });
         }
       } catch (pdfError: any) {
-        console.error("[BANDO] ERRORE estrazione PDF:", pdfError.message);
-        console.error("[BANDO] Stack:", pdfError.stack);
+        console.error("[BANDO-URL] ERRORE estrazione PDF:", pdfError);
+        console.error("[BANDO-URL] Stack:", pdfError.stack);
         return res.status(400).json({
           error: "Errore nell'estrazione del testo dal PDF",
-          details: pdfError.message || "Il PDF potrebbe essere scansionato o corrotto"
+          details: pdfError.message || "Il PDF potrebbe essere protetto, corrotto o non contenere testo estraibile. Sono stati provati: pdf.js, pdf-parse e OCR."
         });
       }
-    } else {
-      console.log("[BANDO] File non PDF, leggendo come testo...");
-      // Leggi il file dal disco (multer usa diskStorage)
-      const filePath = join(uploadDir, req.file.filename);
-      console.log("[BANDO] Leggendo file da:", filePath);
-      const fileBuffer = readFileSync(filePath);
-      fileContent = fileBuffer.toString("utf-8");
-      console.log(`[BANDO] File testo letto: ${fileContent.length} caratteri`);
-      if (!fileContent || fileContent.trim().length < 100) {
-        console.log("[BANDO] ERRORE: File vuoto");
-        return res.status(400).json({ error: "Il file sembra vuoto" });
-      }
-    }
 
-    const systemPrompt = `Sei un esperto analista di bandi di concorsi pubblici italiani. Estrai tutte le informazioni dal bando.
+      // Da qui in poi, usa lo stesso codice dell'endpoint analyze-bando
+      const systemPrompt = `Sei un esperto analista di bandi di concorsi pubblici italiani. Estrai tutte le informazioni dal bando.
 
 Restituisci SOLO un oggetto JSON valido con questa struttura:
 {
@@ -1915,196 +1666,437 @@ Restituisci SOLO un oggetto JSON valido con questa struttura:
   ]
 }`;
 
-    const contentToSend = fileContent.substring(0, 100000);
-    const userPrompt = `Analizza questo bando di concorso pubblico italiano ed estrai tutte le informazioni richieste:\n\n${contentToSend}`;
-    console.log(`[BANDO] Invio ${contentToSend.length} caratteri a AI`);
+      const contentToSend = fileContent.substring(0, 100000);
+      const userPrompt = `Analizza questo bando di concorso pubblico italiano ed estrai tutte le informazioni richieste:\n\n${contentToSend}`;
+      console.log(`[BANDO-URL] Invio ${contentToSend.length} caratteri a AI`);
 
-    let content: string | null = null;
-    try {
-      console.log("Invio richiesta AI per analisi bando...");
-      content = await generateWithFallback({
-        task: "generic",
-        systemPrompt,
-        userPrompt,
-        responseMode: "json",
-        jsonRoot: "object",
-        temperature: 0.2,
-      });
-      console.log("Risposta AI ricevuta");
-    } catch (err: any) {
-      console.error("[BANDO] ERRORE generazione AI:", err.message);
-      throw err;
-    }
-
-    // 6. Parse risposta
-    console.log("[BANDO] Parsing risposta...");
-    if (!content) {
-      console.error("[BANDO] ERRORE: Nessuna risposta dall'AI");
-      throw new Error("Nessuna risposta dall'AI. Verifica le chiavi API.");
-    }
-
-    // Log primi 100 caratteri per debug
-    console.log(`[BANDO] Contenuto da parsare (primi 100 chars): ${content.substring(0, 100)}...`);
-
-    let bandoData;
-    try {
-      bandoData = JSON.parse(content);
-      console.log("[BANDO] JSON parsato correttamente");
-    } catch (parseError: any) {
-      console.error("[BANDO] ERRORE parsing JSON:", parseError.message);
-      console.error("[BANDO] Contenuto completo che ha causato l'errore:", content);
-
-      // Tentativo di recupero: se il JSON è troncato, prova a chiuderlo (molto basilare)
+      let content: string | null = null;
       try {
-        if (content.trim().startsWith("{") && !content.trim().endsWith("}")) {
-          console.log("[BANDO] Tentativo di fix JSON troncato...");
-          const fixedContent = content + "}";
-          bandoData = JSON.parse(fixedContent);
-          console.log("[BANDO] JSON fixato e parsato!");
-        } else {
-          throw parseError;
-        }
-      } catch (retryError) {
-        throw new Error(`Errore nel parsing della risposta AI. Il formato non è JSON valido. Dettaglio: ${parseError.message}`);
+        console.log("[BANDO-URL] Invio richiesta AI per analisi bando...");
+        content = await generateWithFallback({
+          task: "generic",
+          systemPrompt,
+          userPrompt,
+          responseMode: "json",
+          jsonRoot: "object",
+          temperature: 0.2,
+        });
+        console.log("[BANDO-URL] Risposta AI ricevuta");
+      } catch (err: any) {
+        console.error("[BANDO-URL] ERRORE generazione AI:", err.message);
+        throw err;
       }
-    }
 
-    // 7. Aggiungi dati calcolati
-    if (!bandoData.prove) {
-      bandoData.prove = {};
-    }
+      console.log("[BANDO-URL] Parsing risposta...");
+      if (!content) {
+        console.error("[BANDO-URL] ERRORE: Nessuna risposta dall'AI");
+        throw new Error("Nessuna risposta dall'AI. Verifica le chiavi API.");
+      }
 
-    const mesiPreparazione = 6;
-    const oreSettimanali = 15;
-    const oggi = new Date();
-    const dataEsame = new Date(oggi);
-    dataEsame.setMonth(dataEsame.getMonth() + mesiPreparazione);
-    const giorniTotali = Math.floor((dataEsame.getTime() - oggi.getTime()) / (1000 * 60 * 60 * 24));
-    const oreTotali = Math.floor(giorniTotali / 7) * oreSettimanali;
-
-    const fasi = [
-      { nome: "Fase 1: Intelligence & Setup", percentuale: 10 },
-      { nome: "Fase 2: Acquisizione Strategica", percentuale: 40 },
-      { nome: "Fase 3: Consolidamento e Memorizzazione", percentuale: 30 },
-      { nome: "Fase 4: Simulazione ad Alta Fedeltà", percentuale: 20 }
-    ];
-
-    let giorniUsati = 0;
-    const calendarioGenerato = fasi.map((fase) => {
-      const giorniFase = Math.floor(giorniTotali * (fase.percentuale / 100));
-      const dataInizio = new Date(oggi);
-      dataInizio.setDate(dataInizio.getDate() + giorniUsati);
-      const dataFine = new Date(dataInizio);
-      dataFine.setDate(dataFine.getDate() + giorniFase - 1);
-      giorniUsati += giorniFase;
-
-      const formatDate = (d: Date) => {
-        const day = d.getDate().toString().padStart(2, '0');
-        const month = (d.getMonth() + 1).toString().padStart(2, '0');
-        const year = d.getFullYear();
-        return `${day}/${month}/${year}`;
-      };
-
-      return {
-        fase: fase.nome,
-        dataInizio: formatDate(dataInizio),
-        dataFine: formatDate(dataFine),
-        giorniDisponibili: giorniFase,
-        oreStimate: Math.floor(oreTotali * (fase.percentuale / 100))
-      };
-    });
-
-    bandoData.calendarioInverso = calendarioGenerato;
-    bandoData.oreTotaliDisponibili = oreTotali;
-    bandoData.giorniTapering = 7;
-    bandoData.mesiPreparazione = mesiPreparazione;
-    bandoData.oreSettimanali = oreSettimanali;
-    bandoData.dataInizioStudio = oggi.toISOString();
-
-    // Calcola automaticamente il peso % delle materie in base al numero di domande
-    if (bandoData.materie && Array.isArray(bandoData.materie)) {
-      const materieConDomande = bandoData.materie.filter((m: any) => m.numeroDomande && m.numeroDomande > 0);
-      const totaleDomande = materieConDomande.reduce((sum: number, m: any) => sum + (m.numeroDomande || 0), 0);
-
-      bandoData.materie = bandoData.materie.map((materia: any) => {
-        if (materia.numeroDomande && materia.numeroDomande > 0 && totaleDomande > 0) {
-          // Calcola peso reale in base al numero di domande
-          const pesoReale = Math.round((materia.numeroDomande / totaleDomande) * 100 * 10) / 10;
-          return { ...materia, peso: pesoReale };
-        } else if (!materia.peso || materia.peso === null) {
-          // Se non c'è numero di domande e non c'è peso, calcola peso teorico (equidistribuito)
-          const pesoTeorico = Math.round((100 / bandoData.materie.length) * 10) / 10;
-          return { ...materia, peso: pesoTeorico };
-        }
-        return materia;
-      });
-
-      console.log("[BANDO] Pesi materie calcolati:", bandoData.materie.map((m: any) => `${m.nome}: ${m.peso}%`));
-    }
-
-    // Aggiungi link INPA allo step 1 se non presente
-    if (bandoData.passaggiIscrizione && Array.isArray(bandoData.passaggiIscrizione)) {
-      bandoData.passaggiIscrizione = bandoData.passaggiIscrizione.map((passaggio: any) => {
-        if (passaggio.step === 1) {
-          return {
-            ...passaggio,
-            link: "https://www.inpa.gov.it/#bandi-avvisi"
-          };
-        }
-        return passaggio;
-      });
-    }
-
-    // 8. Rispondi
-    console.log(`[BANDO] === ANALISI COMPLETATA: ${bandoData.titoloEnte || 'N/A'} ===`);
-    res.json(bandoData);
-  } catch (error: any) {
-    console.error("[BANDO] === ERRORE GENERALE ===");
-    console.error("[BANDO] Tipo:", typeof error);
-    console.error("[BANDO] Nome:", error?.name);
-    console.error("[BANDO] Messaggio:", error?.message);
-    console.error("[BANDO] Stack:", error?.stack);
-    res.status(500).json({
-      error: "Errore durante l'analisi del bando",
-      details: error.message || "Errore sconosciuto",
-      suggestion: "Verifica che il file PDF contenga testo selezionabile e riprova."
-    });
-  }
-});
-
-app.post("/api/quiz/generate-from-file", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    console.log("[QUIZ-GEN] === INIZIO GENERAZIONE DA FILE ===");
-
-    if (!req.file) {
-      return res.status(400).json({ error: "Nessun file caricato" });
-    }
-
-    // 1. Estrai testo
-    let fileContent: string;
-    if (req.file.mimetype === "application/pdf") {
+      let bandoData;
       try {
+        bandoData = JSON.parse(content);
+        console.log("[BANDO-URL] JSON parsato correttamente");
+      } catch (parseError: any) {
+        console.error("[BANDO-URL] ERRORE parsing JSON:", parseError.message);
+        try {
+          if (content.trim().startsWith("{") && !content.trim().endsWith("}")) {
+            console.log("[BANDO-URL] Tentativo di fix JSON troncato...");
+            const fixedContent = content + "}";
+            bandoData = JSON.parse(fixedContent);
+            console.log("[BANDO-URL] JSON fixato e parsato!");
+          } else {
+            throw parseError;
+          }
+        } catch (retryError) {
+          throw new Error(`Errore nel parsing della risposta AI. Il formato non è JSON valido. Dettaglio: ${parseError.message}`);
+        }
+      }
+
+      // Aggiungi dati calcolati
+      if (!bandoData.prove) {
+        bandoData.prove = {};
+      }
+
+      const mesiPreparazione = 6;
+      const oreSettimanali = 15;
+      const oggi = new Date();
+      const dataEsame = new Date(oggi);
+      dataEsame.setMonth(dataEsame.getMonth() + mesiPreparazione);
+      const giorniTotali = Math.floor((dataEsame.getTime() - oggi.getTime()) / (1000 * 60 * 60 * 24));
+      const oreTotali = Math.floor(giorniTotali / 7) * oreSettimanali;
+
+      const fasi = [
+        { nome: "Fase 0: Intelligence & Setup", percentuale: 10 },
+        { nome: "Fase 1: Apprendimento Base (SQ3R)", percentuale: 40 },
+        { nome: "Fase 2: Consolidamento e Memorizzazione", percentuale: 30 },
+        { nome: "Fase 3: Simulazione ad Alta Fedeltà", percentuale: 20 }
+      ];
+
+      let giorniUsati = 0;
+      const calendarioGenerato = fasi.map((fase) => {
+        const giorniFase = Math.floor(giorniTotali * (fase.percentuale / 100));
+        const dataInizio = new Date(oggi);
+        dataInizio.setDate(dataInizio.getDate() + giorniUsati);
+        const dataFine = new Date(dataInizio);
+        dataFine.setDate(dataFine.getDate() + giorniFase - 1);
+        giorniUsati += giorniFase;
+
+        const formatDate = (d: Date) => {
+          const day = d.getDate().toString().padStart(2, '0');
+          const month = (d.getMonth() + 1).toString().padStart(2, '0');
+          const year = d.getFullYear();
+          return `${day}/${month}/${year}`;
+        };
+
+        return {
+          fase: fase.nome,
+          dataInizio: formatDate(dataInizio),
+          dataFine: formatDate(dataFine),
+          giorniDisponibili: giorniFase,
+          oreStimate: Math.floor(oreTotali * (fase.percentuale / 100))
+        };
+      });
+
+      bandoData.calendarioInverso = calendarioGenerato;
+      bandoData.oreTotaliDisponibili = oreTotali;
+      bandoData.giorniTapering = 7;
+      bandoData.mesiPreparazione = mesiPreparazione;
+      bandoData.oreSettimanali = oreSettimanali;
+      bandoData.dataInizioStudio = oggi.toISOString();
+
+      // Calcola pesi materie
+      if (bandoData.materie && Array.isArray(bandoData.materie)) {
+        const materieConDomande = bandoData.materie.filter((m: any) => m.numeroDomande && m.numeroDomande > 0);
+        const totaleDomande = materieConDomande.reduce((sum: number, m: any) => sum + (m.numeroDomande || 0), 0);
+
+        bandoData.materie = bandoData.materie.map((materia: any) => {
+          if (materia.numeroDomande && materia.numeroDomande > 0 && totaleDomande > 0) {
+            const pesoReale = Math.round((materia.numeroDomande / totaleDomande) * 100 * 10) / 10;
+            return { ...materia, peso: pesoReale };
+          } else if (!materia.peso || materia.peso === null) {
+            const pesoTeorico = Math.round((100 / bandoData.materie.length) * 10) / 10;
+            return { ...materia, peso: pesoTeorico };
+          }
+          return materia;
+        });
+      }
+
+      // Aggiungi link INPA allo step 1
+      if (bandoData.passaggiIscrizione && Array.isArray(bandoData.passaggiIscrizione)) {
+        bandoData.passaggiIscrizione = bandoData.passaggiIscrizione.map((passaggio: any) => {
+          if (passaggio.step === 1) {
+            return { ...passaggio, link: "https://www.inpa.gov.it/#bandi-avvisi" };
+          }
+          return passaggio;
+        });
+      }
+
+      console.log(`[BANDO-URL] === ANALISI COMPLETATA: ${bandoData.titoloEnte || 'N/A'} ===`);
+      res.json(bandoData);
+    } catch (error: any) {
+      console.error("[BANDO-URL] === ERRORE GENERALE ===");
+      console.error("[BANDO-URL] Messaggio:", error?.message);
+      res.status(500).json({
+        error: "Errore durante l'analisi del bando",
+        details: error.message || "Errore sconosciuto",
+        suggestion: "Verifica che il file PDF contenga testo selezionabile e riprova."
+      });
+    }
+  });
+
+  app.post("/api/analyze-bando", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
+    try {
+      console.log("[BANDO] === INIZIO ANALISI ===");
+
+      // 1. Verifica file
+      if (!req.file) {
+        console.log("[BANDO] ERRORE: Nessun file");
+        return res.status(400).json({ error: "Nessun file caricato" });
+      }
+      console.log(`[BANDO] File ricevuto: ${req.file.originalname} (${req.file.size} bytes, ${req.file.mimetype})`);
+
+      // 2. Estrai testo dal PDF
+      let fileContent: string;
+      if (req.file.mimetype === "application/pdf") {
+        console.log("[BANDO] Estrazione testo da PDF...");
+        try {
+          // Leggi il file dal disco (multer usa diskStorage)
+          const filePath = join(uploadDir, req.file.filename);
+          console.log("[BANDO] Leggendo file da:", filePath);
+          console.log("[BANDO] File esiste?", existsSync(filePath));
+          if (!existsSync(filePath)) {
+            throw new Error(`File non trovato: ${filePath}. Multer potrebbe non aver salvato il file correttamente.`);
+          }
+          const fileBuffer = readFileSync(filePath);
+          console.log("[BANDO] File letto, dimensione buffer:", fileBuffer.length, "bytes");
+          if (fileBuffer.length === 0) {
+            throw new Error(`File vuoto: ${filePath}. Il file potrebbe non essere stato salvato correttamente.`);
+          }
+          fileContent = await extractTextFromPDF(fileBuffer);
+          console.log(`[BANDO] PDF estratto: ${fileContent.length} caratteri`);
+          if (!fileContent || fileContent.trim().length < 100) {
+            console.log("[BANDO] ERRORE: PDF vuoto o troppo corto");
+            return res.status(400).json({
+              error: "Il PDF non contiene testo selezionabile. Assicurati di caricare un PDF con testo (non scansionato)."
+            });
+          }
+        } catch (pdfError: any) {
+          console.error("[BANDO] ERRORE estrazione PDF:", pdfError.message);
+          console.error("[BANDO] Stack:", pdfError.stack);
+          return res.status(400).json({
+            error: "Errore nell'estrazione del testo dal PDF",
+            details: pdfError.message || "Il PDF potrebbe essere scansionato o corrotto"
+          });
+        }
+      } else {
+        console.log("[BANDO] File non PDF, leggendo come testo...");
+        // Leggi il file dal disco (multer usa diskStorage)
         const filePath = join(uploadDir, req.file.filename);
+        console.log("[BANDO] Leggendo file da:", filePath);
         const fileBuffer = readFileSync(filePath);
-        fileContent = await extractTextFromPDF(fileBuffer);
-      } catch (pdfError: any) {
-        console.error("[QUIZ-GEN] Errore estrazione PDF:", pdfError);
-        return res.status(500).json({ error: "Errore lettura PDF" });
+        fileContent = fileBuffer.toString("utf-8");
+        console.log(`[BANDO] File testo letto: ${fileContent.length} caratteri`);
+        if (!fileContent || fileContent.trim().length < 100) {
+          console.log("[BANDO] ERRORE: File vuoto");
+          return res.status(400).json({ error: "Il file sembra vuoto" });
+        }
       }
-    } else {
-      // Fallback per file testo se necessario
-      const filePath = join(uploadDir, req.file.filename);
-      fileContent = readFileSync(filePath, "utf-8");
-    }
 
-    if (!fileContent || fileContent.trim().length < 100) {
-      return res.status(400).json({ error: "Testo insufficiente nel file" });
-    }
+      const systemPrompt = `Sei un esperto analista di bandi di concorsi pubblici italiani. Estrai tutte le informazioni dal bando.
 
-    // 2. Prepara prompt per AI
-    const contentToAnalyze = fileContent.substring(0, 50000); // Limite caratteri
-    const systemPrompt = `Sei un professore esperto che crea quiz di verifica.
+Restituisci SOLO un oggetto JSON valido con questa struttura:
+{
+  "titoloEnte": "Nome completo dell'ente e titolo del concorso",
+  "tipoConcorso": "Tipo (per esami, per titoli ed esami, etc.)",
+  "scadenzaDomanda": "DD/MM/YYYY",
+  "dataPresuntaEsame": "DD/MM/YYYY o 'Da definire'",
+  "posti": numero_posti_totale,
+  "profili": [
+    {
+      "nome": "Nome profilo",
+      "posti": numero_posti,
+      "titoliStudio": ["Classi di laurea con codici (es. LM-63, L-14)"],
+      "altriRequisiti": []
+    }
+  ],
+  "requisiti": [{"titolo": "Requisito", "soddisfatto": null}],
+  "prove": {
+    "tipo": "Tipo prove",
+    "descrizione": "Descrizione",
+    "hasPreselettiva": true/false,
+    "hasBancaDati": true/false,
+    "bancaDatiInfo": "Info banca dati",
+    "penalitaErrori": "Valore penalità (es. '-0.25') o null",
+    "punteggioRispostaCorretta": "Punteggio risposta corretta o null",
+    "punteggioRispostaNonData": "Punteggio risposta non data o null"
+  },
+  "materie": [
+    {
+      "nome": "Nome materia",
+      "microArgomenti": ["Tutti gli argomenti citati nel bando"],
+      "peso": percentuale_o_null,
+      "numeroDomande": numero_domande_o_null
+    }
+  ],
+  "passaggiIscrizione": [
+    {"step": 1, "descrizione": "Registrazione sul portale INPA", "completato": false, "link": "https://www.inpa.gov.it/#bandi-avvisi"},
+    {"step": 2, "descrizione": "Compilazione domanda", "completato": false},
+    {"step": 3, "descrizione": "Pagamento tassa", "completato": false},
+    {"step": 4, "descrizione": "Allegare documentazione", "completato": false}
+  ]
+}`;
+
+      const contentToSend = fileContent.substring(0, 100000);
+      const userPrompt = `Analizza questo bando di concorso pubblico italiano ed estrai tutte le informazioni richieste:\n\n${contentToSend}`;
+      console.log(`[BANDO] Invio ${contentToSend.length} caratteri a AI`);
+
+      let content: string | null = null;
+      try {
+        console.log("Invio richiesta AI per analisi bando...");
+        content = await generateWithFallback({
+          task: "generic",
+          systemPrompt,
+          userPrompt,
+          responseMode: "json",
+          jsonRoot: "object",
+          temperature: 0.2,
+        });
+        console.log("Risposta AI ricevuta");
+      } catch (err: any) {
+        console.error("[BANDO] ERRORE generazione AI:", err.message);
+        throw err;
+      }
+
+      // 6. Parse risposta
+      console.log("[BANDO] Parsing risposta...");
+      if (!content) {
+        console.error("[BANDO] ERRORE: Nessuna risposta dall'AI");
+        throw new Error("Nessuna risposta dall'AI. Verifica le chiavi API.");
+      }
+
+      // Log primi 100 caratteri per debug
+      console.log(`[BANDO] Contenuto da parsare (primi 100 chars): ${content.substring(0, 100)}...`);
+
+      let bandoData;
+      try {
+        bandoData = JSON.parse(content);
+        console.log("[BANDO] JSON parsato correttamente");
+      } catch (parseError: any) {
+        console.error("[BANDO] ERRORE parsing JSON:", parseError.message);
+        console.error("[BANDO] Contenuto completo che ha causato l'errore:", content);
+
+        // Tentativo di recupero: se il JSON è troncato, prova a chiuderlo (molto basilare)
+        try {
+          if (content.trim().startsWith("{") && !content.trim().endsWith("}")) {
+            console.log("[BANDO] Tentativo di fix JSON troncato...");
+            const fixedContent = content + "}";
+            bandoData = JSON.parse(fixedContent);
+            console.log("[BANDO] JSON fixato e parsato!");
+          } else {
+            throw parseError;
+          }
+        } catch (retryError) {
+          throw new Error(`Errore nel parsing della risposta AI. Il formato non è JSON valido. Dettaglio: ${parseError.message}`);
+        }
+      }
+
+      // 7. Aggiungi dati calcolati
+      if (!bandoData.prove) {
+        bandoData.prove = {};
+      }
+
+      const mesiPreparazione = 6;
+      const oreSettimanali = 15;
+      const oggi = new Date();
+      const dataEsame = new Date(oggi);
+      dataEsame.setMonth(dataEsame.getMonth() + mesiPreparazione);
+      const giorniTotali = Math.floor((dataEsame.getTime() - oggi.getTime()) / (1000 * 60 * 60 * 24));
+      const oreTotali = Math.floor(giorniTotali / 7) * oreSettimanali;
+
+      const fasi = [
+        { nome: "Fase 1: Intelligence & Setup", percentuale: 10 },
+        { nome: "Fase 2: Acquisizione Strategica", percentuale: 40 },
+        { nome: "Fase 3: Consolidamento e Memorizzazione", percentuale: 30 },
+        { nome: "Fase 4: Simulazione ad Alta Fedeltà", percentuale: 20 }
+      ];
+
+      let giorniUsati = 0;
+      const calendarioGenerato = fasi.map((fase) => {
+        const giorniFase = Math.floor(giorniTotali * (fase.percentuale / 100));
+        const dataInizio = new Date(oggi);
+        dataInizio.setDate(dataInizio.getDate() + giorniUsati);
+        const dataFine = new Date(dataInizio);
+        dataFine.setDate(dataFine.getDate() + giorniFase - 1);
+        giorniUsati += giorniFase;
+
+        const formatDate = (d: Date) => {
+          const day = d.getDate().toString().padStart(2, '0');
+          const month = (d.getMonth() + 1).toString().padStart(2, '0');
+          const year = d.getFullYear();
+          return `${day}/${month}/${year}`;
+        };
+
+        return {
+          fase: fase.nome,
+          dataInizio: formatDate(dataInizio),
+          dataFine: formatDate(dataFine),
+          giorniDisponibili: giorniFase,
+          oreStimate: Math.floor(oreTotali * (fase.percentuale / 100))
+        };
+      });
+
+      bandoData.calendarioInverso = calendarioGenerato;
+      bandoData.oreTotaliDisponibili = oreTotali;
+      bandoData.giorniTapering = 7;
+      bandoData.mesiPreparazione = mesiPreparazione;
+      bandoData.oreSettimanali = oreSettimanali;
+      bandoData.dataInizioStudio = oggi.toISOString();
+
+      // Calcola automaticamente il peso % delle materie in base al numero di domande
+      if (bandoData.materie && Array.isArray(bandoData.materie)) {
+        const materieConDomande = bandoData.materie.filter((m: any) => m.numeroDomande && m.numeroDomande > 0);
+        const totaleDomande = materieConDomande.reduce((sum: number, m: any) => sum + (m.numeroDomande || 0), 0);
+
+        bandoData.materie = bandoData.materie.map((materia: any) => {
+          if (materia.numeroDomande && materia.numeroDomande > 0 && totaleDomande > 0) {
+            // Calcola peso reale in base al numero di domande
+            const pesoReale = Math.round((materia.numeroDomande / totaleDomande) * 100 * 10) / 10;
+            return { ...materia, peso: pesoReale };
+          } else if (!materia.peso || materia.peso === null) {
+            // Se non c'è numero di domande e non c'è peso, calcola peso teorico (equidistribuito)
+            const pesoTeorico = Math.round((100 / bandoData.materie.length) * 10) / 10;
+            return { ...materia, peso: pesoTeorico };
+          }
+          return materia;
+        });
+
+        console.log("[BANDO] Pesi materie calcolati:", bandoData.materie.map((m: any) => `${m.nome}: ${m.peso}%`));
+      }
+
+      // Aggiungi link INPA allo step 1 se non presente
+      if (bandoData.passaggiIscrizione && Array.isArray(bandoData.passaggiIscrizione)) {
+        bandoData.passaggiIscrizione = bandoData.passaggiIscrizione.map((passaggio: any) => {
+          if (passaggio.step === 1) {
+            return {
+              ...passaggio,
+              link: "https://www.inpa.gov.it/#bandi-avvisi"
+            };
+          }
+          return passaggio;
+        });
+      }
+
+      // 8. Rispondi
+      console.log(`[BANDO] === ANALISI COMPLETATA: ${bandoData.titoloEnte || 'N/A'} ===`);
+      res.json(bandoData);
+    } catch (error: any) {
+      console.error("[BANDO] === ERRORE GENERALE ===");
+      console.error("[BANDO] Tipo:", typeof error);
+      console.error("[BANDO] Nome:", error?.name);
+      console.error("[BANDO] Messaggio:", error?.message);
+      console.error("[BANDO] Stack:", error?.stack);
+      res.status(500).json({
+        error: "Errore durante l'analisi del bando",
+        details: error.message || "Errore sconosciuto",
+        suggestion: "Verifica che il file PDF contenga testo selezionabile e riprova."
+      });
+    }
+  });
+
+  app.post("/api/quiz/generate-from-file", isAuthenticated, upload.single("file"), async (req: MulterRequest, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      console.log("[QUIZ-GEN] === INIZIO GENERAZIONE DA FILE ===");
+
+      if (!req.file) {
+        return res.status(400).json({ error: "Nessun file caricato" });
+      }
+
+      // 1. Estrai testo
+      let fileContent: string;
+      if (req.file.mimetype === "application/pdf") {
+        try {
+          const filePath = join(uploadDir, req.file.filename);
+          const fileBuffer = readFileSync(filePath);
+          fileContent = await extractTextFromPDF(fileBuffer);
+        } catch (pdfError: any) {
+          console.error("[QUIZ-GEN] Errore estrazione PDF:", pdfError);
+          return res.status(500).json({ error: "Errore lettura PDF" });
+        }
+      } else {
+        // Fallback per file testo se necessario
+        const filePath = join(uploadDir, req.file.filename);
+        fileContent = readFileSync(filePath, "utf-8");
+      }
+
+      if (!fileContent || fileContent.trim().length < 100) {
+        return res.status(400).json({ error: "Testo insufficiente nel file" });
+      }
+
+      // 2. Prepara prompt per AI
+      const contentToAnalyze = fileContent.substring(0, 50000); // Limite caratteri
+      const systemPrompt = `Sei un professore esperto che crea quiz di verifica.
 Il tuo compito è generare un quiz a risposta multipla basato ESCLUSIVAMENTE sul testo fornito dall'utente.
 Non inventare domande su argomenti non presenti nel testo.
 Se il testo è troppo breve per 15 domande, generane quante possibile (minimo 5).
@@ -2120,530 +2112,530 @@ FORMATO OUTPUT RICHIESTO (JSON array):
 Nota: correctAnswer è l'indice (0-3) della risposta corretta nell'array options.
 IMPORTANTE: Restituisci SOLO il JSON puro, senza blocchi markdown (es. \`\`\`json) e senza testo introduttivo.`;
 
-    const userPrompt = `Genera un quiz di 15 domande basato su questo testo:\n\n${contentToAnalyze}`;
+      const userPrompt = `Genera un quiz di 15 domande basato su questo testo:\n\n${contentToAnalyze}`;
 
-    // 3. Chiamata AI (Gemini -> Vercel -> OpenAI)
-    let questionsJson = "[]";
-    try {
-      console.log("[QUIZ-GEN] Invio richiesta AI...");
-      questionsJson = await generateWithFallback({
-        task: "quiz_generate",
-        systemPrompt,
-        userPrompt,
-        responseMode: "json",
-        jsonRoot: "array",
-        temperature: 0.3,
-      });
-    } catch (err: any) {
-      console.error("[QUIZ-GEN] ERRORE AI:", err.message);
-      // Lascia questionsJson come "[]" per gestire l'errore nel parsing
-    }
-
-    // 4. Parse e Risposta
-    let questions = [];
-    try {
-      const parsed = JSON.parse(questionsJson);
-      // Gestisci caso in cui l'AI restituisca un oggetto { "questions": [...] } invece di array diretto
-      questions = Array.isArray(parsed) ? parsed : (parsed.questions || []);
-    } catch (e) {
-      console.error("[QUIZ-GEN] Errore parsing JSON AI:", e);
-      return res.status(500).json({ error: "Errore nella generazione delle domande (formato non valido)" });
-    }
-
-    console.log(`[QUIZ-GEN] Generate ${questions.length} domande`);
-    res.json({ questions });
-
-  } catch (error: any) {
-    console.error("[QUIZ-GEN] Errore generale:", error);
-    res.status(500).json({ error: "Errore del server durante la generazione" });
-  }
-});
-
-app.post("/api/phase1/complete", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const { concorsoId, ...bandoData } = req.body;
-
-    let concorso: Concorso;
-
-    if (concorsoId) {
-      // Aggiorna concorso esistente
-      console.log("Updating existing concorso:", concorsoId);
-      const updated = await storage.updateConcorso(concorsoId, userId, {
-        nome: bandoData.titoloEnte || "Nuovo Concorso",
-        titoloEnte: bandoData.titoloEnte,
-        tipoConcorso: bandoData.tipoConcorso,
-        posti: bandoData.posti,
-        scadenzaDomanda: bandoData.scadenzaDomanda,
-        dataPresuntaEsame: bandoData.dataPresuntaEsame,
-        mesiPreparazione: bandoData.mesiPreparazione || 6,
-        oreSettimanali: bandoData.oreSettimanali || 15,
-        bandoAnalysis: bandoData,
-      });
-
-      if (!updated) {
-        return res.status(404).json({ error: "Concorso non trovato o non autorizzato" });
+      // 3. Chiamata AI (Gemini -> Vercel -> OpenAI)
+      let questionsJson = "[]";
+      try {
+        console.log("[QUIZ-GEN] Invio richiesta AI...");
+        questionsJson = await generateWithFallback({
+          task: "quiz_generate",
+          systemPrompt,
+          userPrompt,
+          responseMode: "json",
+          jsonRoot: "array",
+          temperature: 0.3,
+        });
+      } catch (err: any) {
+        console.error("[QUIZ-GEN] ERRORE AI:", err.message);
+        // Lascia questionsJson come "[]" per gestire l'errore nel parsing
       }
 
-      concorso = updated;
-      console.log("Phase 1 completed, concorso updated:", concorso.id);
-    } else {
-      // Crea nuovo concorso (retrocompatibilità)
-      console.log("Creating new concorso");
-      concorso = await storage.createConcorso({
-        userId,
-        nome: bandoData.titoloEnte || "Nuovo Concorso",
-        titoloEnte: bandoData.titoloEnte,
-        tipoConcorso: bandoData.tipoConcorso,
-        posti: bandoData.posti,
-        scadenzaDomanda: bandoData.scadenzaDomanda,
-        dataPresuntaEsame: bandoData.dataPresuntaEsame,
-        mesiPreparazione: bandoData.mesiPreparazione || 6,
-        oreSettimanali: bandoData.oreSettimanali || 15,
-        bandoAnalysis: bandoData,
-      });
-      console.log("Phase 1 completed, concorso created:", concorso.id);
-    }
-
-    await storage.upsertUserProgress({
-      userId,
-      concorsoId: concorso.id,
-      fase1Completata: true,
-      faseCorrente: 2,
-    });
-
-    res.json({ success: true, concorsoId: concorso.id, message: "Fase 1 completata" });
-  } catch (error: any) {
-    console.error("Error completing phase 1:", error);
-    console.error("Error stack:", error.stack);
-    res.status(500).json({
-      error: "Errore nel completamento della fase 1",
-      details: error.message
-    });
-  }
-});
-
-// ============================================
-// API ENDPOINTS PER SIMULAZIONI D'ESAME
-// ============================================
-
-/**
- * POST /api/simulazioni
- * Crea una nuova simulazione d'esame
- * Body: { concorsoId, numeroDomande, durataMinuti, tipoSimulazione, materieFiltrate }
- */
-app.post("/api/simulazioni", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    console.log("POST /api/simulazioni - Request body:", req.body);
-    const userId = getUserId(req);
-    console.log("POST /api/simulazioni - UserId:", userId);
-
-    if (!userId) {
-      console.error("getUserId returned undefined. req.user:", req.user);
-      return res.status(401).json({ error: "Utente non autenticato" });
-    }
-
-    const { concorsoId, numeroDomande = 40, durataMinuti = 60, tipoSimulazione = "completa", materieFiltrate = [] } = req.body;
-
-    console.log("POST /api/simulazioni - Creating simulazione with:", {
-      concorsoId,
-      numeroDomande,
-      durataMinuti,
-      tipoSimulazione,
-      materieFiltrate,
-    });
-
-    if (!concorsoId) {
-      return res.status(400).json({ error: "concorsoId è obbligatorio" });
-    }
-
-    // Verifica che il concorso esista e appartenga all'utente
-    const concorso = await storage.getConcorso(concorsoId, userId);
-    if (!concorso) {
-      return res.status(404).json({ error: "Concorso non trovato" });
-    }
-
-    // Recupera tutte le flashcards del concorso
-    let flashcards = await storage.getFlashcards(userId, concorsoId);
-
-    if (flashcards.length === 0) {
-      return res.status(400).json({ error: "Nessuna flashcard disponibile per questo concorso" });
-    }
-
-    // Filtra per materie se specificate
-    if (Array.isArray(materieFiltrate) && materieFiltrate.length > 0) {
-      flashcards = flashcards.filter(fc => materieFiltrate.includes(fc.materia));
-      if (flashcards.length === 0) {
-        return res.status(400).json({ error: "Nessuna flashcard disponibile per le materie selezionate" });
+      // 4. Parse e Risposta
+      let questions = [];
+      try {
+        const parsed = JSON.parse(questionsJson);
+        // Gestisci caso in cui l'AI restituisca un oggetto { "questions": [...] } invece di array diretto
+        questions = Array.isArray(parsed) ? parsed : (parsed.questions || []);
+      } catch (e) {
+        console.error("[QUIZ-GEN] Errore parsing JSON AI:", e);
+        return res.status(500).json({ error: "Errore nella generazione delle domande (formato non valido)" });
       }
+
+      console.log(`[QUIZ-GEN] Generate ${questions.length} domande`);
+      res.json({ questions });
+
+    } catch (error: any) {
+      console.error("[QUIZ-GEN] Errore generale:", error);
+      res.status(500).json({ error: "Errore del server durante la generazione" });
     }
+  });
 
-    // Verifica che ci siano abbastanza flashcards
-    if (flashcards.length < 4) {
-      return res.status(400).json({
-        error: `Non ci sono abbastanza flashcards per generare una simulazione. Minimo richiesto: 4. Disponibili: ${flashcards.length}`
-      });
-    }
+  app.post("/api/phase1/complete", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { concorsoId, ...bandoData } = req.body;
 
-    // Se non ci sono abbastanza flashcards per il numero richiesto, usa tutte quelle disponibili
-    if (flashcards.length < numeroDomande) {
-      console.log(`[SIMULAZIONE] Richieste ${numeroDomande} domande, ma disponibili solo ${flashcards.length}. Adatto il numero.`);
-      // Non modifichiamo la variabile const numeroDomande, ma useremo flashcards.length per il slice
-    }
+      let concorso: Concorso;
 
-    const numeroDomandeEffettivo = Math.min(numeroDomande, flashcards.length);
+      if (concorsoId) {
+        // Aggiorna concorso esistente
+        console.log("Updating existing concorso:", concorsoId);
+        const updated = await storage.updateConcorso(concorsoId, userId, {
+          nome: bandoData.titoloEnte || "Nuovo Concorso",
+          titoloEnte: bandoData.titoloEnte,
+          tipoConcorso: bandoData.tipoConcorso,
+          posti: bandoData.posti,
+          scadenzaDomanda: bandoData.scadenzaDomanda,
+          dataPresuntaEsame: bandoData.dataPresuntaEsame,
+          mesiPreparazione: bandoData.mesiPreparazione || 6,
+          oreSettimanali: bandoData.oreSettimanali || 15,
+          bandoAnalysis: bandoData,
+        });
 
-    // Seleziona flashcards random
-    const flashcardsSelezionate = flashcards
-      .sort(() => Math.random() - 0.5)
-      .slice(0, numeroDomandeEffettivo);
-
-    // Crea le domande della simulazione
-    // Per ogni flashcard, creiamo una domanda a scelta multipla con 4 opzioni
-    // La risposta corretta è il retro della flashcard
-    // Generiamo 3 risposte sbagliate casuali dalle altre flashcards
-    const domandeERisposte: DomandaSimulazione[] = flashcardsSelezionate.map((flashcard, index) => {
-      // Trova altre flashcards per generare risposte sbagliate
-      const altreFlashcards = flashcards.filter(fc => fc.id !== flashcard.id);
-
-      // Se abbiamo meno di 3 altre flashcards, prendiamo tutte quelle disponibili e duplichiamo se necessario
-      let risposteSbagliateCandidates = altreFlashcards.sort(() => Math.random() - 0.5);
-
-      // Assicurati di avere sempre 3 risposte sbagliate
-      let risposteSbagliate: string[] = [];
-      if (risposteSbagliateCandidates.length >= 3) {
-        risposteSbagliate = risposteSbagliateCandidates.slice(0, 3).map(fc => fc.retro);
-      } else {
-        // Se non abbiamo abbastanza candidate uniche, riusiamo quelle che abbiamo
-        // Questo caso limite accade solo se abbiamo < 4 flashcards totali, che abbiamo già bloccato sopra
-        // Ma per sicurezza:
-        const disponibili = risposteSbagliateCandidates.map(fc => fc.retro);
-        while (risposteSbagliate.length < 3) {
-          risposteSbagliate.push(...disponibili);
-          if (risposteSbagliate.length < 3 && disponibili.length === 0) {
-            // Fallback estremo se non ci sono altre flashcards
-            risposteSbagliate.push("Risposta errata " + (risposteSbagliate.length + 1));
-          }
+        if (!updated) {
+          return res.status(404).json({ error: "Concorso non trovato o non autorizzato" });
         }
-        risposteSbagliate = risposteSbagliate.slice(0, 3);
+
+        concorso = updated;
+        console.log("Phase 1 completed, concorso updated:", concorso.id);
+      } else {
+        // Crea nuovo concorso (retrocompatibilità)
+        console.log("Creating new concorso");
+        concorso = await storage.createConcorso({
+          userId,
+          nome: bandoData.titoloEnte || "Nuovo Concorso",
+          titoloEnte: bandoData.titoloEnte,
+          tipoConcorso: bandoData.tipoConcorso,
+          posti: bandoData.posti,
+          scadenzaDomanda: bandoData.scadenzaDomanda,
+          dataPresuntaEsame: bandoData.dataPresuntaEsame,
+          mesiPreparazione: bandoData.mesiPreparazione || 6,
+          oreSettimanali: bandoData.oreSettimanali || 15,
+          bandoAnalysis: bandoData,
+        });
+        console.log("Phase 1 completed, concorso created:", concorso.id);
       }
 
-      // Crea array di 4 opzioni: una corretta + 3 sbagliate
-      const opzioni = [flashcard.retro, ...risposteSbagliate]
-        .sort(() => Math.random() - 0.5);
+      await storage.upsertUserProgress({
+        userId,
+        concorsoId: concorso.id,
+        fase1Completata: true,
+        faseCorrente: 2,
+      });
 
-      // Trova l'indice della risposta corretta
-      const rispostaCorrettaIndex = opzioni.indexOf(flashcard.retro);
-      const rispostaCorretta = String.fromCharCode(65 + rispostaCorrettaIndex); // A, B, C, D
+      res.json({ success: true, concorsoId: concorso.id, message: "Fase 1 completata" });
+    } catch (error: any) {
+      console.error("Error completing phase 1:", error);
+      console.error("Error stack:", error.stack);
+      res.status(500).json({
+        error: "Errore nel completamento della fase 1",
+        details: error.message
+      });
+    }
+  });
 
-      return {
-        flashcardId: flashcard.id,
-        domanda: flashcard.fronte,
-        opzioni: opzioni,
-        rispostaCorretta: rispostaCorretta,
-        materia: flashcard.materia,
+  // ============================================
+  // API ENDPOINTS PER SIMULAZIONI D'ESAME
+  // ============================================
+
+  /**
+   * POST /api/simulazioni
+   * Crea una nuova simulazione d'esame
+   * Body: { concorsoId, numeroDomande, durataMinuti, tipoSimulazione, materieFiltrate }
+   */
+  app.post("/api/simulazioni", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      console.log("POST /api/simulazioni - Request body:", req.body);
+      const userId = getUserId(req);
+      console.log("POST /api/simulazioni - UserId:", userId);
+
+      if (!userId) {
+        console.error("getUserId returned undefined. req.user:", req.user);
+        return res.status(401).json({ error: "Utente non autenticato" });
+      }
+
+      const { concorsoId, numeroDomande = 40, durataMinuti = 60, tipoSimulazione = "completa", materieFiltrate = [] } = req.body;
+
+      console.log("POST /api/simulazioni - Creating simulazione with:", {
+        concorsoId,
+        numeroDomande,
+        durataMinuti,
+        tipoSimulazione,
+        materieFiltrate,
+      });
+
+      if (!concorsoId) {
+        return res.status(400).json({ error: "concorsoId è obbligatorio" });
+      }
+
+      // Verifica che il concorso esista e appartenga all'utente
+      const concorso = await storage.getConcorso(concorsoId, userId);
+      if (!concorso) {
+        return res.status(404).json({ error: "Concorso non trovato" });
+      }
+
+      // Recupera tutte le flashcards del concorso
+      let flashcards = await storage.getFlashcards(userId, concorsoId);
+
+      if (flashcards.length === 0) {
+        return res.status(400).json({ error: "Nessuna flashcard disponibile per questo concorso" });
+      }
+
+      // Filtra per materie se specificate
+      if (Array.isArray(materieFiltrate) && materieFiltrate.length > 0) {
+        flashcards = flashcards.filter(fc => materieFiltrate.includes(fc.materia));
+        if (flashcards.length === 0) {
+          return res.status(400).json({ error: "Nessuna flashcard disponibile per le materie selezionate" });
+        }
+      }
+
+      // Verifica che ci siano abbastanza flashcards
+      if (flashcards.length < 4) {
+        return res.status(400).json({
+          error: `Non ci sono abbastanza flashcards per generare una simulazione. Minimo richiesto: 4. Disponibili: ${flashcards.length}`
+        });
+      }
+
+      // Se non ci sono abbastanza flashcards per il numero richiesto, usa tutte quelle disponibili
+      if (flashcards.length < numeroDomande) {
+        console.log(`[SIMULAZIONE] Richieste ${numeroDomande} domande, ma disponibili solo ${flashcards.length}. Adatto il numero.`);
+        // Non modifichiamo la variabile const numeroDomande, ma useremo flashcards.length per il slice
+      }
+
+      const numeroDomandeEffettivo = Math.min(numeroDomande, flashcards.length);
+
+      // Seleziona flashcards random
+      const flashcardsSelezionate = flashcards
+        .sort(() => Math.random() - 0.5)
+        .slice(0, numeroDomandeEffettivo);
+
+      // Crea le domande della simulazione
+      // Per ogni flashcard, creiamo una domanda a scelta multipla con 4 opzioni
+      // La risposta corretta è il retro della flashcard
+      // Generiamo 3 risposte sbagliate casuali dalle altre flashcards
+      const domandeERisposte: DomandaSimulazione[] = flashcardsSelezionate.map((flashcard, index) => {
+        // Trova altre flashcards per generare risposte sbagliate
+        const altreFlashcards = flashcards.filter(fc => fc.id !== flashcard.id);
+
+        // Se abbiamo meno di 3 altre flashcards, prendiamo tutte quelle disponibili e duplichiamo se necessario
+        let risposteSbagliateCandidates = altreFlashcards.sort(() => Math.random() - 0.5);
+
+        // Assicurati di avere sempre 3 risposte sbagliate
+        let risposteSbagliate: string[] = [];
+        if (risposteSbagliateCandidates.length >= 3) {
+          risposteSbagliate = risposteSbagliateCandidates.slice(0, 3).map(fc => fc.retro);
+        } else {
+          // Se non abbiamo abbastanza candidate uniche, riusiamo quelle che abbiamo
+          // Questo caso limite accade solo se abbiamo < 4 flashcards totali, che abbiamo già bloccato sopra
+          // Ma per sicurezza:
+          const disponibili = risposteSbagliateCandidates.map(fc => fc.retro);
+          while (risposteSbagliate.length < 3) {
+            risposteSbagliate.push(...disponibili);
+            if (risposteSbagliate.length < 3 && disponibili.length === 0) {
+              // Fallback estremo se non ci sono altre flashcards
+              risposteSbagliate.push("Risposta errata " + (risposteSbagliate.length + 1));
+            }
+          }
+          risposteSbagliate = risposteSbagliate.slice(0, 3);
+        }
+
+        // Crea array di 4 opzioni: una corretta + 3 sbagliate
+        const opzioni = [flashcard.retro, ...risposteSbagliate]
+          .sort(() => Math.random() - 0.5);
+
+        // Trova l'indice della risposta corretta
+        const rispostaCorrettaIndex = opzioni.indexOf(flashcard.retro);
+        const rispostaCorretta = String.fromCharCode(65 + rispostaCorrettaIndex); // A, B, C, D
+
+        return {
+          flashcardId: flashcard.id,
+          domanda: flashcard.fronte,
+          opzioni: opzioni,
+          rispostaCorretta: rispostaCorretta,
+          materia: flashcard.materia,
+        };
+      });
+
+      // Crea la simulazione
+      const nuovaSimulazione: InsertSimulazione = {
+        userId,
+        concorsoId,
+        numeroDomande: numeroDomandeEffettivo,
+        durataMinuti,
+        tipoSimulazione,
+        materieFiltrate: Array.isArray(materieFiltrate) ? materieFiltrate : [],
+        completata: false,
+        domandeERisposte: domandeERisposte as any,
+        dataInizio: new Date(),
       };
-    });
 
-    // Crea la simulazione
-    const nuovaSimulazione: InsertSimulazione = {
-      userId,
-      concorsoId,
-      numeroDomande: numeroDomandeEffettivo,
-      durataMinuti,
-      tipoSimulazione,
-      materieFiltrate: Array.isArray(materieFiltrate) ? materieFiltrate : [],
-      completata: false,
-      domandeERisposte: domandeERisposte as any,
-      dataInizio: new Date(),
-    };
+      const simulazione = await simulazioniStorage.createSimulazione(nuovaSimulazione);
+      console.log("POST /api/simulazioni - Simulazione creata con successo:", simulazione.id);
 
-    const simulazione = await simulazioniStorage.createSimulazione(nuovaSimulazione);
-    console.log("POST /api/simulazioni - Simulazione creata con successo:", simulazione.id);
-
-    res.status(201).json(simulazione);
-  } catch (error: any) {
-    console.error("Error creating simulazione:", error);
-    console.error("Error stack:", error.stack);
-    res.status(500).json({
-      error: "Errore nella creazione della simulazione",
-      message: error.message || "Errore sconosciuto"
-    });
-  }
-});
-
-/**
- * GET /api/simulazioni?concorsoId=X
- * Recupera tutte le simulazioni dell'utente, opzionalmente filtrate per concorso
- */
-app.get("/api/simulazioni", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const concorsoId = req.query.concorsoId as string | undefined;
-    console.log("GET /api/simulazioni - UserId:", userId, "ConcorsoId:", concorsoId);
-
-    const simulazioni = await simulazioniStorage.getSimulazioni(userId, concorsoId);
-    console.log("GET /api/simulazioni - Found", simulazioni.length, "simulazioni");
-    res.json(simulazioni);
-  } catch (error: any) {
-    console.error("Error fetching simulazioni:", error);
-    console.error("Error stack:", error?.stack);
-    res.status(500).json({
-      error: "Errore nel recupero delle simulazioni",
-      details: error?.message || "Errore sconosciuto"
-    });
-  }
-});
-
-/**
- * GET /api/simulazioni/:id
- * Recupera i dettagli di una simulazione specifica
- */
-app.get("/api/simulazioni/:id", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const simulazione = await simulazioniStorage.getSimulazione(req.params.id, userId);
-
-    if (!simulazione) {
-      return res.status(404).json({ error: "Simulazione non trovata" });
+      res.status(201).json(simulazione);
+    } catch (error: any) {
+      console.error("Error creating simulazione:", error);
+      console.error("Error stack:", error.stack);
+      res.status(500).json({
+        error: "Errore nella creazione della simulazione",
+        message: error.message || "Errore sconosciuto"
+      });
     }
+  });
 
-    res.json(simulazione);
-  } catch (error) {
-    console.error("Error fetching simulazione:", error);
-    res.status(500).json({ error: "Errore nel recupero della simulazione" });
-  }
-});
+  /**
+   * GET /api/simulazioni?concorsoId=X
+   * Recupera tutte le simulazioni dell'utente, opzionalmente filtrate per concorso
+   */
+  app.get("/api/simulazioni", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const concorsoId = req.query.concorsoId as string | undefined;
+      console.log("GET /api/simulazioni - UserId:", userId, "ConcorsoId:", concorsoId);
 
-/**
- * PATCH /api/simulazioni/:id/complete
- * Completa una simulazione e calcola i risultati
- * Body: { domandeERisposte, tempoTrascorsoSecondi }
- */
-app.patch("/api/simulazioni/:id/complete", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const { domandeERisposte, tempoTrascorsoSecondi } = req.body;
-
-    // Recupera la simulazione
-    const simulazione = await simulazioniStorage.getSimulazione(req.params.id, userId);
-    if (!simulazione) {
-      return res.status(404).json({ error: "Simulazione non trovata" });
+      const simulazioni = await simulazioniStorage.getSimulazioni(userId, concorsoId);
+      console.log("GET /api/simulazioni - Found", simulazioni.length, "simulazioni");
+      res.json(simulazioni);
+    } catch (error: any) {
+      console.error("Error fetching simulazioni:", error);
+      console.error("Error stack:", error?.stack);
+      res.status(500).json({
+        error: "Errore nel recupero delle simulazioni",
+        details: error?.message || "Errore sconosciuto"
+      });
     }
+  });
 
-    if (simulazione.completata) {
-      return res.status(400).json({ error: "Simulazione già completata" });
+  /**
+   * GET /api/simulazioni/:id
+   * Recupera i dettagli di una simulazione specifica
+   */
+  app.get("/api/simulazioni/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const simulazione = await simulazioniStorage.getSimulazione(req.params.id, userId);
+
+      if (!simulazione) {
+        return res.status(404).json({ error: "Simulazione non trovata" });
+      }
+
+      res.json(simulazione);
+    } catch (error) {
+      console.error("Error fetching simulazione:", error);
+      res.status(500).json({ error: "Errore nel recupero della simulazione" });
     }
+  });
 
-    // Recupera il concorso per ottenere bandoAnalysis e calcolare penalità
-    const concorso = await storage.getConcorso(simulazione.concorsoId, userId);
-    if (!concorso) {
-      return res.status(404).json({ error: "Concorso non trovato" });
-    }
+  /**
+   * PATCH /api/simulazioni/:id/complete
+   * Completa una simulazione e calcola i risultati
+   * Body: { domandeERisposte, tempoTrascorsoSecondi }
+   */
+  app.patch("/api/simulazioni/:id/complete", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { domandeERisposte, tempoTrascorsoSecondi } = req.body;
 
-    const bandoAnalysis = concorso.bandoAnalysis as any;
-    const materie = bandoAnalysis?.materie || [];
+      // Recupera la simulazione
+      const simulazione = await simulazioniStorage.getSimulazione(req.params.id, userId);
+      if (!simulazione) {
+        return res.status(404).json({ error: "Simulazione non trovata" });
+      }
 
-    // Calcola statistiche
-    let corrette = 0;
-    let errate = 0;
-    let nonDate = 0;
-    const dettagliPerMateria: Record<string, DettagliMateria> = {};
+      if (simulazione.completata) {
+        return res.status(400).json({ error: "Simulazione già completata" });
+      }
 
-    // Inizializza dettagli per materia
-    materie.forEach((materia: any) => {
-      dettagliPerMateria[materia.nome] = {
-        corrette: 0,
-        errate: 0,
-        nonDate: 0,
-        punteggio: 0,
-        percentuale: 0,
-      };
-    });
+      // Recupera il concorso per ottenere bandoAnalysis e calcolare penalità
+      const concorso = await storage.getConcorso(simulazione.concorsoId, userId);
+      if (!concorso) {
+        return res.status(404).json({ error: "Concorso non trovato" });
+      }
 
-    // Processa ogni domanda
-    const domandeAggiornate = (domandeERisposte || simulazione.domandeERisposte as DomandaSimulazione[]).map((domanda: any) => {
-      const materia = domanda.materia || "Generale";
+      const bandoAnalysis = concorso.bandoAnalysis as any;
+      const materie = bandoAnalysis?.materie || [];
 
-      if (!dettagliPerMateria[materia]) {
-        dettagliPerMateria[materia] = {
+      // Calcola statistiche
+      let corrette = 0;
+      let errate = 0;
+      let nonDate = 0;
+      const dettagliPerMateria: Record<string, DettagliMateria> = {};
+
+      // Inizializza dettagli per materia
+      materie.forEach((materia: any) => {
+        dettagliPerMateria[materia.nome] = {
           corrette: 0,
           errate: 0,
           nonDate: 0,
           punteggio: 0,
           percentuale: 0,
         };
-      }
+      });
 
-      if (!domanda.rispostaUtente || domanda.rispostaUtente.trim() === "") {
-        nonDate++;
-        dettagliPerMateria[materia].nonDate++;
-        return domanda;
-      }
+      // Processa ogni domanda
+      const domandeAggiornate = (domandeERisposte || simulazione.domandeERisposte as DomandaSimulazione[]).map((domanda: any) => {
+        const materia = domanda.materia || "Generale";
 
-      const corretta = domanda.rispostaUtente.toUpperCase() === domanda.rispostaCorretta.toUpperCase();
-
-      if (corretta) {
-        corrette++;
-        dettagliPerMateria[materia].corrette++;
-      } else {
-        errate++;
-        dettagliPerMateria[materia].errate++;
-      }
-
-      return { ...domanda, rispostaUtente: domanda.rispostaUtente };
-    });
-
-    // Calcola punteggio con penalità
-    // Formula: (corrette / totale) * 100 - (errate * penalità)
-    const totale = domandeAggiornate.length;
-    const percentualeCorrette = totale > 0 ? (corrette / totale) * 100 : 0;
-
-    // Calcola penalità per materia basata sui pesi nel bandoAnalysis
-    let punteggioFinale = percentualeCorrette;
-
-    materie.forEach((materia: any) => {
-      const dettagli = dettagliPerMateria[materia.nome];
-      if (dettagli) {
-        const totaleMateria = dettagli.corrette + dettagli.errate + dettagli.nonDate;
-        if (totaleMateria > 0) {
-          dettagli.percentuale = (dettagli.corrette / totaleMateria) * 100;
-          // Penalità: ogni errore riduce il punteggio proporzionalmente al peso della materia
-          const peso = materia.peso || 0;
-          const penalitaPerErrore = peso * 0.5; // 0.5 punti di penalità per ogni errore, moltiplicato per il peso
-          dettagli.punteggio = dettagli.percentuale - (dettagli.errate * penalitaPerErrore);
+        if (!dettagliPerMateria[materia]) {
+          dettagliPerMateria[materia] = {
+            corrette: 0,
+            errate: 0,
+            nonDate: 0,
+            punteggio: 0,
+            percentuale: 0,
+          };
         }
+
+        if (!domanda.rispostaUtente || domanda.rispostaUtente.trim() === "") {
+          nonDate++;
+          dettagliPerMateria[materia].nonDate++;
+          return domanda;
+        }
+
+        const corretta = domanda.rispostaUtente.toUpperCase() === domanda.rispostaCorretta.toUpperCase();
+
+        if (corretta) {
+          corrette++;
+          dettagliPerMateria[materia].corrette++;
+        } else {
+          errate++;
+          dettagliPerMateria[materia].errate++;
+        }
+
+        return { ...domanda, rispostaUtente: domanda.rispostaUtente };
+      });
+
+      // Calcola punteggio con penalità
+      // Formula: (corrette / totale) * 100 - (errate * penalità)
+      const totale = domandeAggiornate.length;
+      const percentualeCorrette = totale > 0 ? (corrette / totale) * 100 : 0;
+
+      // Calcola penalità per materia basata sui pesi nel bandoAnalysis
+      let punteggioFinale = percentualeCorrette;
+
+      materie.forEach((materia: any) => {
+        const dettagli = dettagliPerMateria[materia.nome];
+        if (dettagli) {
+          const totaleMateria = dettagli.corrette + dettagli.errate + dettagli.nonDate;
+          if (totaleMateria > 0) {
+            dettagli.percentuale = (dettagli.corrette / totaleMateria) * 100;
+            // Penalità: ogni errore riduce il punteggio proporzionalmente al peso della materia
+            const peso = materia.peso || 0;
+            const penalitaPerErrore = peso * 0.5; // 0.5 punti di penalità per ogni errore, moltiplicato per il peso
+            dettagli.punteggio = dettagli.percentuale - (dettagli.errate * penalitaPerErrore);
+          }
+        }
+      });
+
+      // Penalità globale: ogni errore riduce il punteggio di 0.25 punti
+      const penalitaGlobale = errate * 0.25;
+      punteggioFinale = Math.max(0, punteggioFinale - penalitaGlobale);
+
+      // Aggiorna la simulazione
+      const simulazioneAggiornata = await simulazioniStorage.updateSimulazione(
+        req.params.id,
+        userId,
+        {
+          completata: true,
+          punteggio: punteggioFinale,
+          percentualeCorrette,
+          tempoTrascorsoSecondi: tempoTrascorsoSecondi || null,
+          dettagliPerMateria: dettagliPerMateria as any,
+          domandeERisposte: domandeAggiornate as any,
+          dataCompletamento: new Date(),
+        }
+      );
+
+      res.json(simulazioneAggiornata);
+    } catch (error) {
+      console.error("Error completing simulazione:", error);
+      res.status(500).json({ error: "Errore nel completamento della simulazione" });
+    }
+  });
+
+  /**
+   * PATCH /api/simulazioni/:id
+   * Aggiorna una simulazione (per salvare risposte durante l'esame)
+   * Body: { domandeERisposte }
+   */
+  app.patch("/api/simulazioni/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { domandeERisposte } = req.body;
+
+      const simulazione = await simulazioniStorage.updateSimulazione(
+        req.params.id,
+        userId,
+        {
+          domandeERisposte: domandeERisposte as any,
+        }
+      );
+
+      if (!simulazione) {
+        return res.status(404).json({ error: "Simulazione non trovata" });
       }
-    });
 
-    // Penalità globale: ogni errore riduce il punteggio di 0.25 punti
-    const penalitaGlobale = errate * 0.25;
-    punteggioFinale = Math.max(0, punteggioFinale - penalitaGlobale);
+      res.json(simulazione);
+    } catch (error) {
+      console.error("Error updating simulazione:", error);
+      res.status(500).json({ error: "Errore nell'aggiornamento della simulazione" });
+    }
+  });
 
-    // Aggiorna la simulazione
-    const simulazioneAggiornata = await simulazioniStorage.updateSimulazione(
-      req.params.id,
-      userId,
-      {
-        completata: true,
-        punteggio: punteggioFinale,
-        percentualeCorrette,
-        tempoTrascorsoSecondi: tempoTrascorsoSecondi || null,
-        dettagliPerMateria: dettagliPerMateria as any,
-        domandeERisposte: domandeAggiornate as any,
-        dataCompletamento: new Date(),
+  /**
+   * DELETE /api/simulazioni/:id
+   * Elimina una simulazione
+   */
+  app.delete("/api/simulazioni/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const deleted = await simulazioniStorage.deleteSimulazione(req.params.id, userId);
+
+      if (!deleted) {
+        return res.status(404).json({ error: "Simulazione non trovata" });
       }
-    );
 
-    res.json(simulazioneAggiornata);
-  } catch (error) {
-    console.error("Error completing simulazione:", error);
-    res.status(500).json({ error: "Errore nel completamento della simulazione" });
+      res.json({ success: true, message: "Simulazione eliminata" });
+    } catch (error) {
+      console.error("Error deleting simulazione:", error);
+      res.status(500).json({ error: "Errore nell'eliminazione della simulazione" });
+    }
+  });
+
+  /**
+   * POST /api/specialista/spiega
+   * Chiedi spiegazione di un concetto allo specialista AI
+   */
+
+  // Rate limiting in-memory per utente
+  const rateLimitMap = new Map<string, number>();
+
+  function checkRateLimit(userId: string): boolean {
+    const now = Date.now();
+    const lastRequest = rateLimitMap.get(userId) || 0;
+
+    if (now - lastRequest < 3000) {
+      return false; // Troppo veloce (meno di 3 secondi)
+    }
+
+    rateLimitMap.set(userId, now);
+    return true;
   }
-});
 
-/**
- * PATCH /api/simulazioni/:id
- * Aggiorna una simulazione (per salvare risposte durante l'esame)
- * Body: { domandeERisposte }
- */
-app.patch("/api/simulazioni/:id", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const { domandeERisposte } = req.body;
+  app.post("/api/specialista/spiega", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { concetto, concorsoId } = req.body;
 
-    const simulazione = await simulazioniStorage.updateSimulazione(
-      req.params.id,
-      userId,
-      {
-        domandeERisposte: domandeERisposte as any,
+      if (!concetto || typeof concetto !== 'string' || concetto.trim().length < 5) {
+        return res.status(400).json({ error: "Concetto troppo breve (minimo 5 caratteri)" });
       }
-    );
 
-    if (!simulazione) {
-      return res.status(404).json({ error: "Simulazione non trovata" });
-    }
+      if (!concorsoId) {
+        return res.status(400).json({ error: "concorsoId richiesto" });
+      }
 
-    res.json(simulazione);
-  } catch (error) {
-    console.error("Error updating simulazione:", error);
-    res.status(500).json({ error: "Errore nell'aggiornamento della simulazione" });
-  }
-});
+      // Rate limiting
+      if (!checkRateLimit(userId)) {
+        return res.status(429).json({ error: "Aspetta 3 secondi prima della prossima domanda" });
+      }
 
-/**
- * DELETE /api/simulazioni/:id
- * Elimina una simulazione
- */
-app.delete("/api/simulazioni/:id", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const deleted = await simulazioniStorage.deleteSimulazione(req.params.id, userId);
+      // Ottieni contesto del concorso (materie, tipo concorso)
+      const concorso = await storage.getConcorso(concorsoId, userId);
+      if (!concorso) {
+        return res.status(404).json({ error: "Concorso non trovato" });
+      }
 
-    if (!deleted) {
-      return res.status(404).json({ error: "Simulazione non trovata" });
-    }
+      const bandoAnalysis = concorso.bandoAnalysis as any;
+      const materieConcorso = bandoAnalysis?.materie?.map((m: any) => m.nome).join(', ') || 'materie del concorso';
 
-    res.json({ success: true, message: "Simulazione eliminata" });
-  } catch (error) {
-    console.error("Error deleting simulazione:", error);
-    res.status(500).json({ error: "Errore nell'eliminazione della simulazione" });
-  }
-});
+      console.log("[SPECIALISTA] Richiesta spiegazione per:", concetto.substring(0, 100));
 
-/**
- * POST /api/specialista/spiega
- * Chiedi spiegazione di un concetto allo specialista AI
- */
+      // SYSTEM HYBRID: Use Gemini -> Vercel -> OpenAI
+      let spiegazione: string | null = null;
 
-// Rate limiting in-memory per utente
-const rateLimitMap = new Map<string, number>();
-
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const lastRequest = rateLimitMap.get(userId) || 0;
-
-  if (now - lastRequest < 3000) {
-    return false; // Troppo veloce (meno di 3 secondi)
-  }
-
-  rateLimitMap.set(userId, now);
-  return true;
-}
-
-app.post("/api/specialista/spiega", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const { concetto, concorsoId } = req.body;
-
-    if (!concetto || typeof concetto !== 'string' || concetto.trim().length < 5) {
-      return res.status(400).json({ error: "Concetto troppo breve (minimo 5 caratteri)" });
-    }
-
-    if (!concorsoId) {
-      return res.status(400).json({ error: "concorsoId richiesto" });
-    }
-
-    // Rate limiting
-    if (!checkRateLimit(userId)) {
-      return res.status(429).json({ error: "Aspetta 3 secondi prima della prossima domanda" });
-    }
-
-    // Ottieni contesto del concorso (materie, tipo concorso)
-    const concorso = await storage.getConcorso(concorsoId, userId);
-    if (!concorso) {
-      return res.status(404).json({ error: "Concorso non trovato" });
-    }
-
-    const bandoAnalysis = concorso.bandoAnalysis as any;
-    const materieConcorso = bandoAnalysis?.materie?.map((m: any) => m.nome).join(', ') || 'materie del concorso';
-
-    console.log("[SPECIALISTA] Richiesta spiegazione per:", concetto.substring(0, 100));
-
-    // SYSTEM HYBRID: Use Gemini -> Vercel -> OpenAI
-    let spiegazione: string | null = null;
-
-    const systemPrompt = `Sei uno specialista esperto in concorsi pubblici italiani, con focus su: ${materieConcorso}.
+      const systemPrompt = `Sei uno specialista esperto in concorsi pubblici italiani, con focus su: ${materieConcorso}.
 
 Il tuo compito è spiegare concetti in modo CHIARO, SEMPLICE e DIRETTO.
 
@@ -2661,223 +2653,223 @@ REGOLE:
 
 IMPORTANTE: Fornisci UNA SOLA spiegazione completa e definitiva. Non dire "fammi sapere se hai altre domande".`;
 
-    try {
-      const userPrompt = `Spiega questo concetto: ${concetto}`;
-      spiegazione = await generateWithFallback({
-        task: "concept_explain",
-        systemPrompt,
-        userPrompt,
-        temperature: 0.7,
-        responseMode: "text",
-      });
-    } catch (err: any) {
-      console.error("Errore generazione spiegazione:", err.message);
-      throw new Error(`Errore generazione AI: ${err.message}`);
-    }
+      try {
+        const userPrompt = `Spiega questo concetto: ${concetto}`;
+        spiegazione = await generateWithFallback({
+          task: "concept_explain",
+          systemPrompt,
+          userPrompt,
+          temperature: 0.7,
+          responseMode: "text",
+        });
+      } catch (err: any) {
+        console.error("Errore generazione spiegazione:", err.message);
+        throw new Error(`Errore generazione AI: ${err.message}`);
+      }
 
-    if (!spiegazione) {
-      throw new Error("Nessuna spiegazione ricevuta");
-    }
+      if (!spiegazione) {
+        throw new Error("Nessuna spiegazione ricevuta");
+      }
 
-    console.log("[SPECIALISTA] Spiegazione generata:", spiegazione.substring(0, 100));
+      console.log("[SPECIALISTA] Spiegazione generata:", spiegazione.substring(0, 100));
 
-    res.json({ spiegazione });
+      res.json({ spiegazione });
 
-  } catch (error: any) {
-    console.error("[SPECIALISTA] Errore:", error?.message || error);
+    } catch (error: any) {
+      console.error("[SPECIALISTA] Errore:", error?.message || error);
 
-    // Gestisci errori specifici di OpenAI
-    if (error?.response?.status === 429) {
-      return res.status(429).json({
-        error: "Troppe richieste. Riprova tra qualche minuto.",
+      // Gestisci errori specifici di OpenAI
+      if (error?.response?.status === 429) {
+        return res.status(429).json({
+          error: "Troppe richieste. Riprova tra qualche minuto.",
+          details: error?.message
+        });
+      }
+
+      if (error?.response?.status === 401) {
+        return res.status(500).json({
+          error: "Errore di configurazione AI",
+          details: "Chiave API non valida"
+        });
+      }
+
+      res.status(500).json({
+        error: "Errore nel generare la spiegazione",
         details: error?.message
       });
     }
+  });
 
-    if (error?.response?.status === 401) {
-      return res.status(500).json({
-        error: "Errore di configurazione AI",
-        details: "Chiave API non valida"
+  // Endpoint per statistiche aggregate dell'utente
+  app.get("/api/stats", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+
+      // 1. Ottieni progressi generali
+      let progress;
+      try {
+        progress = await storage.getUserProgress(userId);
+      } catch (err) {
+        console.error("Error fetching user progress:", err);
+        progress = null;
+      }
+
+      // 2. Ottieni ultime simulazioni completate
+      let completedSimulations: Simulazione[] = [];
+      try {
+        const recentSimulations = await simulazioniStorage.getSimulazioni(userId);
+        completedSimulations = recentSimulations
+          .filter(s => s.completata)
+          .sort((a, b) => new Date(b.dataCompletamento || 0).getTime() - new Date(a.dataCompletamento || 0).getTime())
+          .slice(0, 10);
+      } catch (err) {
+        console.error("Error fetching simulations:", err);
+      }
+
+
+      // 3. Calcola precisione media
+      let averageAccuracy = 0;
+      if (completedSimulations.length > 0) {
+        const totalAccuracy = completedSimulations.reduce((sum, sim) => sum + (sim.percentualeCorrette || 0), 0);
+        averageAccuracy = Math.round(totalAccuracy / completedSimulations.length);
+      }
+
+      // 4. Formatta cronologia quiz
+      const quizHistory = completedSimulations.map(sim => {
+        // Cerca di ottenere il titolo del concorso se possibile, altrimenti usa ID o tipo
+        // Nota: Idealmente dovremmo fare una join o una query separata per i nomi dei concorsi
+        // Per ora usiamo il tipo simulazione o "Simulazione"
+        return {
+          id: sim.id,
+          title: sim.tipoSimulazione === "completa" ? "Simulazione Completa" :
+            sim.tipoSimulazione === "materia" ? "Test Materia" : "Allenamento",
+          score: Math.round(sim.percentualeCorrette || 0),
+          questions: sim.numeroDomande,
+          date: sim.dataCompletamento ? new Date(sim.dataCompletamento).toLocaleDateString('it-IT') : "N/A"
+        };
       });
+
+      // 5. Mock dati andamento settimanale (non abbiamo ancora tracking giornaliero)
+      // In futuro implementare tabella daily_stats
+      const weeklyTrend = [
+        { day: "Lun", hours: 0 },
+        { day: "Mar", hours: 0 },
+        { day: "Mer", hours: 0 },
+        { day: "Gio", hours: 0 },
+        { day: "Ven", hours: 0 },
+        { day: "Sab", hours: 0 },
+        { day: "Dom", hours: 0 },
+      ];
+
+      res.json({
+        studyTime: progress?.oreStudioTotali || 0,
+        flashcardsMastered: progress?.flashcardMasterate || 0,
+        quizCompleted: progress?.quizCompletati || completedSimulations.length,
+        averageAccuracy,
+        quizHistory,
+        weeklyTrend
+      });
+
+    } catch (error: any) {
+      console.error("Error fetching stats:", error);
+      res.status(500).json({ error: "Errore nel recupero statistiche", details: error.message });
     }
+  });
 
-    res.status(500).json({
-      error: "Errore nel generare la spiegazione",
-      details: error?.message
-    });
-  }
-});
+  // Registra routes SQ3R
+  // registerSQ3RRoutes(app); - Spostato sopra
 
-// Endpoint per statistiche aggregate dell'utente
-app.get("/api/stats", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
+  // Registra routes Libreria Pubblica 
+  // registerLibreriaRoutes(app); - Spostato sopra
 
-    // 1. Ottieni progressi generali
-    let progress;
+  // ============================================
+  // API ENDPOINTS PER CALENDAR EVENTS
+  // ============================================
+
+  app.get("/api/calendar/events", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      progress = await storage.getUserProgress(userId);
-    } catch (err) {
-      console.error("Error fetching user progress:", err);
-      progress = null;
+      const userId = getUserId(req);
+      const events = await storage.getCalendarEvents(userId);
+      res.json(events);
+    } catch (error: any) {
+      console.error("Error fetching calendar events:", error);
+      res.status(500).json({ error: "Errore nel recupero eventi calendario" });
     }
+  });
 
-    // 2. Ottieni ultime simulazioni completate
-    let completedSimulations: Simulazione[] = [];
+  app.post("/api/calendar/events", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const recentSimulations = await simulazioniStorage.getSimulazioni(userId);
-      completedSimulations = recentSimulations
-        .filter(s => s.completata)
-        .sort((a, b) => new Date(b.dataCompletamento || 0).getTime() - new Date(a.dataCompletamento || 0).getTime())
-        .slice(0, 10);
-    } catch (err) {
-      console.error("Error fetching simulations:", err);
-    }
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Utente non autenticato" });
+      }
 
+      console.log("[CALENDAR] POST /events - Body:", req.body);
 
-    // 3. Calcola precisione media
-    let averageAccuracy = 0;
-    if (completedSimulations.length > 0) {
-      const totalAccuracy = completedSimulations.reduce((sum, sim) => sum + (sim.percentualeCorrette || 0), 0);
-      averageAccuracy = Math.round(totalAccuracy / completedSimulations.length);
-    }
-
-    // 4. Formatta cronologia quiz
-    const quizHistory = completedSimulations.map(sim => {
-      // Cerca di ottenere il titolo del concorso se possibile, altrimenti usa ID o tipo
-      // Nota: Idealmente dovremmo fare una join o una query separata per i nomi dei concorsi
-      // Per ora usiamo il tipo simulazione o "Simulazione"
-      return {
-        id: sim.id,
-        title: sim.tipoSimulazione === "completa" ? "Simulazione Completa" :
-          sim.tipoSimulazione === "materia" ? "Test Materia" : "Allenamento",
-        score: Math.round(sim.percentualeCorrette || 0),
-        questions: sim.numeroDomande,
-        date: sim.dataCompletamento ? new Date(sim.dataCompletamento).toLocaleDateString('it-IT') : "N/A"
+      // Ensure date is parsed correctly if sent as string
+      const data = {
+        ...req.body,
+        userId,
+        date: new Date(req.body.date),
+        // Se concorsoId è stringa vuota o undefined, impostalo a null o undefined
+        concorsoId: req.body.concorsoId || undefined,
+        // Assicurati che description sia stringa o undefined (no null se schema non lo vuole, anche se DB lo accetta)
+        description: req.body.description || undefined
       };
-    });
 
-    // 5. Mock dati andamento settimanale (non abbiamo ancora tracking giornaliero)
-    // In futuro implementare tabella daily_stats
-    const weeklyTrend = [
-      { day: "Lun", hours: 0 },
-      { day: "Mar", hours: 0 },
-      { day: "Mer", hours: 0 },
-      { day: "Gio", hours: 0 },
-      { day: "Ven", hours: 0 },
-      { day: "Sab", hours: 0 },
-      { day: "Dom", hours: 0 },
-    ];
+      console.log("[CALENDAR] Validating data:", data);
 
-    res.json({
-      studyTime: progress?.oreStudioTotali || 0,
-      flashcardsMastered: progress?.flashcardMasterate || 0,
-      quizCompleted: progress?.quizCompletati || completedSimulations.length,
-      averageAccuracy,
-      quizHistory,
-      weeklyTrend
-    });
+      const validated = insertCalendarEventSchema.parse(data);
+      console.log("[CALENDAR] Validation successful");
 
-  } catch (error: any) {
-    console.error("Error fetching stats:", error);
-    res.status(500).json({ error: "Errore nel recupero statistiche", details: error.message });
-  }
-});
+      const event = await storage.createCalendarEvent(validated);
+      console.log("[CALENDAR] Event created:", event.id);
 
-// Registra routes SQ3R
-// registerSQ3RRoutes(app); - Spostato sopra
-
-// Registra routes Libreria Pubblica 
-// registerLibreriaRoutes(app); - Spostato sopra
-
-// ============================================
-// API ENDPOINTS PER CALENDAR EVENTS
-// ============================================
-
-app.get("/api/calendar/events", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const events = await storage.getCalendarEvents(userId);
-    res.json(events);
-  } catch (error: any) {
-    console.error("Error fetching calendar events:", error);
-    res.status(500).json({ error: "Errore nel recupero eventi calendario" });
-  }
-});
-
-app.post("/api/calendar/events", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    if (!userId) {
-      return res.status(401).json({ error: "Utente non autenticato" });
+      res.status(201).json(event);
+    } catch (error: any) {
+      console.error("Error creating calendar event:", error);
+      if (error.name === "ZodError") {
+        console.error("Zod Validation Errors:", JSON.stringify(error.errors, null, 2));
+        return res.status(400).json({ error: "Dati non validi", details: error.errors });
+      }
+      res.status(400).json({ error: error.message || "Errore creazione evento" });
     }
+  });
 
-    console.log("[CALENDAR] POST /events - Body:", req.body);
+  app.patch("/api/calendar/events/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const data = { ...req.body };
+      if (data.date) {
+        data.date = new Date(data.date);
+      }
 
-    // Ensure date is parsed correctly if sent as string
-    const data = {
-      ...req.body,
-      userId,
-      date: new Date(req.body.date),
-      // Se concorsoId è stringa vuota o undefined, impostalo a null o undefined
-      concorsoId: req.body.concorsoId || undefined,
-      // Assicurati che description sia stringa o undefined (no null se schema non lo vuole, anche se DB lo accetta)
-      description: req.body.description || undefined
-    };
-
-    console.log("[CALENDAR] Validating data:", data);
-
-    const validated = insertCalendarEventSchema.parse(data);
-    console.log("[CALENDAR] Validation successful");
-
-    const event = await storage.createCalendarEvent(validated);
-    console.log("[CALENDAR] Event created:", event.id);
-
-    res.status(201).json(event);
-  } catch (error: any) {
-    console.error("Error creating calendar event:", error);
-    if (error.name === "ZodError") {
-      console.error("Zod Validation Errors:", JSON.stringify(error.errors, null, 2));
-      return res.status(400).json({ error: "Dati non validi", details: error.errors });
+      const updated = await storage.updateCalendarEvent(req.params.id, userId, data);
+      if (!updated) {
+        return res.status(404).json({ error: "Evento non trovato" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating calendar event:", error);
+      res.status(500).json({ error: "Errore aggiornamento evento" });
     }
-    res.status(400).json({ error: error.message || "Errore creazione evento" });
-  }
-});
+  });
 
-app.patch("/api/calendar/events/:id", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const data = { ...req.body };
-    if (data.date) {
-      data.date = new Date(data.date);
+  app.delete("/api/calendar/events/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const deleted = await storage.deleteCalendarEvent(req.params.id, userId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Evento non trovato" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting calendar event:", error);
+      res.status(500).json({ error: "Errore eliminazione evento" });
     }
+  });
 
-    const updated = await storage.updateCalendarEvent(req.params.id, userId, data);
-    if (!updated) {
-      return res.status(404).json({ error: "Evento non trovato" });
-    }
-    res.json(updated);
-  } catch (error: any) {
-    console.error("Error updating calendar event:", error);
-    res.status(500).json({ error: "Errore aggiornamento evento" });
-  }
-});
+  console.log('✅ Tutte le routes registrate');
 
-app.delete("/api/calendar/events/:id", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const userId = getUserId(req);
-    const deleted = await storage.deleteCalendarEvent(req.params.id, userId);
-    if (!deleted) {
-      return res.status(404).json({ error: "Evento non trovato" });
-    }
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error("Error deleting calendar event:", error);
-    res.status(500).json({ error: "Errore eliminazione evento" });
-  }
-});
-
-console.log('✅ Tutte le routes registrate');
-
-return httpServer;
+  return httpServer;
 }
