@@ -121,6 +121,7 @@ export default function OralExamPage() {
     const [fluidMode, setFluidMode] = useState(true); // Default to fluid mode
     const [voiceSpeed, setVoiceSpeed] = useState(1.0); // Default speed
     const [countdown, setCountdown] = useState<number | null>(null); // For fluid mode countdown
+    const [lastAudioUrl, setLastAudioUrl] = useState<string | null>(null); // New state for replay
 
     // NEW: Intelligent speech recognition with Whisper
     const [isRecording, setIsRecording] = useState(false);
@@ -133,6 +134,36 @@ export default function OralExamPage() {
     const recognitionRef = useRef<any>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
+    const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    const handleReplay = () => {
+        if (!lastAudioUrl) return;
+
+        // Stop any current audio
+        window.speechSynthesis.cancel();
+
+        const audio = new Audio(lastAudioUrl);
+        setPersonaState('speaking');
+
+        audio.onended = () => {
+            setPersonaState('listening');
+        };
+
+        audio.onerror = (e) => {
+            console.error("Replay error:", e);
+            setPersonaState('listening');
+            toast({
+                title: "Errore riproduzione",
+                description: "Impossibile riprodurre l'audio.",
+                variant: "destructive"
+            });
+        };
+
+        audio.play().catch(e => {
+            console.error("Play error:", e);
+            setPersonaState('listening');
+        });
+    };
 
     // Fetch concorso data
     const { data: concorso, isLoading: loadingConcorso } = useQuery<Concorso>({
@@ -382,13 +413,18 @@ export default function OralExamPage() {
 
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
 
-            // console.log("Audio blob created, size:", blob.size);
+            // Update last audio for replay
+            setLastAudioUrl(url);
+
+            const audio = new Audio(url);
 
             audio.onended = () => {
                 setPersonaState('listening');
-                URL.revokeObjectURL(url);
+                // Do NOT revoke immediately if we want to replay
+                // URL.revokeObjectURL(url); 
+
+                // FLUID MODE: Auto-restart recognition if enabled
 
                 // FLUID MODE: Auto-restart recognition if enabled
                 // Only if session is still active
@@ -1049,6 +1085,17 @@ export default function OralExamPage() {
                         )}
 
                         <div className="flex gap-2 items-center">
+                            {/* Replay Button - NEW */}
+                            <Button
+                                variant="secondary"
+                                size="lg"
+                                className="h-14 w-14 rounded-full shadow-xl bg-white/10 hover:bg-white/20 border border-white/10"
+                                onClick={handleReplay}
+                                disabled={!lastAudioUrl || personaState === 'speaking' || isRecording}
+                                title="Riascolta domanda"
+                            >
+                                <Volume2 className="h-6 w-6 text-white" />
+                            </Button>
                             <Button
                                 variant={isRecording ? "destructive" : "secondary"}
                                 size="lg"
