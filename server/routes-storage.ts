@@ -109,7 +109,10 @@ router.post("/signed-download-url", isAuthenticated, async (req: Request, res: R
 
         const { path, bucket = "materials", expiresIn = 3600 } = req.body;
 
+        console.log(`[STORAGE] Requesting signed URL for path: "${path}" in bucket: "${bucket}"`);
+
         if (!path) {
+            console.error("[STORAGE] Path missing in request body");
             return res.status(400).json({ error: "Path richiesto" });
         }
 
