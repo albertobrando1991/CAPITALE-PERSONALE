@@ -837,7 +837,9 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
             console.error("[UPLOAD-MATERIAL] Error extracting PDF text:", pdfError);
             // Continua comunque, il file è salvato
           }
-          // UPLOAD TO SUPABASE STORAGE & EXTRACT TEXT
+        }
+
+        // UPLOAD TO SUPABASE STORAGE & EXTRACT TEXT
           // ==========================================
           let storagePath = "";
           let textContent = "";
@@ -916,7 +918,11 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
               details: dbError?.message || JSON.stringify(dbError)
             });
           }
-        });
+      } catch (error: any) {
+        console.error("[UPLOAD-MATERIAL] Unexpected error:", error);
+        res.status(500).json({ error: "Errore inaspettato durante upload", details: error?.message });
+      }
+    });
   });
 
   app.post("/api/materials/note", isAuthenticated, async (req: Request, res: Response) => {
