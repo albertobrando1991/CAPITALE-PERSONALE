@@ -867,23 +867,38 @@ ${testoTroncato}`;
       capitoloId
     }).returning();
 
-    // 2. Create Questions and Answers
-    for (const qData of questionsData) {
-      const [question] = await db.insert(questions).values({
-        quizId: quiz.id,
-        questionText: qData.domanda,
-        correctAnswerIndex: qData.rispostaCorretta, // Keep for legacy/redundancy
-        explanation: qData.spiegazione
-      }).returning();
+    // 2. Create Questions and Answers (Optimized Batch Insert)
+    const questionsToInsert = questionsData.map(qData => ({
+      quizId: quiz.id,
+      questionText: qData.domanda,
+      correctAnswerIndex: qData.rispostaCorretta, // Keep for legacy/redundancy
+      explanation: qData.spiegazione
+    }));
 
-      // Insert answers
-      for (let i = 0; i < qData.opzioni.length; i++) {
-        await db.insert(answers).values({
+    // Batch insert questions
+    const insertedQuestions = await db.insert(questions)
+      .values(questionsToInsert)
+      .returning();
+
+    // Prepare answers
+    const answersToInsert: any[] = [];
+
+    // The order of returned rows from INSERT ... RETURNING corresponds to the order of values
+    insertedQuestions.forEach((question: any, index: number) => {
+      const qData = questionsData[index];
+
+      qData.opzioni.forEach((opt: string, optIndex: number) => {
+        answersToInsert.push({
           questionId: question.id,
-          answerText: qData.opzioni[i],
-          isCorrect: i === qData.rispostaCorretta
+          answerText: opt,
+          isCorrect: optIndex === qData.rispostaCorretta
         });
-      }
+      });
+    });
+
+    // Batch insert answers
+    if (answersToInsert.length > 0) {
+      await db.insert(answers).values(answersToInsert);
     }
 
     return this.getQuizByCapitoloId(capitoloId);
