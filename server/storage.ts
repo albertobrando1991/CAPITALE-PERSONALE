@@ -37,7 +37,7 @@ export interface IStorage {
   upsertUserProgress(progress: Partial<UserProgress> & { userId: string }): Promise<UserProgress>;
 
   createMaterial(material: InsertMaterial): Promise<Material>;
-  getMaterials(userId: string, concorsoId: string): Promise<Material[]>;
+  getMaterials(userId: string, concorsoId?: string): Promise<Material[]>;
   getMaterial(id: string, userId: string): Promise<Material | undefined>;
   deleteMaterial(id: string, userId: string): Promise<boolean>;
   updateMaterial(id: string, userId: string, data: Partial<InsertMaterial>): Promise<Material | undefined>;
@@ -218,11 +218,16 @@ export class DatabaseStorage implements IStorage {
     return newMaterial;
   }
 
-  async getMaterials(userId: string, concorsoId: string): Promise<Material[]> {
+  async getMaterials(userId: string, concorsoId?: string): Promise<Material[]> {
+    const conditions = [eq(materials.userId, userId)];
+    if (concorsoId) {
+      conditions.push(eq(materials.concorsoId, concorsoId));
+    }
+
     return await db
       .select()
       .from(materials)
-      .where(and(eq(materials.userId, userId), eq(materials.concorsoId, concorsoId)))
+      .where(and(...conditions))
       .orderBy(desc(materials.createdAt));
   }
 

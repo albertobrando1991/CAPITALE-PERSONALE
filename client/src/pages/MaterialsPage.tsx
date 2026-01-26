@@ -1,150 +1,259 @@
 import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest, apiFetch } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-  DialogTrigger,
+  Dialog, DialogContent, DialogTitle, DialogDescription, DialogTrigger, DialogHeader
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { MaterialCard } from "@/components/MaterialCard";
 import { UploadMaterial } from "@/components/UploadMaterial";
 import { EmptyState } from "@/components/EmptyState";
-import { Plus, Search, BookOpen } from "lucide-react";
+import { Plus, Search, BookOpen, PenBox } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
-interface Material {
+interface Concorso {
   id: string;
-  title: string;
-  type: "normativa" | "giurisprudenza" | "manuale";
-  status: "pending" | "processing" | "completed";
-  flashcardsCount: number;
-  quizzesCount: number;
+  nome: string;
+  tipo: string;
 }
 
-// todo: remove mock functionality
-const mockMaterials: Material[] = [
-  {
-    id: "1",
-    title: "Legge 241/1990 - Procedimento Amministrativo",
-    type: "normativa" as const,
-    status: "completed" as const,
-    flashcardsCount: 45,
-    quizzesCount: 3,
-  },
-  {
-    id: "2",
-    title: "D.Lgs. 165/2001 - TUPI",
-    type: "normativa" as const,
-    status: "completed" as const,
-    flashcardsCount: 62,
-    quizzesCount: 4,
-  },
-  {
-    id: "3",
-    title: "Costituzione Italiana - Parte I",
-    type: "normativa" as const,
-    status: "processing" as const,
-    flashcardsCount: 0,
-    quizzesCount: 0,
-  },
-  {
-    id: "4",
-    title: "Manuale di Diritto Amministrativo",
-    type: "manuale" as const,
-    status: "completed" as const,
-    flashcardsCount: 120,
-    quizzesCount: 8,
-  },
-  {
-    id: "5",
-    title: "Sentenza Corte Cost. 238/2014",
-    type: "giurisprudenza" as const,
-    status: "completed" as const,
-    flashcardsCount: 15,
-    quizzesCount: 1,
-  },
-  {
-    id: "6",
-    title: "D.Lgs. 33/2013 - Trasparenza",
-    type: "normativa" as const,
-    status: "pending" as const,
-    flashcardsCount: 0,
-    quizzesCount: 0,
-  },
-];
-
 export default function MaterialsPage() {
-  const [materials, setMaterials] = useState(mockMaterials);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
-  const filteredMaterials = materials.filter((m) => {
-    const matchesSearch = m.title.toLowerCase().includes(search.toLowerCase());
-    const matchesType = typeFilter === "all" || m.type === typeFilter;
+  // Note State
+  const [noteConcorsoId, setNoteConcorsoId] = useState("");
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteMateria, setNoteMateria] = useState("");
+  const [noteContent, setNoteContent] = useState("");
+
+  // Upload State
+  const [uploadConcorsoId, setUploadConcorsoId] = useState("");
+
+  // Data Fetching
+  const { data: materials = [], isLoading: isLoadingMaterials } = useQuery({
+    queryKey: ["/api/materials"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/materials");
+      return res.json();
+    }
+  });
+
+  const { data: concorsi = [] } = useQuery({
+    queryKey: ["/api/concorsi"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/concorsi");
+      return res.json();
+    }
+  });
+
+  // Derived Data
+  const filteredMaterials = (materials as any[]).filter((m: any) => {
+    const matchesSearch = m.nome.toLowerCase().includes(search.toLowerCase());
+    const matchesType = typeFilter === "all" || m.tipo === typeFilter;
     return matchesSearch && matchesType;
   });
 
-  const handleDelete = (id: string) => {
-    setMaterials((prev) => prev.filter((m) => m.id !== id));
-    console.log("Deleted material:", id);
+  // Mutations
+  const createNoteMutation = useMutation({
+    mutationFn: async () => {
+      if (!noteConcorsoId) throw new Error("Seleziona un concorso");
+      await apiRequest("POST", "/api/materials/note", {
+        concorsoId: noteConcorsoId,
+        nome: noteTitle,
+        materia: noteMateria || "Note Personali",
+        contenuto: noteContent
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
+      setIsNoteOpen(false);
+      setNoteConcorsoId("");
+      setNoteTitle("");
+      setNoteMateria("");
+      setNoteContent("");
+      toast({ title: "Nota creata con successo", description: "La tua nota è stata salvata tra i materiali." });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Errore", description: e.message, variant: "destructive" });
+    }
+  });
+
+  const handleCreateNote = () => {
+    if (!noteTitle || !noteContent || !noteConcorsoId) {
+      toast({ title: "Attenzione", description: "Compila tutti i campi obbligatori", variant: "destructive" });
+      return;
+    }
+    createNoteMutation.mutate();
   };
 
-  const handleUpload = async (file: File, title: string, type: string) => {
-    console.log("Uploading:", file.name, title, type);
-    // todo: remove mock functionality
-    await new Promise((r) => setTimeout(r, 1500));
-    setMaterials((prev) => [
-      ...prev,
-      {
-        id: String(Date.now()),
-        title,
-        type: type as "normativa" | "giurisprudenza" | "manuale",
-        status: "processing" as const,
-        flashcardsCount: 0,
-        quizzesCount: 0,
-      },
-    ]);
-    setIsUploadOpen(false);
+  const uploadMutation = useMutation({
+    mutationFn: async ({ file, title, type }: { file: File; title: string; type: string }) => {
+      if (!uploadConcorsoId) throw new Error("Seleziona un concorso prima di caricare");
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("concorsoId", uploadConcorsoId);
+      formData.append("nome", title);
+      formData.append("tipo", type);
+      formData.append("materia", "Generale");
+
+      const res = await apiFetch("/api/upload-material", {
+        method: "POST",
+        body: formData
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Upload failed");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
+      setIsUploadOpen(false);
+      setUploadConcorsoId("");
+      toast({ title: "Materiale caricato", description: "Il file è stato aggiunto ai tuoi materiali." });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Errore upload", description: e.message, variant: "destructive" });
+    }
+  });
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Sei sicuro di voler eliminare questo materiale?")) return;
+    try {
+      await apiRequest("DELETE", `/api/materials/${id}`);
+      queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
+      toast({ title: "Eliminato", description: "Materiale rimosso correttamente" });
+    } catch (e: any) {
+      toast({ title: "Errore", description: "Impossibile eliminare", variant: "destructive" });
+    }
   };
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold">Materiali</h1>
+          <h1 className="text-3xl font-semibold">Fonti e Materiali</h1>
           <p className="text-muted-foreground mt-1">
-            Gestisci i tuoi materiali di studio
+            Gestisci i tuoi materiali, libri, dispense e appunti personali
           </p>
         </div>
-        <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-upload-material">
-              <Plus className="h-4 w-4 mr-2" />
-              Carica Materiale
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-lg p-0 overflow-hidden">
-            <div className="sr-only">
-              <DialogTitle>Carica Materiale</DialogTitle>
-              <DialogDescription>
-                Modulo per il caricamento di un nuovo materiale di studio (PDF)
-              </DialogDescription>
-            </div>
-            <UploadMaterial
-              onUpload={handleUpload}
-              onCancel={() => setIsUploadOpen(false)}
-            />
-          </DialogContent>
-        </Dialog>
+        <div className="flex gap-2">
+          {/* NEW NOTE DIALOG */}
+          <Dialog open={isNoteOpen} onOpenChange={setIsNoteOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" data-testid="button-add-note">
+                <PenBox className="h-4 w-4 mr-2" />
+                Nuova Nota
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Crea Nota Personale</DialogTitle>
+                <DialogDescription>
+                  Aggiungi appunti testuali alle tue fonti.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Concorso di riferimento</Label>
+                  <Select value={noteConcorsoId} onValueChange={setNoteConcorsoId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleziona Concorso" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(concorsi as Concorso[]).map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Materia / Argomento</Label>
+                  <Input
+                    placeholder="Es. Diritto Amministrativo"
+                    value={noteMateria}
+                    onChange={(e) => setNoteMateria(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Titolo della Nota</Label>
+                  <Input
+                    placeholder="Titolo identificativo"
+                    value={noteTitle}
+                    onChange={(e) => setNoteTitle(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Contenuto</Label>
+                  <Textarea
+                    placeholder="Scrivi o incolla qui i tuoi appunti..."
+                    className="min-h-[200px]"
+                    value={noteContent}
+                    onChange={(e) => setNoteContent(e.target.value)}
+                  />
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
+                  <Button variant="ghost" onClick={() => setIsNoteOpen(false)}>Annulla</Button>
+                  <Button
+                    onClick={handleCreateNote}
+                    disabled={createNoteMutation.isPending}
+                  >
+                    {createNoteMutation.isPending ? "Salvataggio..." : "Salva Nota"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* UPLOAD DIALOG */}
+          <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-upload-material">
+                <Plus className="h-4 w-4 mr-2" />
+                Carica Materiale
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-lg p-0 overflow-hidden">
+              <div className="sr-only">
+                <DialogTitle>Carica Materiale</DialogTitle>
+                <DialogDescription>PDF Upload</DialogDescription>
+              </div>
+              <div className="p-6 pb-0">
+                <Label className="mb-2 block">Seleziona Concorso</Label>
+                <Select value={uploadConcorsoId} onValueChange={setUploadConcorsoId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Scegli concorso..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(concorsi as Concorso[]).map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!uploadConcorsoId && <p className="text-xs text-muted-foreground mt-1">Seleziona un concorso per abilitare il caricamento</p>}
+              </div>
+
+              <div className={!uploadConcorsoId ? "opacity-50 pointer-events-none" : ""}>
+                <UploadMaterial
+                  onUpload={(file, title, type) => uploadMutation.mutateAsync({ file, title, type })}
+                  onCancel={() => setIsUploadOpen(false)}
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4">
@@ -155,11 +264,10 @@ export default function MaterialsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
-            data-testid="input-search-materials"
           />
         </div>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-full sm:w-48" data-testid="select-type-filter">
+          <SelectTrigger className="w-full sm:w-48">
             <SelectValue placeholder="Tipo" />
           </SelectTrigger>
           <SelectContent>
@@ -167,16 +275,26 @@ export default function MaterialsPage() {
             <SelectItem value="normativa">Normativa</SelectItem>
             <SelectItem value="giurisprudenza">Giurisprudenza</SelectItem>
             <SelectItem value="manuale">Manuale</SelectItem>
+            <SelectItem value="appunti">Appunti Personali</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {filteredMaterials.length > 0 ? (
+      {isLoadingMaterials ? (
+        <div className="text-center py-10">
+          <p className="text-muted-foreground">Caricamento materiali...</p>
+        </div>
+      ) : filteredMaterials.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredMaterials.map((material) => (
+          {filteredMaterials.map((material: any) => (
             <MaterialCard
               key={material.id}
-              {...material}
+              id={material.id}
+              title={material.nome}
+              type={material.tipo}
+              status={material.estratto ? "completed" : "processing"}
+              flashcardsCount={material.flashcardGenerate || 0}
+              quizzesCount={0}
               onView={(id) => console.log("View:", id)}
               onDelete={handleDelete}
             />
@@ -189,12 +307,12 @@ export default function MaterialsPage() {
           description={
             search || typeFilter !== "all"
               ? "Prova a modificare i filtri di ricerca"
-              : "Carica il tuo primo materiale di studio per iniziare"
+              : "Carica il tuo primo materiale o crea una nota per iniziare"
           }
-          actionLabel={!search && typeFilter === "all" ? "Carica Materiale" : undefined}
+          actionLabel={!search && typeFilter === "all" ? "Crea Nota" : undefined}
           onAction={
             !search && typeFilter === "all"
-              ? () => setIsUploadOpen(true)
+              ? () => setIsNoteOpen(true)
               : undefined
           }
         />

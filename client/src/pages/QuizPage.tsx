@@ -270,7 +270,7 @@ const defaultMockQuestions = [
     options: ["Accedere ai servizi online della PA con un'unica credenziale", "Navigare anonimamente", "Non pagare le tasse", "Evitare le file"],
     correctAnswer: 0,
   },
-  
+
   // LOGICA E CULTURA GENERALE (MISTI)
   {
     question: "Completare la serie: 2, 4, 8, 16, ...",
@@ -329,12 +329,12 @@ async function extractTextFromPdf(file: File): Promise<string> {
 function generateQuestionsFromText(text: string): any[] {
   // Pulizia testo
   const cleanText = text.replace(/\s+/g, " ").trim();
-  
+
   // Split in frasi (euristica semplice)
   const sentences = cleanText.match(/[^.!?]+[.!?]+/g) || [];
-  
+
   // Filtra frasi significative
-  const validSentences = sentences.filter(s => 
+  const validSentences = sentences.filter(s =>
     s.length > 50 && s.length < 250 && // Lunghezza ragionevole
     !s.includes("Pagina") && // Rimuovi intestazioni comuni
     !s.match(/^\d+/) // Rimuovi elenchi numerati isolati
@@ -342,10 +342,10 @@ function generateQuestionsFromText(text: string): any[] {
 
   // Mischia le frasi
   const shuffled = validSentences.sort(() => 0.5 - Math.random());
-  
+
   // Seleziona fino a 50 frasi
   const selectedSentences = shuffled.slice(0, 50);
-  
+
   // Estrai tutte le parole possibili per i distrattori (lunghezza > 4)
   const allWords = cleanText.split(/\s+/).filter(w => w.length > 4 && /^[a-zA-Zàèéìòù]+$/.test(w));
 
@@ -353,15 +353,15 @@ function generateQuestionsFromText(text: string): any[] {
     // Trova una parola chiave da nascondere (lunga almeno 5 caratteri)
     const words = sentence.split(/\s+/);
     const candidates = words.filter(w => w.length > 5 && /^[a-zA-Zàèéìòù]+[.!?]?$/.test(w));
-    
+
     if (candidates.length === 0) return null; // Salta se non trova parole adatte
-    
+
     const targetWordRaw = candidates[Math.floor(Math.random() * candidates.length)];
     const targetWordClean = targetWordRaw.replace(/[.!?]/g, ""); // Rimuovi punteggiatura per la risposta
-    
+
     // Crea la domanda con il buco
     const questionText = sentence.replace(targetWordRaw, "_______");
-    
+
     // Genera distrattori
     const distractors: string[] = [];
     while (distractors.length < 3) {
@@ -370,9 +370,9 @@ function generateQuestionsFromText(text: string): any[] {
         distractors.push(randWord);
       }
     }
-    
+
     const options = [targetWordClean, ...distractors].sort(() => 0.5 - Math.random());
-    
+
     return {
       question: "Completa la frase tratta dal testo:\n\n" + questionText,
       options: options,
@@ -383,7 +383,7 @@ function generateQuestionsFromText(text: string): any[] {
 
 export default function QuizPage() {
   const { toast } = useToast();
-  
+
   // Inizializza lo stato caricando da localStorage se disponibile, altrimenti usa mockQuizzes
   const [quizzes, setQuizzes] = useState(() => {
     const saved = localStorage.getItem("userQuizzes");
@@ -401,7 +401,7 @@ export default function QuizPage() {
   const [answers, setAnswers] = useState<{ isCorrect: boolean; selectedIndex: number }[]>([]);
   const [startTime] = useState(Date.now());
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
-  
+
   // Stato per le domande del quiz corrente
   const [activeQuestions, setActiveQuestions] = useState<any[]>(defaultMockQuestions);
 
@@ -416,7 +416,7 @@ export default function QuizPage() {
         setActiveQuestions(defaultMockQuestions);
       }
     }
-    
+
     setIsPlaying(true);
     setCurrentQuestion(0);
     setShowResults(false);
@@ -534,7 +534,7 @@ export default function QuizPage() {
           correctAnswers={correctCount}
           timeSpent={timeSpent}
           wrongAnswers={wrongAnswers}
-          onRetry={() => handleStartQuiz()} 
+          onRetry={() => handleStartQuiz()}
           onHome={handleExit}
         />
       </div>
@@ -590,7 +590,7 @@ export default function QuizPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        
+
         {/* 1. SEZIONE QUIZ AI INTEGRATO (FEATURED) */}
         <Card className="col-span-full bg-gradient-to-r from-primary/10 via-purple-500/5 to-primary/10 border-primary/20 shadow-lg relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 opacity-10">
@@ -636,7 +636,7 @@ export default function QuizPage() {
                 <p className="text-xs text-muted-foreground">127 quiz generati | 85% accuracy</p>
               </div>
             </div>
-            
+
             <Dialog open={isGeneratorOpen} onOpenChange={setIsGeneratorOpen}>
               <DialogTrigger asChild>
                 <Button size="lg" className="w-full md:w-auto font-semibold shadow-md">
@@ -674,24 +674,24 @@ export default function QuizPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Card Concorsando */}
-            <a 
-              href="https://www.concorsando.it/blog/simulatore-quiz-concorsando/" 
-              target="_blank" 
+            <a
+              href="https://www.concorsando.it/blog/simulatore-quiz-concorsando/"
+              target="_blank"
               rel="noopener noreferrer"
               className="group block h-full"
             >
-              <Card className="h-full border-dashed border-2 hover:border-blue-500 hover:shadow-md transition-all bg-slate-50 dark:bg-slate-900/50">
+              <Card className="h-full border-dashed border-2 hover:border-green-500 hover:shadow-md transition-all bg-slate-50 dark:bg-slate-900/50">
                 <CardHeader>
                   <div className="flex justify-between items-start mb-2">
-                    <div className="h-12 w-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center font-bold text-xl text-blue-600 dark:text-blue-400">
+                    <div className="h-12 w-12 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center font-bold text-xl text-green-600 dark:text-green-400">
                       C
                     </div>
                     <div className="flex gap-2">
-                      <Badge variant="outline" className="text-xs border-blue-200 text-blue-700 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800">Consigliato</Badge>
+                      <Badge variant="outline" className="text-xs border-green-200 text-green-700 bg-green-50 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800">Consigliato</Badge>
                       <Badge variant="outline" className="text-xs">Esterno</Badge>
                     </div>
                   </div>
-                  <CardTitle className="text-lg group-hover:text-blue-600 transition-colors flex items-center gap-2">
+                  <CardTitle className="text-lg group-hover:text-green-600 transition-colors flex items-center gap-2">
                     Concorsando.it
                     <ExternalLink className="h-4 w-4 opacity-50" />
                   </CardTitle>
@@ -700,11 +700,11 @@ export default function QuizPage() {
                 <CardContent className="space-y-4 text-sm">
                   <ul className="space-y-2">
                     <li className="flex items-start gap-2">
-                      <span className="text-blue-500 font-bold">•</span>
+                      <span className="text-green-500 font-bold">•</span>
                       <span>150.000+ quiz da banche dati ministeriali</span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="text-blue-500 font-bold">•</span>
+                      <span className="text-green-500 font-bold">•</span>
                       <span>Specializzato in: RIPAM, Ministeri, PA</span>
                     </li>
                   </ul>
@@ -721,24 +721,24 @@ export default function QuizPage() {
             </a>
 
             {/* Card Mininterno */}
-            <a 
-              href="https://www.mininterno.net" 
-              target="_blank" 
+            <a
+              href="https://www.mininterno.net"
+              target="_blank"
               rel="noopener noreferrer"
               className="group block h-full"
             >
-              <Card className="h-full border-dashed border-2 hover:border-green-500 hover:shadow-md transition-all bg-slate-50 dark:bg-slate-900/50">
+              <Card className="h-full border-dashed border-2 hover:border-blue-500 hover:shadow-md transition-all bg-slate-50 dark:bg-slate-900/50">
                 <CardHeader>
                   <div className="flex justify-between items-start mb-2">
-                    <div className="h-12 w-12 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center font-bold text-xl text-green-600 dark:text-green-400">
+                    <div className="h-12 w-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center font-bold text-xl text-blue-600 dark:text-blue-400">
                       M
                     </div>
                     <div className="flex gap-2">
-                      <Badge variant="outline" className="text-xs border-green-200 text-green-700 bg-green-50 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800">Consigliato</Badge>
+                      <Badge variant="outline" className="text-xs border-blue-200 text-blue-700 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800">Consigliato</Badge>
                       <Badge variant="outline" className="text-xs">Esterno</Badge>
                     </div>
                   </div>
-                  <CardTitle className="text-lg group-hover:text-green-600 transition-colors flex items-center gap-2">
+                  <CardTitle className="text-lg group-hover:text-blue-600 transition-colors flex items-center gap-2">
                     Mininterno.net
                     <ExternalLink className="h-4 w-4 opacity-50" />
                   </CardTitle>
@@ -747,11 +747,11 @@ export default function QuizPage() {
                 <CardContent className="space-y-4 text-sm">
                   <ul className="space-y-2">
                     <li className="flex items-start gap-2">
-                      <span className="text-green-500 font-bold">•</span>
+                      <span className="text-blue-500 font-bold">•</span>
                       <span>50.000+ quiz per Forze Armate</span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="text-green-500 font-bold">•</span>
+                      <span className="text-blue-500 font-bold">•</span>
                       <span>Specializzato in: Polizia, Carabinieri, VVF</span>
                     </li>
                   </ul>
@@ -793,13 +793,12 @@ export default function QuizPage() {
                     <p className="text-sm text-muted-foreground mb-4">
                       Ultimo punteggio:{" "}
                       <span
-                        className={`font-medium ${
-                          quiz.lastScore >= 80
-                            ? "text-status-online dark:text-status-online"
-                            : quiz.lastScore >= 60
+                        className={`font-medium ${quiz.lastScore >= 80
+                          ? "text-status-online dark:text-status-online"
+                          : quiz.lastScore >= 60
                             ? "text-secondary dark:text-secondary"
                             : "text-destructive dark:text-destructive"
-                        }`}
+                          }`}
                       >
                         {quiz.lastScore}%
                       </span>

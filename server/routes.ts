@@ -644,10 +644,8 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
   app.get("/api/materials", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
-      const concorsoId = req.query.concorsoId as string;
-      if (!concorsoId) {
-        return res.status(400).json({ error: "concorsoId richiesto" });
-      }
+      const concorsoId = req.query.concorsoId as string | undefined;
+      // concorsoId is now optional
       const materials = await storage.getMaterials(userId, concorsoId);
       res.json(materials);
     } catch (error) {
@@ -875,6 +873,35 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         });
       }
     });
+  });
+
+  app.post("/api/materials/note", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { concorsoId, nome, materia, contenuto } = req.body;
+
+      if (!concorsoId || !nome || !contenuto) {
+        return res.status(400).json({ error: "Dati incompleti: richiesti concorsoId, nome e contenuto" });
+      }
+
+      console.log("[CREATE-NOTE] Creating text note:", { userId, concorsoId, nome });
+
+      const material = await storage.createMaterial({
+        userId,
+        concorsoId,
+        nome,
+        materia: materia || "Note Personali",
+        tipo: "appunti",
+        contenuto,
+        estratto: false,
+        fileUrl: null
+      });
+
+      res.status(201).json(material);
+    } catch (error: any) {
+      console.error("Error creating note:", error);
+      res.status(500).json({ error: "Errore nel salvataggio della nota", details: error.message });
+    }
   });
 
   app.post("/api/ocr/images", isAuthenticated, async (req: Request, res: Response) => {

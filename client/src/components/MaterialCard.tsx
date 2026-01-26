@@ -6,7 +6,7 @@ import { FileText, Trash2, Eye, Layers, HelpCircle } from "lucide-react";
 interface MaterialCardProps {
   id: string;
   title: string;
-  type: "normativa" | "giurisprudenza" | "manuale" | "documento";
+  type: "normativa" | "giurisprudenza" | "manuale" | "documento" | "appunti";
   status: "pending" | "processing" | "completed";
   flashcardsCount: number;
   quizzesCount: number;
@@ -19,6 +19,7 @@ const typeLabels = {
   giurisprudenza: "Giurisprudenza",
   manuale: "Manuale",
   documento: "Documento",
+  appunti: "Appunti Personali", // Added
 };
 
 const statusLabels = {
