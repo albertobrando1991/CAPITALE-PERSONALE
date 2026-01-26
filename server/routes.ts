@@ -1083,6 +1083,63 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
       // Generate Hash for Caching (Hive Memory)
       const contentHash = crypto.createHash('sha256').update(contentToAnalyze).digest('hex');
 
+      // --- HIVE MEMORY CACHE READ ---
+      // Only read from cache if it's the FIRST generation (no existing cards).
+      // Regenerations must be fresh to respect exclusion prompts.
+      if (existingQuestions.length === 0) {
+        const [cachedEntry] = await db
+          .select()
+          .from(flashcardCache)
+          .where(eq(flashcardCache.contentHash, contentHash))
+          .limit(1);
+
+        if (cachedEntry) {
+          console.log(`[FLASH-GEN-HIVE] Cache HIT for hash ${contentHash.substring(0, 8)}`);
+
+          // Increment hit count asynchronously
+          await db
+            .update(flashcardCache)
+            .set({ generationCount: (cachedEntry.generationCount || 0) + 1 })
+            .where(eq(flashcardCache.id, cachedEntry.id))
+            .execute();
+
+          const cachedFlashcards = cachedEntry.flashcardsJson as any[];
+
+          // Transform cached cards to user format
+          const now = new Date();
+          const sm2Initial = initializeSM2();
+          const flashcardsToInsert = cachedFlashcards.map((f: any) => ({
+            userId,
+            concorsoId: material.concorsoId,
+            materialId,
+            materia: material.materia || cachedEntry.topic || "Generale",
+            fonte: material.nome,
+            fronte: f.fronte,
+            retro: f.retro,
+            evidenza: f.evidenza,
+            tipo: f.tipo || "concetto",
+            easeFactor: sm2Initial.easeFactor,
+            intervalloGiorni: sm2Initial.intervalloGiorni,
+            numeroRipetizioni: sm2Initial.numeroRipetizioni,
+            prossimoRipasso: now,
+            prossimRevisione: now,
+          }));
+
+          const created = await storage.createFlashcards(flashcardsToInsert);
+          await storage.updateMaterialFlashcardStatus(materialId, created.length);
+          const newGenerationCount = (material.flashcardGenerationCount || 0) + 1;
+
+          return res.json({
+            count: created.length,
+            flashcards: created,
+            generationCount: newGenerationCount,
+            regenerationsRemaining: 3 - newGenerationCount,
+            cached: true
+          });
+        }
+      }
+      console.log(`[FLASH-GEN-HIVE] Cache MISS (or skipped) for hash ${contentHash.substring(0, 8)}`);
+
       const totalWords = normalizeForMatch(contentToAnalyze).split(" ").filter(Boolean).length;
       const desiredCount = Math.max(20, Math.min(100, Math.round(totalWords / 120)));
 
@@ -1328,7 +1385,9 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
       }
 
       // 3. SAVE TO CACHE (THE HIVE MEMORY)
-      if (cleaned.length > 0) {
+      // Only save if this was a "Fresh" generation (no exclusion prompt used)
+      // This ensures the cache stores the "Standard" set, not a "Complementary" set.
+      if (cleaned.length > 0 && existingQuestions.length === 0) {
         // Strip internal metadata before caching
         const cachePayloadJson = cleaned.map(f => ({
           fronte: f.fronte,
@@ -1350,9 +1409,27 @@ Nessun testo fuori dal JSON, niente spiegazioni aggiuntive, niente markdown.`;
       // 4. SAVE FOR USER
       const now = new Date();
       const sm2Initial = initializeSM2();
-      await storage.deleteFlashcardsByMaterialId(userId, materialId);
+      // REMOVED: await storage.deleteFlashcardsByMaterialId(userId, materialId); // APPEND MODE ACTIVE
 
-      const flashcardsToInsert = cleaned.map((f) => ({
+      // Deduplicate: Don't insert cards that match existing questions
+      const isUnique = (fronte: string) => {
+        const norm = normalizeForMatch(fronte);
+        return !existingQuestions.some(ex => normalizeForMatch(ex) === norm);
+      };
+
+      const uniqueNewCards = cleaned.filter(f => isUnique(f.fronte));
+
+      if (uniqueNewCards.length === 0) {
+        return res.status(200).json({
+          count: 0,
+          flashcards: [],
+          generationCount: material.flashcardGenerationCount,
+          regenerationsRemaining: 3 - (material.flashcardGenerationCount || 0),
+          warning: "L'AI non ha prodotto nuove flashcard uniche."
+        });
+      }
+
+      const flashcardsToInsert = uniqueNewCards.map((f) => ({
         userId,
         concorsoId: material.concorsoId,
         materialId,
