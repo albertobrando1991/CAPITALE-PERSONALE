@@ -143,9 +143,26 @@ export default function MaterialsPage() {
     }
   };
 
-  const handleView = (material: any) => {
+  const handleView = async (material: any) => {
     if (material.fileUrl) {
-      window.open(material.fileUrl, "_blank");
+      // Logic for File/PDF View
+      if (material.fileUrl.startsWith("http") || material.fileUrl.startsWith("/uploads")) {
+        // Public/Local URL
+        window.open(material.fileUrl, "_blank");
+      } else {
+        // Supabase Storage Path - Request Signed URL
+        try {
+          const res = await apiFetch("/api/storage/signed-download-url", {
+            method: "POST",
+            body: JSON.stringify({ path: material.fileUrl })
+          });
+          if (!res.ok) throw new Error("Errore recupero file");
+          const data = await res.json();
+          window.open(data.signedUrl, "_blank");
+        } catch (e) {
+          toast({ title: "Errore", description: "Impossibile aprire il file", variant: "destructive" });
+        }
+      }
     } else if (material.contenuto) {
       setViewingMaterial(material);
     } else {

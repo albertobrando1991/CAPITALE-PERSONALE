@@ -14,6 +14,7 @@ import fase3Routes from './routes-fase3';
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { isAdmin } from './utils/auth-helpers';
+import path from "path";
 
 const app = express();
 const httpServer = createServer(app);
@@ -72,6 +73,11 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false, limit: "50mb" }));
+
+// Servire la cartella degli upload staticamente
+// Nota: Su Railway questo è storage effimero (si cancella al deploy)
+const uploadsPath = path.join(process.cwd(), "uploads");
+app.use("/uploads", express.static(uploadsPath));
 
 // Rate Limiting Configuration
 const limiter = rateLimit({

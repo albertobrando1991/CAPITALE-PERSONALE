@@ -201,6 +201,49 @@ export async function deleteBandoPdf(publicUrl: string): Promise<void> {
 // ============================================================
 
 /**
+ * Upload a material file to Supabase Storage (materials bucket)
+ * @param buffer - File buffer
+ * @param filename - Original filename
+ * @param userId - User ID who owns the file
+ * @param concorsoId - Concorso ID (optional)
+ * @returns Storage path (not URL) of the uploaded file
+ */
+export async function uploadMaterialFile(
+  buffer: Buffer,
+  filename: string,
+  userId: string,
+  concorsoId?: string
+): Promise<string> {
+  const supabase = getSupabaseClient();
+
+  // Sanitize filename
+  const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const timestamp = Date.now();
+
+  // Create path: users/{userId}/{concorsoId?}/{timestamp}_{filename}
+  let filePath: string;
+  if (concorsoId) {
+    filePath = `users/${userId}/${concorsoId}/${timestamp}_${sanitizedFilename}`;
+  } else {
+    filePath = `users/${userId}/${timestamp}_${sanitizedFilename}`;
+  }
+
+  const { data, error } = await supabase.storage
+    .from(BUCKETS.MATERIALS)
+    .upload(filePath, buffer, {
+      contentType: "application/pdf", // Default, allows overwriting in arguments if needed
+      upsert: false,
+    });
+
+  if (error) {
+    console.error("Error uploading material:", error);
+    throw new Error(`Failed to upload material: ${error.message}`);
+  }
+
+  return data.path;
+}
+
+/**
  * Get public URL for a file in a public bucket
  */
 export function getPublicUrl(bucket: BucketName, path: string): string {
