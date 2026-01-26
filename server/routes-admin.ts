@@ -1268,6 +1268,457 @@ router.delete('/official-concorsi/:id/pdf', requireStaff, async (req, res) => {
   }
 });
 
+// ============================================================================
+// SUBSCRIPTION MANAGEMENT
+// ============================================================================
+
+// GET /api/admin/subscriptions - List all subscriptions with user data
+router.get('/subscriptions', requireStaff, async (req, res) => {
+  try {
+    const { page = '1', limit = '20', search = '', tier = '', status = '' } = req.query;
+    const pageNum = parseInt(page as string);
+    const limitNum = parseInt(limit as string);
+    const offset = (pageNum - 1) * limitNum;
+
+    // Build conditions
+    const conditions: any[] = [];
+
+    if (tier && tier !== 'all') {
+      conditions.push(eq(userSubscriptions.tier, tier as string));
+    }
+    if (status && status !== 'all') {
+      conditions.push(eq(userSubscriptions.status, status as string));
+    }
+
+    // Get all subscriptions with user data
+    const subscriptionsQuery = db
+      .select({
+        id: userSubscriptions.id,
+        userId: userSubscriptions.userId,
+        tier: userSubscriptions.tier,
+        status: userSubscriptions.status,
+        startDate: userSubscriptions.startDate,
+        endDate: userSubscriptions.endDate,
+        currentPeriodEnd: userSubscriptions.currentPeriodEnd,
+        stripeCustomerId: userSubscriptions.stripeCustomerId,
+        stripeSubscriptionId: userSubscriptions.stripeSubscriptionId,
+        sintesiUsate: userSubscriptions.sintesiUsate,
+        sintesiLimite: userSubscriptions.sintesiLimite,
+        createdAt: userSubscriptions.createdAt,
+        updatedAt: userSubscriptions.updatedAt,
+        userName: users.fullName,
+        userEmail: users.email,
+        userCreatedAt: users.createdAt,
+      })
+      .from(userSubscriptions)
+      .leftJoin(users, eq(userSubscriptions.userId, users.id));
+
+    // Apply conditions
+    let finalQuery = conditions.length > 0
+      ? subscriptionsQuery.where(and(...conditions))
+      : subscriptionsQuery;
+
+    // Get total count
+    const countQuery = conditions.length > 0
+      ? db.select({ count: sql<number>`count(*)` }).from(userSubscriptions).where(and(...conditions))
+      : db.select({ count: sql<number>`count(*)` }).from(userSubscriptions);
+
+    const [countResult] = await countQuery;
+    const total = Number(countResult?.count || 0);
+
+    // Get paginated results
+    const subscriptions = await finalQuery
+      .orderBy(desc(userSubscriptions.updatedAt))
+      .limit(limitNum)
+      .offset(offset);
+
+    // Filter by search if provided (client-side filtering for simplicity)
+    let filtered = subscriptions;
+    if (search) {
+      const searchLower = (search as string).toLowerCase();
+      filtered = subscriptions.filter(s =>
+        s.userName?.toLowerCase().includes(searchLower) ||
+        s.userEmail?.toLowerCase().includes(searchLower) ||
+        s.userId?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    res.json({
+      subscriptions: filtered,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
+  } catch (error: any) {
+    console.error('❌ Errore lista abbonamenti:', error);
+    res.status(500).json({ error: error.message || 'Errore recupero abbonamenti' });
+  }
+});
+
+// GET /api/admin/subscriptions/stats - Get subscription statistics
+router.get('/subscriptions/stats', requireStaff, async (req, res) => {
+  try {
+    const [totalSubs] = await db.select({ count: sql<number>`count(*)` }).from(userSubscriptions);
+    const [freeSubs] = await db.select({ count: sql<number>`count(*)` }).from(userSubscriptions).where(eq(userSubscriptions.tier, 'free'));
+    const [premiumSubs] = await db.select({ count: sql<number>`count(*)` }).from(userSubscriptions).where(eq(userSubscriptions.tier, 'premium'));
+    const [enterpriseSubs] = await db.select({ count: sql<number>`count(*)` }).from(userSubscriptions).where(eq(userSubscriptions.tier, 'enterprise'));
+    const [activeSubs] = await db.select({ count: sql<number>`count(*)` }).from(userSubscriptions).where(eq(userSubscriptions.status, 'active'));
+    const [canceledSubs] = await db.select({ count: sql<number>`count(*)` }).from(userSubscriptions).where(eq(userSubscriptions.status, 'canceled'));
+
+    // Subscriptions expiring soon (within 7 days)
+    const sevenDaysFromNow = new Date();
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+
+    const [expiringSoon] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(userSubscriptions)
+      .where(and(
+        eq(userSubscriptions.status, 'active'),
+        sql`${userSubscriptions.endDate} <= ${sevenDaysFromNow}`,
+        sql`${userSubscriptions.endDate} >= NOW()`
+      ));
+
+    res.json({
+      total: Number(totalSubs?.count || 0),
+      byTier: {
+        free: Number(freeSubs?.count || 0),
+        premium: Number(premiumSubs?.count || 0),
+        enterprise: Number(enterpriseSubs?.count || 0),
+      },
+      byStatus: {
+        active: Number(activeSubs?.count || 0),
+        canceled: Number(canceledSubs?.count || 0),
+      },
+      expiringSoon: Number(expiringSoon?.count || 0),
+    });
+  } catch (error: any) {
+    console.error('❌ Errore statistiche abbonamenti:', error);
+    res.status(500).json({ error: error.message || 'Errore statistiche' });
+  }
+});
+
+// GET /api/admin/subscriptions/:userId - Get subscription for a specific user
+router.get('/subscriptions/:userId', requireStaff, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [subscription] = await db
+      .select({
+        id: userSubscriptions.id,
+        userId: userSubscriptions.userId,
+        tier: userSubscriptions.tier,
+        status: userSubscriptions.status,
+        startDate: userSubscriptions.startDate,
+        endDate: userSubscriptions.endDate,
+        currentPeriodEnd: userSubscriptions.currentPeriodEnd,
+        stripeCustomerId: userSubscriptions.stripeCustomerId,
+        stripeSubscriptionId: userSubscriptions.stripeSubscriptionId,
+        sintesiUsate: userSubscriptions.sintesiUsate,
+        sintesiLimite: userSubscriptions.sintesiLimite,
+        createdAt: userSubscriptions.createdAt,
+        updatedAt: userSubscriptions.updatedAt,
+      })
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, userId));
+
+    const [user] = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        fullName: users.fullName,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(eq(users.id, userId));
+
+    if (!user) {
+      return res.status(404).json({ error: 'Utente non trovato' });
+    }
+
+    res.json({
+      user,
+      subscription: subscription || null,
+    });
+  } catch (error: any) {
+    console.error('❌ Errore recupero abbonamento utente:', error);
+    res.status(500).json({ error: error.message || 'Errore recupero abbonamento' });
+  }
+});
+
+// POST /api/admin/subscriptions/:userId - Create or update subscription for user
+router.post('/subscriptions/:userId', requireAdmin, async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const { userId } = req.params;
+
+    const schema = z.object({
+      tier: z.enum(['free', 'premium', 'enterprise']),
+      status: z.enum(['active', 'canceled', 'past_due']).default('active'),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      sintesiLimite: z.number().optional(),
+    });
+
+    const data = schema.parse(req.body);
+
+    // Check if user exists
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (!user) {
+      return res.status(404).json({ error: 'Utente non trovato' });
+    }
+
+    // Check if subscription exists
+    const [existing] = await db
+      .select()
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, userId));
+
+    const subscriptionData = {
+      tier: data.tier,
+      status: data.status,
+      startDate: data.startDate ? new Date(data.startDate) : new Date(),
+      endDate: data.endDate ? new Date(data.endDate) : null,
+      currentPeriodEnd: data.endDate ? new Date(data.endDate) : null,
+      sintesiLimite: data.sintesiLimite || (data.tier === 'premium' ? 50 : data.tier === 'enterprise' ? 200 : 5),
+      updatedAt: new Date(),
+    };
+
+    let result;
+    if (existing) {
+      // Update existing
+      [result] = await db
+        .update(userSubscriptions)
+        .set(subscriptionData)
+        .where(eq(userSubscriptions.userId, userId))
+        .returning();
+    } else {
+      // Create new
+      [result] = await db
+        .insert(userSubscriptions)
+        .values({
+          userId,
+          ...subscriptionData,
+          sintesiUsate: 0,
+        })
+        .returning();
+    }
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: existing ? 'update_subscription' : 'create_subscription',
+      entityType: 'subscription',
+      entityId: result.id,
+      details: { userId, ...data, previousTier: existing?.tier, previousStatus: existing?.status },
+    });
+
+    console.log(`✅ Abbonamento ${existing ? 'aggiornato' : 'creato'} per utente ${userId}`);
+    res.json({ success: true, subscription: result });
+  } catch (error: any) {
+    console.error('❌ Errore creazione/aggiornamento abbonamento:', error);
+    res.status(500).json({ error: error.message || 'Errore gestione abbonamento' });
+  }
+});
+
+// PATCH /api/admin/subscriptions/:userId - Update specific fields of subscription
+router.patch('/subscriptions/:userId', requireAdmin, async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const { userId } = req.params;
+
+    const schema = z.object({
+      tier: z.enum(['free', 'premium', 'enterprise']).optional(),
+      status: z.enum(['active', 'canceled', 'past_due']).optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      sintesiLimite: z.number().optional(),
+      sintesiUsate: z.number().optional(),
+    });
+
+    const data = schema.parse(req.body);
+
+    // Check if subscription exists
+    const [existing] = await db
+      .select()
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, userId));
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Abbonamento non trovato per questo utente' });
+    }
+
+    // Build update object
+    const updateData: any = { updatedAt: new Date() };
+    if (data.tier !== undefined) updateData.tier = data.tier;
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.startDate !== undefined) updateData.startDate = new Date(data.startDate);
+    if (data.endDate !== undefined) {
+      updateData.endDate = new Date(data.endDate);
+      updateData.currentPeriodEnd = new Date(data.endDate);
+    }
+    if (data.sintesiLimite !== undefined) updateData.sintesiLimite = data.sintesiLimite;
+    if (data.sintesiUsate !== undefined) updateData.sintesiUsate = data.sintesiUsate;
+
+    const [result] = await db
+      .update(userSubscriptions)
+      .set(updateData)
+      .where(eq(userSubscriptions.userId, userId))
+      .returning();
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: 'update_subscription',
+      entityType: 'subscription',
+      entityId: result.id,
+      details: { userId, changes: data, previousValues: { tier: existing.tier, status: existing.status, endDate: existing.endDate } },
+    });
+
+    console.log(`✅ Abbonamento aggiornato per utente ${userId}`);
+    res.json({ success: true, subscription: result });
+  } catch (error: any) {
+    console.error('❌ Errore aggiornamento abbonamento:', error);
+    res.status(500).json({ error: error.message || 'Errore aggiornamento abbonamento' });
+  }
+});
+
+// POST /api/admin/subscriptions/:userId/extend - Extend subscription by days
+router.post('/subscriptions/:userId/extend', requireAdmin, async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const { userId } = req.params;
+
+    const schema = z.object({
+      days: z.number().min(1).max(365),
+      reason: z.string().optional(),
+    });
+
+    const { days, reason } = schema.parse(req.body);
+
+    // Check if subscription exists
+    const [existing] = await db
+      .select()
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, userId));
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Abbonamento non trovato per questo utente' });
+    }
+
+    // Calculate new end date
+    const currentEndDate = existing.endDate || existing.currentPeriodEnd || new Date();
+    const baseDate = new Date(currentEndDate) > new Date() ? new Date(currentEndDate) : new Date();
+    const newEndDate = new Date(baseDate);
+    newEndDate.setDate(newEndDate.getDate() + days);
+
+    const [result] = await db
+      .update(userSubscriptions)
+      .set({
+        endDate: newEndDate,
+        currentPeriodEnd: newEndDate,
+        status: 'active', // Reactivate if was canceled
+        updatedAt: new Date(),
+      })
+      .where(eq(userSubscriptions.userId, userId))
+      .returning();
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: 'extend_subscription',
+      entityType: 'subscription',
+      entityId: result.id,
+      details: {
+        userId,
+        daysAdded: days,
+        reason,
+        previousEndDate: existing.endDate,
+        newEndDate
+      },
+    });
+
+    console.log(`✅ Abbonamento esteso di ${days} giorni per utente ${userId}`);
+    res.json({
+      success: true,
+      subscription: result,
+      message: `Abbonamento esteso fino al ${newEndDate.toLocaleDateString('it-IT')}`
+    });
+  } catch (error: any) {
+    console.error('❌ Errore estensione abbonamento:', error);
+    res.status(500).json({ error: error.message || 'Errore estensione abbonamento' });
+  }
+});
+
+// POST /api/admin/subscriptions/:userId/reset-usage - Reset usage counters
+router.post('/subscriptions/:userId/reset-usage', requireAdmin, async (req, res) => {
+  try {
+    const adminId = getUserId(req);
+    const { userId } = req.params;
+
+    const [existing] = await db
+      .select()
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, userId));
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Abbonamento non trovato per questo utente' });
+    }
+
+    const [result] = await db
+      .update(userSubscriptions)
+      .set({
+        sintesiUsate: 0,
+        lastReset: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(userSubscriptions.userId, userId))
+      .returning();
+
+    // Log activity
+    await db.insert(adminActivityLog).values({
+      adminId: adminId!,
+      action: 'reset_subscription_usage',
+      entityType: 'subscription',
+      entityId: result.id,
+      details: { userId, previousUsage: existing.sintesiUsate },
+    });
+
+    console.log(`✅ Contatori azzerati per utente ${userId}`);
+    res.json({ success: true, subscription: result });
+  } catch (error: any) {
+    console.error('❌ Errore reset contatori:', error);
+    res.status(500).json({ error: error.message || 'Errore reset contatori' });
+  }
+});
+
+// GET /api/admin/users-without-subscription - Get users without subscription
+router.get('/users-without-subscription', requireStaff, async (req, res) => {
+  try {
+    const { limit = '50' } = req.query;
+
+    // Get users that don't have a subscription record
+    const usersWithoutSub = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        fullName: users.fullName,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .leftJoin(userSubscriptions, eq(users.id, userSubscriptions.userId))
+      .where(sql`${userSubscriptions.id} IS NULL`)
+      .limit(parseInt(limit as string));
+
+    res.json({ users: usersWithoutSub });
+  } catch (error: any) {
+    console.error('❌ Errore recupero utenti senza abbonamento:', error);
+    res.status(500).json({ error: error.message || 'Errore recupero utenti' });
+  }
+});
+
 export function registerAdminRoutes(app: any) {
   app.use('/api/admin', router);
   console.log('✅ Admin Routes registrate');
