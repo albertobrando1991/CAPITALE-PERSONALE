@@ -1,8 +1,8 @@
 import { db } from './db';
 import { fontiStudio, materieSQ3R, capitoliSQ3R, notebookLmSessions, quizzes, questions, answers } from '../shared/schema-sq3r';
 import { documentiPubblici } from '../shared/schema-libreria';
-import { eq, and, desc } from 'drizzle-orm';
-import type { FonteStudio, InsertFonteStudio, MateriaSQ3R, InsertMateriaSQ3R, CapitoloSQ3R, InsertCapitoloSQ3R, NotebookLmSession, InsertNotebookLmSession } from '../shared/schema-sq3r';
+import { eq, and, desc, inArray } from 'drizzle-orm';
+import type { FonteStudio, InsertFonteStudio, MateriaSQ3R, InsertMateriaSQ3R, CapitoloSQ3R, InsertCapitoloSQ3R, NotebookLmSession, InsertNotebookLmSession, Answer, Question } from '../shared/schema-sq3r';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { cleanJson, generateWithFallback } from './services/ai';
@@ -905,9 +905,27 @@ ${testoTroncato}`;
     // Construct response compatible with frontend
     const formattedQuestions = [];
 
+    // Optimize: Batch fetch all answers
+    const questionIds = qs.map((q: Question) => q.id);
+
+    // Check if there are questions to fetch answers for
+    let allAnswers: Answer[] = [];
+    if (questionIds.length > 0) {
+      allAnswers = await db.select().from(answers)
+        .where(inArray(answers.questionId, questionIds));
+    }
+
+    // Group answers by questionId
+    const answersByQuestion: Record<string, typeof allAnswers> = {};
+    for (const ans of allAnswers) {
+        if (!answersByQuestion[ans.questionId]) {
+            answersByQuestion[ans.questionId] = [];
+        }
+        answersByQuestion[ans.questionId].push(ans);
+    }
+
     for (const q of qs) {
-      const ans = await db.select().from(answers)
-        .where(eq(answers.questionId, q.id));
+      const ans = answersByQuestion[q.id] || [];
 
       // Fisher-Yates shuffle on retrieval
       const shuffledAnswers = [...ans];
