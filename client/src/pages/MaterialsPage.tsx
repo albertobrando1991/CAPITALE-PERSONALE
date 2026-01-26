@@ -37,6 +37,9 @@ export default function MaterialsPage() {
   const [noteMateria, setNoteMateria] = useState("");
   const [noteContent, setNoteContent] = useState("");
 
+  // View State
+  const [viewingMaterial, setViewingMaterial] = useState<any>(null);
+
   // Upload State
   const [uploadConcorsoId, setUploadConcorsoId] = useState("");
 
@@ -137,6 +140,16 @@ export default function MaterialsPage() {
       toast({ title: "Eliminato", description: "Materiale rimosso correttamente" });
     } catch (e: any) {
       toast({ title: "Errore", description: "Impossibile eliminare", variant: "destructive" });
+    }
+  };
+
+  const handleView = (material: any) => {
+    if (material.fileUrl) {
+      window.open(material.fileUrl, "_blank");
+    } else if (material.contenuto) {
+      setViewingMaterial(material);
+    } else {
+      toast({ title: "Info", description: "Nessun contenuto visualizzabile per questo materiale." });
     }
   };
 
@@ -253,6 +266,22 @@ export default function MaterialsPage() {
               </div>
             </DialogContent>
           </Dialog>
+
+
+          {/* VIEW NOTE DIALOG */}
+          <Dialog open={!!viewingMaterial} onOpenChange={(open) => !open && setViewingMaterial(null)}>
+            <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{viewingMaterial?.nome || "Dettaglio Nota"}</DialogTitle>
+                <DialogDescription>
+                  {viewingMaterial?.materia} - {viewingMaterial?.tipo === 'appunti' ? 'Nota Personale' : 'Contenuto'}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-4 p-4 bg-muted/30 rounded-lg whitespace-pre-wrap font-mono text-sm">
+                {viewingMaterial?.contenuto}
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -280,43 +309,45 @@ export default function MaterialsPage() {
         </Select>
       </div>
 
-      {isLoadingMaterials ? (
-        <div className="text-center py-10">
-          <p className="text-muted-foreground">Caricamento materiali...</p>
-        </div>
-      ) : filteredMaterials.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredMaterials.map((material: any) => (
-            <MaterialCard
-              key={material.id}
-              id={material.id}
-              title={material.nome}
-              type={material.tipo}
-              status={material.estratto ? "completed" : "processing"}
-              flashcardsCount={material.flashcardGenerate || 0}
-              quizzesCount={0}
-              onView={(id) => console.log("View:", id)}
-              onDelete={handleDelete}
-            />
-          ))}
-        </div>
-      ) : (
-        <EmptyState
-          icon={BookOpen}
-          title="Nessun materiale trovato"
-          description={
-            search || typeFilter !== "all"
-              ? "Prova a modificare i filtri di ricerca"
-              : "Carica il tuo primo materiale o crea una nota per iniziare"
-          }
-          actionLabel={!search && typeFilter === "all" ? "Crea Nota" : undefined}
-          onAction={
-            !search && typeFilter === "all"
-              ? () => setIsNoteOpen(true)
-              : undefined
-          }
-        />
-      )}
-    </div>
+      {
+        isLoadingMaterials ? (
+          <div className="text-center py-10">
+            <p className="text-muted-foreground">Caricamento materiali...</p>
+          </div>
+        ) : filteredMaterials.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredMaterials.map((material: any) => (
+              <MaterialCard
+                key={material.id}
+                id={material.id}
+                title={material.nome}
+                type={material.tipo}
+                status={(material.estratto || material.tipo === 'appunti') ? "completed" : "processing"}
+                flashcardsCount={material.flashcardGenerate || 0}
+                quizzesCount={0}
+                onView={() => handleView(material)}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={BookOpen}
+            title="Nessun materiale trovato"
+            description={
+              search || typeFilter !== "all"
+                ? "Prova a modificare i filtri di ricerca"
+                : "Carica il tuo primo materiale o crea una nota per iniziare"
+            }
+            actionLabel={!search && typeFilter === "all" ? "Crea Nota" : undefined}
+            onAction={
+              !search && typeFilter === "all"
+                ? () => setIsNoteOpen(true)
+                : undefined
+            }
+          />
+        )
+      }
+    </div >
   );
 }
