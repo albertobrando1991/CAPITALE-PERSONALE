@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { BookOpen, Crown, Sparkles } from 'lucide-react';
+import { BookOpen, Crown, Sparkles, Files, PenTool } from 'lucide-react';
 
 export default function SetupFontiPage() {
   const { concorsoId } = useParams();
@@ -75,7 +75,7 @@ export default function SetupFontiPage() {
       </div>
 
       {/* Opzioni */}
-      <div className="grid md:grid-cols-2 gap-6 mb-8">
+      <div className="grid md:grid-cols-3 gap-6 mb-8">
         {/* Opzione A: Risorse Consigliate */}
         <Card className="hover:shadow-lg transition-all hover:border-primary cursor-pointer"
           onClick={() => setLocation(`/concorsi/${concorsoId}/risorse-consigliate`)}>
@@ -98,6 +98,32 @@ export default function SetupFontiPage() {
           <CardFooter>
             <Button className="w-full" size="lg" variant="outline">
               Sfoglia Catalogo →
+            </Button>
+          </CardFooter>
+        </Card>
+
+        {/* Opzione B: I tuoi Materiali & Note */}
+        <Card className="hover:shadow-lg transition-all hover:border-primary cursor-pointer"
+          onClick={() => setLocation('/materials')}>
+          <CardHeader>
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center mb-4">
+              <Files className="w-8 h-8 text-white" />
+            </div>
+            <CardTitle className="text-2xl">I tuoi Materiali</CardTitle>
+            <CardDescription className="text-base">
+              Gestisci dispense, libri e crea le tue note personali
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li>✅ Carica PDF e Dispense</li>
+              <li>✅ <span className="font-semibold text-primary">Nuovo: </span>Crea Note e Appunti</li>
+              <li>✅ Organizza tutto in un unico posto</li>
+            </ul>
+          </CardContent>
+          <CardFooter>
+            <Button className="w-full" size="lg" variant="outline">
+              Apri Gestione Materiali →
             </Button>
           </CardFooter>
         </Card>

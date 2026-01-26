@@ -123,7 +123,7 @@ export function AppSidebar({ userName, userLevel, onLogout }: AppSidebarProps) {
       return { ...item, url: getTargetUrl('/fase0') };
     }
     if (item.title === "Fonti & Materiali") {
-      return { ...item, url: '/materials' };
+      return { ...item, url: getTargetUrl('/setup-fonti') };
     }
     if (item.title === "Fase 1: SQ3R") {
       return { ...item, url: getTargetUrl('/fase1') };
