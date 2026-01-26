@@ -8,7 +8,8 @@ import { pool as db } from './db';
 import { isAuthenticatedHybrid } from './services/supabase-auth';
 import multer from 'multer';
 import { join } from 'path';
-import { readFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
+import { mkdirSync, existsSync } from 'fs';
+import { readFile, unlink } from 'fs/promises';
 import { generateWithFallback } from './services/ai';
 import { extractTextFromPDFRobust } from './services/pdf-extraction';
 
@@ -782,9 +783,9 @@ router.post('/:concorsoId/generate-questions', isAuthenticatedHybrid, upload.sin
     if (type === 'pdf') {
       if (!req.file) return res.status(400).json({ error: "File PDF mancante" });
       try {
-        textToAnalyze = await extractTextFromPDF(readFileSync(req.file.path));
+        textToAnalyze = await extractTextFromPDF(await readFile(req.file.path));
         // Cleanup temp file
-        unlinkSync(req.file.path);
+        await unlink(req.file.path);
       } catch (e) {
         return res.status(500).json({ error: "Errore lettura PDF" });
       }
