@@ -17,6 +17,7 @@ import { generateWithFallback, getOpenRouterClient, cleanJson, makeVisionUserMes
 import { extractTextFromPDFRobust } from "./services/pdf-extraction";
 import multer from "multer";
 import { readFileSync, mkdirSync, existsSync } from "fs";
+import { readFile } from "fs/promises";
 import { join } from "path";
 
 // Configura multer per salvare file su disco
@@ -817,7 +818,7 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
           try {
             // Leggi il file dal disco per estrarre il testo
             const filePath = join(uploadDir, reqWithFile.file.filename);
-            const fileBuffer = readFileSync(filePath);
+            const fileBuffer = await readFile(filePath);
             contenuto = await extractTextFromPDF(fileBuffer);
             console.log("[UPLOAD-MATERIAL] Testo estratto:", contenuto ? `${contenuto.length} caratteri` : "vuoto");
           } catch (pdfError: any) {
