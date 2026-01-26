@@ -154,13 +154,19 @@ export default function MaterialsPage() {
         try {
           const res = await apiFetch("/api/storage/signed-download-url", {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ path: material.fileUrl })
           });
-          if (!res.ok) throw new Error("Errore recupero file");
+          if (!res.ok) {
+            const errText = await res.text();
+            console.error("[View Material] Error:", res.status, errText);
+            throw new Error("Errore recupero file");
+          }
           const data = await res.json();
           window.open(data.signedUrl, "_blank");
-        } catch (e) {
-          toast({ title: "Errore", description: "Impossibile aprire il file", variant: "destructive" });
+        } catch (e: any) {
+          console.error("[View Material] Exception:", e);
+          toast({ title: "Errore", description: e?.message || "Impossibile aprire il file", variant: "destructive" });
         }
       }
     } else if (material.contenuto) {
