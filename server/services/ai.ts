@@ -15,6 +15,7 @@ export type AITask =
   | "ocr_images"
   | "oral_exam_question"
   | "oral_exam_evaluate"
+  | "chat_assistant"
   | "generic";
 
 export type AIResponseMode = "text" | "json";
@@ -163,6 +164,8 @@ function getModelChain(task: AITask): string[] {
       return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
     case "oral_exam_evaluate":
       return ["anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini"];
+    case "chat_assistant":
+      return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
     default:
       return ["openai/gpt-4o-mini", "google/gemini-flash-1.5"];
   }
@@ -195,6 +198,8 @@ function getDefaultMaxOutputTokens(task: AITask): number {
       return 500; // Short, focused questions
     case "oral_exam_evaluate":
       return 1500; // Detailed feedback
+    case "chat_assistant":
+      return 800; // Concise support responses
     default:
       return 1000;
   }

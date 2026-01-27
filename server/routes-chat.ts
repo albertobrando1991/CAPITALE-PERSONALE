@@ -1,36 +1,44 @@
 
 import { Router } from "express";
-import { streamText, tool } from "ai";
-import { getOpenRouterClient } from "./services/ai";
-import { z } from "zod";
 import { SITE_KNOWLEDGE, SUPPORT_OPTIONS } from "./services/site-knowledge";
+import { generateWithFallback } from "./services/ai";
 import { db } from "./db";
 import { chatSessions, chatMessages } from "../shared/schema";
 import { eq, desc } from "drizzle-orm";
 import { isAuthenticated } from "./replitAuth";
-// We need to use the openai provider adapter for ai-sdk if we want to use the high-level `streamText`
-// However, since we are using OpenRouter via the `openai` library directly in services/ai,
-// we might need to use the `createOpenAI` provider from `@ai-sdk/openai` to be compatible with `streamText`.
-import { createOpenAI } from "@ai-sdk/openai";
 
 const router = Router();
 
-// Configure the OpenRouter provider for Vercel AI SDK
-const openrouter = createOpenAI({
-    apiKey: process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER_API_KEY || "",
-    baseURL: "https://openrouter.ai/api/v1",
-});
+const SYSTEM_PROMPT = `Sei l'Assistente Virtuale di "Capitale Personale", la piattaforma di preparazione concorsi.
+
+IL TUO OBIETTIVO:
+Fornire supporto gentile, chiaro ed empatico agli utenti che usano la piattaforma.
+Devi spiegare come funzionano le feature (Quiz, Flashcard, Simulazioni, Metodo SQ3R, etc.).
+
+LA TUA CONOSCENZA DEL SITO:
+${SITE_KNOWLEDGE}
+
+GESTIONE PROBLEMI:
+Se l'utente segnala un bug, un errore bloccante, o chiede esplicitamente di parlare con una persona ("voglio assistenza umana", "contattare lo staff"),
+aggiungi alla fine della tua risposta ESATTAMENTE il marker: [SUPPORT_NEEDED]
+
+TONO DI VOCE:
+Professionale, incoraggiante (sei un tutor), ma conciso. Usa elenchi puntati per le spiegazioni.`;
 
 router.post("/chat", isAuthenticated, async (req, res) => {
     try {
         const { messages, sessionId } = req.body;
-        const userId = (req.user as any)?.id; // Assuming auth middleware is used
+        const userId = (req.user as any)?.id;
 
         if (!userId) {
             return res.status(401).json({ error: "Unauthorized" });
         }
 
-        // 1. Get or Create Session (Optimization: Do this async or lazily if needed)
+        if (!messages || !Array.isArray(messages) || messages.length === 0) {
+            return res.status(400).json({ error: "Messages are required" });
+        }
+
+        // 1. Get or Create Session
         let currentSessionId = sessionId;
         if (!currentSessionId) {
             const [newSession] = await db.insert(chatSessions)
@@ -39,10 +47,9 @@ router.post("/chat", isAuthenticated, async (req, res) => {
             currentSessionId = newSession.id;
         }
 
-        // Capture the last user message to save it
+        // 2. Save user message
         const lastUserMessage = messages[messages.length - 1];
         if (lastUserMessage && lastUserMessage.role === 'user') {
-            // Fire and forget save
             db.insert(chatMessages).values({
                 sessionId: currentSessionId,
                 role: 'user',
@@ -50,98 +57,70 @@ router.post("/chat", isAuthenticated, async (req, res) => {
             }).catch(err => console.error("Error saving user msg:", err));
         }
 
+        // 3. Build conversation for AI (OpenAI message format)
+        const aiMessages = messages.map((m: any) => ({
+            role: m.role === 'assistant' ? 'assistant' as const : 'user' as const,
+            content: m.content || '',
+        }));
 
-        // 2. Stream Response
-        const result = await streamText({
-            model: openrouter("openai/gpt-4o-mini"), // Cost-effective model
-            system: `Sei l'Assistente Virtuale di "Capitale Personale", la piattaforma di preparazione concorsi.
-      
-      IL TUO OBIETTIVO:
-      Fornire supporto gentile, chiaro ed empatico agli utenti che usano la piattaforma. 
-      Devi spiegare come funzionano le feature (Quiz, Flashcard, Simulazioni, Metodo SQ3R, etc.).
-      
-      LA TUA CONOSCENZA DEL SITO:
-      ${SITE_KNOWLEDGE}
-      
-      GESTIONE PROBLEMI:
-      Se l'utente segnala un bug, un errore bloccante, o chiede esplicitamente di parlare con una persona ("voglio assistenza umana", "contattare lo staff"), 
-      DEVI usare il tool 'requestSupport'. NON fornire indirizzi email o numeri nel testo, usa il tool.
-      
-      TONO DI VOCE:
-      Professionale, incoraggiante (sei un tutor), ma conciso. Usa elenchi puntati per le spiegazioni.`,
-            messages,
-            tools: {
-                requestSupport: tool({
-                    description: "Attiva le opzioni di contatto (WhatsApp/Email) quando l'utente vuole parlare con lo staff o segnala problemi gravi.",
-                    parameters: z.object({
-                        reason: z.string().describe("Motivo della richiesta (es. 'bug', 'info_commerciali', 'assistenza_umana')"),
-                    }),
-                    execute: async ({ reason }: { reason: string }) => {
-                        // Log logic could go here
-                        console.log(`Support requested by User ${userId} for: ${reason}`);
-                        return {
-                            shown: true,
-                            options: SUPPORT_OPTIONS
-                        };
-                    },
-                }),
-            },
-            onFinish: async ({ text, toolCalls, toolResults }) => {
-                // Save assistant response
-                let content = text;
-                // Note: Logic to save tool invocations could be complex, for now we save the text content
-                // or a placeholder if it was just a tool call.
-
-                await db.insert(chatMessages).values({
-                    sessionId: currentSessionId,
-                    role: 'assistant',
-                    content: content,
-                    toolInvocations: toolCalls ? JSON.stringify(toolCalls) : null
-                }).catch((err: any) => console.error("Error saving bot msg:", err));
-            }
+        // 4. Generate response using battle-tested fallback system
+        const rawReply = await generateWithFallback({
+            task: "chat_assistant",
+            messages: [
+                { role: "system", content: SYSTEM_PROMPT },
+                ...aiMessages,
+            ],
+            temperature: 0.7,
         });
 
-        // Pipe the stream to the response
-        // Vercel AI SDK adaptation for Express
-        result.pipeDataStreamToResponse(res);
+        // 5. Check for support request marker
+        const supportRequested = rawReply.includes("[SUPPORT_NEEDED]");
+        const reply = rawReply.replace("[SUPPORT_NEEDED]", "").trim();
+
+        // 6. Save assistant response
+        db.insert(chatMessages).values({
+            sessionId: currentSessionId,
+            role: 'assistant',
+            content: reply,
+        }).catch((err: any) => console.error("Error saving bot msg:", err));
+
+        // 7. Return response
+        res.json({
+            reply,
+            sessionId: currentSessionId,
+            supportRequested,
+            supportOptions: supportRequested ? SUPPORT_OPTIONS : undefined,
+        });
 
     } catch (error: any) {
-        console.error("Chat API Error Detailed:", {
-            message: error.message,
-            stack: error.stack,
-            name: error.name,
-            apiKeyConfigured: !!(process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER_API_KEY)
-        });
-
-        // Return more specific error if available, but keep it safe for public
-        const isAuthError = error.status === 401 || (error.message && error.message.includes('401'));
-        if (isAuthError) {
-            return res.status(500).json({ error: "Errore di configurazione API AI (Auth)" });
-        }
-
+        console.error("Chat API Error:", error.message);
         res.status(500).json({ error: "Errore nel servizio di chat", details: error.message });
     }
 });
 
 // History endpoint
 router.get("/chat/history", isAuthenticated, async (req, res) => {
-    const userId = (req.user as any)?.id;
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    try {
+        const userId = (req.user as any)?.id;
+        if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    // Get latest session for now (simple version)
-    const sessions = await db.select().from(chatSessions)
-        .where(eq(chatSessions.userId, userId))
-        .orderBy(desc(chatSessions.createdAt))
-        .limit(1);
+        const sessions = await db.select().from(chatSessions)
+            .where(eq(chatSessions.userId, userId))
+            .orderBy(desc(chatSessions.createdAt))
+            .limit(1);
 
-    if (sessions.length === 0) return res.json({ messages: [], sessionId: null });
+        if (sessions.length === 0) return res.json({ messages: [], sessionId: null });
 
-    const recentSessionId = sessions[0].id;
-    const messages = await db.select().from(chatMessages)
-        .where(eq(chatMessages.sessionId, recentSessionId))
-        .orderBy(chatMessages.createdAt);
+        const recentSessionId = sessions[0].id;
+        const msgs = await db.select().from(chatMessages)
+            .where(eq(chatMessages.sessionId, recentSessionId))
+            .orderBy(chatMessages.createdAt);
 
-    res.json({ sessionId: recentSessionId, messages });
+        res.json({ sessionId: recentSessionId, messages: msgs });
+    } catch (error: any) {
+        console.error("Chat History Error:", error.message);
+        res.status(500).json({ error: "Errore nel recupero della cronologia" });
+    }
 });
 
 

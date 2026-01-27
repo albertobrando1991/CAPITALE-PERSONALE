@@ -1,42 +1,33 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { useChat } from '@ai-sdk/react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
-import { MessageCircle, X, Send, Bot, User, Minimize2, Loader2 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { MessageCircle, X, Send, Bot, Minimize2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from 'react-markdown';
 import { ContactSupport } from './ContactSupport';
 import { useAuth } from '@/contexts/AuthContext';
-import { getAccessToken } from '@/lib/supabase';
+import { apiFetch } from '@/lib/queryClient';
+
+interface ChatMessage {
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    supportOptions?: any;
+}
 
 export function ChatWidget() {
     const { user } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [input, setInput] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [sessionId, setSessionId] = useState<string | null>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
 
     // Only show if user is logged in
     if (!user) return null;
-
-    const { messages, input, handleInputChange, handleSubmit, isLoading, error } = useChat({
-        api: '/api/chat',
-        // Custom fetch to send Supabase Bearer token + cookies
-        fetch: async (url, options) => {
-            const token = await getAccessToken();
-            const headers = new Headers(options?.headers as HeadersInit);
-            if (token) {
-                headers.set('Authorization', `Bearer ${token}`);
-            }
-            return fetch(url, {
-                ...options,
-                headers,
-                credentials: 'include',
-            });
-        },
-        maxSteps: 5,
-    });
-
-    const scrollRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom
     useEffect(() => {
@@ -44,6 +35,63 @@ export function ChatWidget() {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
     }, [messages]);
+
+    const handleSubmit = useCallback(async (e: React.FormEvent) => {
+        e.preventDefault();
+        const userText = input.trim();
+        if (!userText || isLoading) return;
+
+        setInput('');
+        setError(null);
+
+        // Add user message immediately
+        const userMsg: ChatMessage = {
+            id: `user-${Date.now()}`,
+            role: 'user',
+            content: userText,
+        };
+        const updatedMessages = [...messages, userMsg];
+        setMessages(updatedMessages);
+        setIsLoading(true);
+
+        try {
+            const res = await apiFetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
+                    sessionId,
+                }),
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `Errore ${res.status}`);
+            }
+
+            const data = await res.json();
+
+            // Store session ID for subsequent messages
+            if (data.sessionId) {
+                setSessionId(data.sessionId);
+            }
+
+            // Add assistant message
+            const assistantMsg: ChatMessage = {
+                id: `assistant-${Date.now()}`,
+                role: 'assistant',
+                content: data.reply,
+                supportOptions: data.supportRequested ? data.supportOptions : undefined,
+            };
+            setMessages(prev => [...prev, assistantMsg]);
+
+        } catch (err: any) {
+            console.error('[Chat] Error:', err);
+            setError(err.message || 'Si è verificato un errore.');
+        } finally {
+            setIsLoading(false);
+        }
+    }, [input, isLoading, messages, sessionId]);
 
     if (!isOpen) {
         return (
@@ -105,35 +153,17 @@ export function ChatWidget() {
                                 </div>
                             )}
 
-                            {/* Tool Invocations */}
-                            {m.toolInvocations?.map((toolInvocation) => {
-                                const { toolName, toolCallId, state } = toolInvocation;
-
-                                if (state === 'result') {
-                                    const { result } = toolInvocation;
-
-                                    if (toolName === 'requestSupport') {
-                                        return (
-                                            <div key={toolCallId} className="mt-2">
-                                                <ContactSupport options={result.options} />
-                                            </div>
-                                        );
-                                    }
-                                } else {
-                                    return (
-                                        <div key={toolCallId} className="flex items-center gap-2 text-xs text-slate-400 mt-2 bg-slate-100 p-2 rounded">
-                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                            Generando opzioni di supporto...
-                                        </div>
-                                    );
-                                }
-                                return null;
-                            })}
+                            {/* Support Contact Options */}
+                            {m.supportOptions && (
+                                <div className="mt-2">
+                                    <ContactSupport options={m.supportOptions} />
+                                </div>
+                            )}
                         </div>
                     </div>
                 ))}
 
-                {isLoading && messages[messages.length - 1]?.role === 'user' && (
+                {isLoading && (
                     <div className="flex justify-start w-full">
                         <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-none p-4 shadow-sm flex items-center gap-2">
                             <div className="flex space-x-1">
@@ -148,7 +178,7 @@ export function ChatWidget() {
                 {error && (
                     <div className="p-3 bg-red-50 text-red-600 text-xs rounded-lg border border-red-100 flex items-center gap-2">
                         <X className="h-4 w-4" />
-                        Si è verificato un errore. Riprova più tardi.
+                        {error}
                     </div>
                 )}
             </div>
@@ -157,7 +187,7 @@ export function ChatWidget() {
             <form onSubmit={handleSubmit} className="p-3 bg-white border-t border-slate-100 flex gap-2 shrink-0">
                 <Input
                     value={input}
-                    onChange={handleInputChange}
+                    onChange={(e) => setInput(e.target.value)}
                     placeholder="Chiedi aiuto..."
                     className="flex-1 focus-visible:ring-blue-600"
                     disabled={isLoading}
