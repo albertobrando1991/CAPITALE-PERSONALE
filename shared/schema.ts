@@ -145,6 +145,43 @@ export * from "./schema-audit";
 export * from "./schema-oral-exam";
 
 // ============================================
+// AI CHAT SUPPORT TABLES
+// ============================================
+
+export const chatSessions = pgTable("chat_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull().default("Nuova Chat"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertChatSessionSchema = createInsertSchema(chatSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+export type ChatSession = typeof chatSessions.$inferSelect;
+export type InsertChatSession = typeof chatSessions.$inferInsert;
+
+export const chatMessages = pgTable("chat_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => chatSessions.id, { onDelete: "cascade" }),
+  role: varchar("role", { length: 20 }).notNull(), // 'user', 'assistant', 'system', 'data'
+  content: text("content").notNull(),
+  toolInvocations: jsonb("tool_invocations"), // Store AI tool calls info if needed
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
+  id: true,
+  createdAt: true
+});
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type InsertChatMessage = typeof chatMessages.$inferInsert;
+
+
+// ============================================
 // CACHE SYSTEM (The Hive)
 // ============================================
 

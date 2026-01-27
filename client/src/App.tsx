@@ -153,6 +153,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PomodoroProvider } from '@/contexts/PomodoroContext';
 import { PomodoroWidget } from '@/components/PomodoroWidget';
 
+import { ChatWidget } from '@/components/chat/ChatWidget';
+
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
   const [location] = useLocation();
@@ -196,6 +198,7 @@ function Router() {
             {isAuthenticated && location !== '/pomodoro' && <PomodoroWidget />}
             {isAuthenticated && <BenessereWidget />}
             {isAuthenticated && <HydrationReminder />}
+            {isAuthenticated && <ChatWidget />}
           </Fase3Provider>
         </PomodoroProvider>
       </BenessereProvider>

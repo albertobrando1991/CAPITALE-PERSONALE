@@ -101,10 +101,9 @@ import { registerEdisesRoutes } from "./routes-edises";
 import { registerNormativaRoutes } from './routes-normativa';
 import { registerPodcastRoutes } from './routes-podcast';
 import { registerPodcastAdminRoutes } from './routes-podcast-admin';
-import { registerSubscriptionRoutes } from './routes-subscription';
-import { registerAdminRoutes } from './routes-admin';
 import { registerStorageRoutes } from './routes-storage';
 import { registerOralExamRoutes } from './routes-oral-exam';
+import { chatRoutes } from './routes-chat';
 
 export async function registerRoutes(
   httpServer: Server,
@@ -142,6 +141,9 @@ export async function registerRoutes(
       default: return 'application/octet-stream';
     }
   };
+
+  app.use('/api', chatRoutes); // Register Chat Routes
+
   app.post('/api/flashcards/:id/spiega', isAuthenticated, async (req, res) => {
     try {
       const { id } = req.params;
@@ -840,84 +842,84 @@ Fornisci SOLO la spiegazione, senza intestazioni o formule di cortesia.`;
         }
 
         // UPLOAD TO SUPABASE STORAGE & EXTRACT TEXT
-          // ==========================================
-          let storagePath = "";
-          let textContent = "";
-          let fileBuffer: Buffer | null = null;
+        // ==========================================
+        let storagePath = "";
+        let textContent = "";
+        let fileBuffer: Buffer | null = null;
 
-          try {
-            console.log("[UPLOAD-MATERIAL] Reading file from disk:", reqWithFile.file.path);
-            fileBuffer = readFileSync(reqWithFile.file.path);
+        try {
+          console.log("[UPLOAD-MATERIAL] Reading file from disk:", reqWithFile.file.path);
+          fileBuffer = readFileSync(reqWithFile.file.path);
 
-            // EXTRACT TEXT (before or parallel to upload)
-            if (reqWithFile.file.mimetype === "application/pdf") {
-              try {
-                console.log("[UPLOAD-MATERIAL] Extracting text from PDF...");
-                textContent = await extractTextFromPDF(fileBuffer);
-                console.log("[UPLOAD-MATERIAL] Text extracted, length:", textContent.length);
-              } catch (e: any) {
-                console.warn("[UPLOAD-MATERIAL] Text extraction failed (non-blocking):", e.message);
-              }
+          // EXTRACT TEXT (before or parallel to upload)
+          if (reqWithFile.file.mimetype === "application/pdf") {
+            try {
+              console.log("[UPLOAD-MATERIAL] Extracting text from PDF...");
+              textContent = await extractTextFromPDF(fileBuffer);
+              console.log("[UPLOAD-MATERIAL] Text extracted, length:", textContent.length);
+            } catch (e: any) {
+              console.warn("[UPLOAD-MATERIAL] Text extraction failed (non-blocking):", e.message);
             }
-
-            // UPLOAD TO SUPABASE
-            console.log("[UPLOAD-MATERIAL] Uploading to Supabase Storage...");
-            // Dynamic import to avoid circular dependencies if any
-            const { uploadMaterialFile } = await import("./services/supabase-storage");
-
-            storagePath = await uploadMaterialFile(
-              fileBuffer,
-              reqWithFile.file.originalname,
-              userId,
-              concorsoId
-            );
-
-            if (!storagePath) throw new Error("Supabase returned empty storage path");
-            console.log("[UPLOAD-MATERIAL] Upload successful, path:", storagePath);
-
-          } catch (e: any) {
-            console.error("[UPLOAD-MATERIAL] Processing failed:", e);
-            // Try to cleanup temp file
-            try { unlinkSync(reqWithFile.file.path); } catch { }
-            return res.status(500).json({ error: "Errore durante elaborazione file: " + e.message });
           }
 
-          // Cleanup temp file after success
-          try { unlinkSync(reqWithFile.file.path); } catch { }
+          // UPLOAD TO SUPABASE
+          console.log("[UPLOAD-MATERIAL] Uploading to Supabase Storage...");
+          // Dynamic import to avoid circular dependencies if any
+          const { uploadMaterialFile } = await import("./services/supabase-storage");
 
-          const stats = {
-            wordCount: textContent.split(/\s+/).length,
-            lastAnalyzed: new Date(),
-          };
-
-          const materialData = {
+          storagePath = await uploadMaterialFile(
+            fileBuffer,
+            reqWithFile.file.originalname,
             userId,
-            concorsoId,
-            nome: reqWithFile.body.nome || reqWithFile.file.originalname,
-            materia: materia,
-            tipo: tipoMateriale, // "libro" | "normativa" | "appunti"
-            fileUrl: storagePath,  // VITAL: This must be the path returned by uploadMaterialFile
-            contenuto: textContent,
-            metadata: stats,
-            estratto: textContent.length > 50,
-          };
+            concorsoId
+          );
 
-          console.log("[UPLOAD-MATERIAL] Saving to DB with fileUrl:", materialData.fileUrl);
+          if (!storagePath) throw new Error("Supabase returned empty storage path");
+          console.log("[UPLOAD-MATERIAL] Upload successful, path:", storagePath);
 
-          try {
-            const validated = insertMaterialSchema.parse(materialData);
-            const material = await storage.createMaterial(validated);
-            console.log("[UPLOAD-MATERIAL] Materiale creato con ID:", material.id);
-            res.status(201).json(material);
-          } catch (dbError: any) {
-            console.error("[UPLOAD-MATERIAL] DB Save error:", dbError);
-            // Note: We might want to delete the file from Supabase here to avoid orphans, 
-            // but for now keeping it is safer than losing data.
-            res.status(500).json({
-              error: "Errore salvataggio database",
-              details: dbError?.message || JSON.stringify(dbError)
-            });
-          }
+        } catch (e: any) {
+          console.error("[UPLOAD-MATERIAL] Processing failed:", e);
+          // Try to cleanup temp file
+          try { unlinkSync(reqWithFile.file.path); } catch { }
+          return res.status(500).json({ error: "Errore durante elaborazione file: " + e.message });
+        }
+
+        // Cleanup temp file after success
+        try { unlinkSync(reqWithFile.file.path); } catch { }
+
+        const stats = {
+          wordCount: textContent.split(/\s+/).length,
+          lastAnalyzed: new Date(),
+        };
+
+        const materialData = {
+          userId,
+          concorsoId,
+          nome: reqWithFile.body.nome || reqWithFile.file.originalname,
+          materia: materia,
+          tipo: tipoMateriale, // "libro" | "normativa" | "appunti"
+          fileUrl: storagePath,  // VITAL: This must be the path returned by uploadMaterialFile
+          contenuto: textContent,
+          metadata: stats,
+          estratto: textContent.length > 50,
+        };
+
+        console.log("[UPLOAD-MATERIAL] Saving to DB with fileUrl:", materialData.fileUrl);
+
+        try {
+          const validated = insertMaterialSchema.parse(materialData);
+          const material = await storage.createMaterial(validated);
+          console.log("[UPLOAD-MATERIAL] Materiale creato con ID:", material.id);
+          res.status(201).json(material);
+        } catch (dbError: any) {
+          console.error("[UPLOAD-MATERIAL] DB Save error:", dbError);
+          // Note: We might want to delete the file from Supabase here to avoid orphans, 
+          // but for now keeping it is safer than losing data.
+          res.status(500).json({
+            error: "Errore salvataggio database",
+            details: dbError?.message || JSON.stringify(dbError)
+          });
+        }
       } catch (error: any) {
         console.error("[UPLOAD-MATERIAL] Unexpected error:", error);
         res.status(500).json({ error: "Errore inaspettato durante upload", details: error?.message });
