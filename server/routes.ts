@@ -101,6 +101,8 @@ import { registerEdisesRoutes } from "./routes-edises";
 import { registerNormativaRoutes } from './routes-normativa';
 import { registerPodcastRoutes } from './routes-podcast';
 import { registerPodcastAdminRoutes } from './routes-podcast-admin';
+import { registerSubscriptionRoutes } from './routes-subscription';
+import { registerAdminRoutes } from './routes-admin';
 import { registerStorageRoutes } from './routes-storage';
 import { registerOralExamRoutes } from './routes-oral-exam';
 import { chatRoutes } from './routes-chat';
