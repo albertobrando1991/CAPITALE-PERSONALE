@@ -65,6 +65,7 @@ export const oralExamSessions = pgTable("oral_exam_sessions", {
     totalDurationSeconds: integer("total_duration_seconds"),
 
     // Evaluation
+    evaluations: jsonb("evaluations").notNull().default([]), // Array of per-turn EvaluationCriteria
     feedback: jsonb("feedback"), // OralExamFeedback object
     score: real("score"), // Final score 1-30
 

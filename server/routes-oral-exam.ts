@@ -5,6 +5,7 @@ import multer from "multer";
 import { isAuthenticated } from "./replitAuth";
 import { generateWithFallback } from "./services/ai";
 import { extractTextFromPDFRobust } from "./services/pdf-extraction";
+import { storageOralExam } from "./storage-oral-exam";
 
 // ============================================================================
 // ITALIAN VOICE CONFIGURATION (Google Neural2)
@@ -24,26 +25,8 @@ const ITALIAN_VOICES = {
 };
 
 // ============================================================================
-// SESSION STORAGE
+// SESSION STORAGE (Database-backed via storageOralExam)
 // ============================================================================
-
-interface OralExamSession {
-    id: string;
-    userId: string;
-    concorsoId: string;
-    persona: "rigorous" | "empathetic";
-    topics: string[];
-    difficulty: "easy" | "medium" | "hard";
-    maxTurns: number;
-    currentTurn: number;
-    messages: Array<{ role: "user" | "instructor"; content: string }>;
-    context: string;
-    status: "active" | "completed";
-    createdAt: Date;
-    evaluations: EvaluationCriteria[];
-}
-
-const sessions = new Map<string, OralExamSession>();
 
 // ============================================================================
 // AI-POWERED EVALUATION SYSTEM
@@ -241,7 +224,8 @@ REGOLE DI TONO (CRITICHE):
 
             const firstQuestion = cleanAIResponse(rawFirstQuestion); // Apply cleaning
 
-            const session: OralExamSession = {
+            // Persist session to database
+            await storageOralExam.createSession({
                 id: sessionId,
                 userId,
                 concorsoId: data.concorsoId,
@@ -250,14 +234,9 @@ REGOLE DI TONO (CRITICHE):
                 difficulty: data.difficulty,
                 maxTurns: data.maxTurns,
                 currentTurn: 1,
-                messages: [{ role: "instructor", content: firstQuestion }],
-                context: data.context || "",
+                messages: [{ role: "instructor", content: firstQuestion }] as any,
                 status: "active",
-                createdAt: new Date(),
-                evaluations: []
-            };
-
-            sessions.set(sessionId, session);
+            });
 
             res.json({
                 sessionId,
@@ -281,8 +260,8 @@ REGOLE DI TONO (CRITICHE):
             const { content } = req.body;
             const userId = getUserId(req);
 
-            const session = sessions.get(sessionId);
-            if (!session || session.userId !== userId) {
+            const session = await storageOralExam.getSessionByUser(sessionId, userId);
+            if (!session) {
                 return res.status(404).json({ error: "Sessione non trovata" });
             }
 
@@ -290,25 +269,30 @@ REGOLE DI TONO (CRITICHE):
                 return res.status(400).json({ error: "Esame già completato" });
             }
 
+            // Cast jsonb fields
+            const messages = (session.messages as any[]) || [];
+            const evaluations = (session.evaluations as EvaluationCriteria[]) || [];
+            const topics = (session.topics as string[]) || [];
+
             // 1. Store User Answer
-            session.messages.push({ role: "user", content });
+            messages.push({ role: "user", content });
 
             // 2. AI Evaluation
-            const lastQuestion = session.messages[session.messages.length - 2]?.content || "";
-            const evaluation = await evaluateResponseWithAI(lastQuestion, content, session.topics.join(", "));
-            session.evaluations.push(evaluation);
+            const lastQuestion = messages[messages.length - 2]?.content || "";
+            const evaluation = await evaluateResponseWithAI(lastQuestion, content, topics.join(", "));
+            evaluations.push(evaluation);
 
             console.log(`[ORAL-EXAM] Eval Turn ${session.currentTurn}:`, evaluation);
 
             // 3. Generate Next Question
-            const isLastTurn = session.currentTurn >= session.maxTurns;
-            const voice = ITALIAN_VOICES[session.persona];
+            const isLastTurn = (session.currentTurn || 0) >= (session.maxTurns || 5);
+            const voice = ITALIAN_VOICES[session.persona as keyof typeof ITALIAN_VOICES];
 
             const systemPrompt = `Sei ${voice.name}, ${voice.description}.
-Stai interrogando uno studente sugli argomenti: ${session.topics.join(", ")}.
+Stai interrogando uno studente sugli argomenti: ${topics.join(", ")}.
 
 STORIA ESAME:
-${session.messages.map(m => `${m.role === 'instructor' ? 'DOCENTE' : 'STUDENTE'}: ${m.content}`).join("\n")}
+${messages.map((m: any) => `${m.role === 'instructor' ? 'DOCENTE' : 'STUDENTE'}: ${m.content}`).join("\n")}
 
 ULTIMA VALUTAZIONE (NASCOSTA ALLO STUDENTE):
 Accuratezza: ${evaluation.accuracy}/10
@@ -321,7 +305,7 @@ ${isLastTurn
 - Se l'accuratezza è BASSA (<6): Incalza lo studente sullo stesso punto o chiedi chiarimenti. Sii severo.
 - Se l'accuratezza è ALTA (>8): Passa a un altro argomento o fai una domanda più difficile per testare l'eccellenza.
 - Stile: Naturale, fluido, incalzante. Evita ripetizioni ("Bene", "Ok").
-- REGOLE CRITICHE: 
+- REGOLE CRITICHE:
   1. **NON scrivere "DOCENTE:" all'inizio.**
   2. Parla come una persona reale, non un robot.
   3. RISPONDI DIRETTAMENTE CON LA PROSSIMA DOMANDA.
@@ -337,17 +321,22 @@ ${isLastTurn
 
             const aiResponse = cleanAIResponse(rawAiResponse); // Apply cleaning
 
-            session.messages.push({ role: "instructor", content: aiResponse });
-            session.currentTurn++;
+            messages.push({ role: "instructor", content: aiResponse });
+            const newTurn = (session.currentTurn || 0) + 1;
+            const newStatus = isLastTurn ? "completed" : session.status;
 
-            if (isLastTurn) {
-                session.status = "completed";
-            }
+            // Persist updated session to database
+            await storageOralExam.updateSession(sessionId, userId, {
+                messages: messages as any,
+                evaluations: evaluations as any,
+                currentTurn: newTurn,
+                status: newStatus,
+            });
 
             res.json({
                 message: aiResponse,
-                currentTurn: session.currentTurn,
-                isCompleted: session.status === "completed",
+                currentTurn: newTurn,
+                isCompleted: newStatus === "completed",
                 debugEval: evaluation
             });
 
@@ -366,19 +355,21 @@ ${isLastTurn
             const { sessionId } = req.params;
             const userId = getUserId(req);
 
-            const session = sessions.get(sessionId);
-            if (!session || session.userId !== userId) {
+            const session = await storageOralExam.getSessionByUser(sessionId, userId);
+            if (!session) {
                 return res.status(404).json({ error: "Sessione non trovata" });
             }
 
-            const finalScore = calculateFinalScore(session.evaluations);
+            const evaluations = (session.evaluations as EvaluationCriteria[]) || [];
+            const topics = (session.topics as string[]) || [];
+            const finalScore = calculateFinalScore(evaluations);
 
             const systemPrompt = `Sei il Presidente della commissione d'esame.
 Analizza l'andamento dell'esame orale e scrivi un report finale per lo studente.
 
-ARGOMENTI: ${session.topics.join(", ")}
+ARGOMENTI: ${topics.join(", ")}
 VOTO CALCOLATO: ${finalScore}/30
-VALUTAZIONI PARZIALI: ${JSON.stringify(session.evaluations)}
+VALUTAZIONI PARZIALI: ${JSON.stringify(evaluations)}
 
 CREA UN JSON CON:
 - overallComment: Commento discorsivo generale.
@@ -404,7 +395,9 @@ Stile: Professionale, accademico, costruttivo.`;
                 weaknesses: feedbackData.weaknesses || []
             };
 
-            session.status = "completed";
+            // Persist completion to database
+            await storageOralExam.completeSession(sessionId, userId, feedback, finalScore);
+
             res.json({ feedback, score: finalScore });
 
         } catch (error: any) {
