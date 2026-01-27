@@ -17,6 +17,8 @@ import { isAdmin } from './utils/auth-helpers';
 import path from "path";
 
 const app = express();
+// Trust first proxy (Railway, Vercel, etc.) so express-rate-limit reads real client IP
+app.set("trust proxy", 1);
 const httpServer = createServer(app);
 
 declare module "http" {
