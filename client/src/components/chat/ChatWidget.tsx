@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useChat } from 'ai/react';
+import { useChat } from '@ai-sdk/react';
 import { Button } from "@/components/ui/button";
 import { MessageCircle, X, Send, Bot, User, Minimize2, Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
