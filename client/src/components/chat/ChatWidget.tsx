@@ -19,8 +19,14 @@ export function ChatWidget() {
 
     const { messages, input, handleInputChange, handleSubmit, isLoading, error } = useChat({
         api: '/api/chat',
-        // On open, we could fetch history, but for now we start fresh or rely on useChat's persistence if configured
-        maxSteps: 5, // Allow up to 5 hops for tools (though we only have 1 now)
+        // Custom fetch to properly send cookies (session)
+        fetch: async (url, options) => {
+            return fetch(url, {
+                ...options,
+                credentials: 'include',
+            });
+        },
+        maxSteps: 5,
     });
 
     const scrollRef = useRef<HTMLDivElement>(null);
