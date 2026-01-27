@@ -105,8 +105,20 @@ router.post("/chat", async (req, res) => {
         result.pipeDataStreamToResponse(res);
 
     } catch (error: any) {
-        console.error("Chat API Error:", error);
-        res.status(500).json({ error: "Errore nel servizio di chat" });
+        console.error("Chat API Error Detailed:", {
+            message: error.message,
+            stack: error.stack,
+            name: error.name,
+            apiKeyConfigured: !!(process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER_API_KEY)
+        });
+
+        // Return more specific error if available, but keep it safe for public
+        const isAuthError = error.status === 401 || (error.message && error.message.includes('401'));
+        if (isAuthError) {
+            return res.status(500).json({ error: "Errore di configurazione API AI (Auth)" });
+        }
+
+        res.status(500).json({ error: "Errore nel servizio di chat", details: error.message });
     }
 });
 
