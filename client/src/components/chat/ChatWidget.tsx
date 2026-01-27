@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from 'react-markdown';
 import { ContactSupport } from './ContactSupport';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/contexts/AuthContext';
 
 export function ChatWidget() {
     const { user } = useAuth();
