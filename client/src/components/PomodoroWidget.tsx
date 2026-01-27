@@ -67,6 +67,15 @@ export function PomodoroWidget() {
         <Card
           className="p-4 cursor-pointer hover:shadow-lg transition-shadow border-2 border-primary"
           onClick={pomodoro.toggleWidget}
+          role="button"
+          aria-label="Expand timer"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              pomodoro.toggleWidget();
+            }
+          }}
         >
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -112,6 +121,7 @@ export function PomodoroWidget() {
                 size="icon"
                 className="h-7 w-7"
                 onClick={() => setIsSettingsOpen(true)}
+                aria-label="Settings"
               >
                 <Settings className="h-3 w-3" />
               </Button>
@@ -120,6 +130,7 @@ export function PomodoroWidget() {
                 size="icon"
                 className="h-7 w-7"
                 onClick={() => setLocation('/pomodoro')}
+                aria-label="Full screen"
               >
                 <Maximize2 className="h-3 w-3" />
               </Button>
@@ -128,6 +139,7 @@ export function PomodoroWidget() {
                 size="icon"
                 className="h-7 w-7"
                 onClick={pomodoro.toggleWidget}
+                aria-label="Minimize timer"
               >
                 <ChevronDown className="h-3 w-3" />
               </Button>
@@ -196,6 +208,7 @@ export function PomodoroWidget() {
                 size="sm"
                 variant="outline"
                 onClick={pomodoro.resetTimer}
+                aria-label="Reset timer"
               >
                 <RotateCcw className="h-3 w-3" />
               </Button>

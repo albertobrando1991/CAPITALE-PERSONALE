@@ -259,7 +259,13 @@ export function PomodoroTimer({
                     </div>
                 </div>
             </div>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+            <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                aria-label={isExpanded ? "Collapse timer" : "Expand timer"}
+                aria-expanded={isExpanded}
+            >
                 {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </Button>
         </div>
@@ -310,6 +316,7 @@ export function PomodoroTimer({
               variant="ghost"
               onClick={reset}
               data-testid="button-reset-timer"
+              aria-label="Reset timer"
             >
               <RotateCcw className="h-4 w-4" />
             </Button>
@@ -317,6 +324,7 @@ export function PomodoroTimer({
               size="icon"
               onClick={toggleTimer}
               data-testid="button-toggle-timer"
+              aria-label={isRunning ? "Pause timer" : "Start timer"}
             >
               {isRunning ? (
                 <Pause className="h-4 w-4" />
@@ -329,6 +337,7 @@ export function PomodoroTimer({
               variant="ghost"
               onClick={switchMode}
               data-testid="button-switch-mode"
+              aria-label={isBreak ? "Switch to focus mode" : "Switch to break mode"}
             >
               <Coffee className="h-4 w-4" />
             </Button>
