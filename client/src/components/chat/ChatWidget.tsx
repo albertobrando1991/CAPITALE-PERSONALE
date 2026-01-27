@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import ReactMarkdown from 'react-markdown';
 import { ContactSupport } from './ContactSupport';
 import { useAuth } from '@/contexts/AuthContext';
+import { getAccessToken } from '@/lib/supabase';
 
 export function ChatWidget() {
     const { user } = useAuth();
@@ -19,10 +20,16 @@ export function ChatWidget() {
 
     const { messages, input, handleInputChange, handleSubmit, isLoading, error } = useChat({
         api: '/api/chat',
-        // Custom fetch to properly send cookies (session)
+        // Custom fetch to send Supabase Bearer token + cookies
         fetch: async (url, options) => {
+            const token = await getAccessToken();
+            const headers = new Headers(options?.headers as HeadersInit);
+            if (token) {
+                headers.set('Authorization', `Bearer ${token}`);
+            }
             return fetch(url, {
                 ...options,
+                headers,
                 credentials: 'include',
             });
         },

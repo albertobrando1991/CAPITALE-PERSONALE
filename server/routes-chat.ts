@@ -7,8 +7,9 @@ import { SITE_KNOWLEDGE, SUPPORT_OPTIONS } from "./services/site-knowledge";
 import { db } from "./db";
 import { chatSessions, chatMessages } from "../shared/schema";
 import { eq, desc } from "drizzle-orm";
+import { isAuthenticated } from "./replitAuth";
 // We need to use the openai provider adapter for ai-sdk if we want to use the high-level `streamText`
-// However, since we are using OpenRouter via the `openai` library directly in services/ai, 
+// However, since we are using OpenRouter via the `openai` library directly in services/ai,
 // we might need to use the `createOpenAI` provider from `@ai-sdk/openai` to be compatible with `streamText`.
 import { createOpenAI } from "@ai-sdk/openai";
 
@@ -20,7 +21,7 @@ const openrouter = createOpenAI({
     baseURL: "https://openrouter.ai/api/v1",
 });
 
-router.post("/chat", async (req, res) => {
+router.post("/chat", isAuthenticated, async (req, res) => {
     try {
         const { messages, sessionId } = req.body;
         const userId = (req.user as any)?.id; // Assuming auth middleware is used
@@ -123,7 +124,7 @@ router.post("/chat", async (req, res) => {
 });
 
 // History endpoint
-router.get("/chat/history", async (req, res) => {
+router.get("/chat/history", isAuthenticated, async (req, res) => {
     const userId = (req.user as any)?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
