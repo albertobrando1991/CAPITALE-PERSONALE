@@ -118,7 +118,7 @@ export default function OralExamPage() {
     const [personaState, setPersonaState] = useState<PersonaState>('listening');
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isListening, setIsListening] = useState(false);
-    const [fluidMode, setFluidMode] = useState(true); // Default to fluid mode
+    const [fluidMode, setFluidMode] = useState(false); // Default to MANUAL mode (user request)
     const [voiceSpeed, setVoiceSpeed] = useState(1.0); // Default speed
     const [countdown, setCountdown] = useState<number | null>(null); // For fluid mode countdown
     const [lastAudioUrl, setLastAudioUrl] = useState<string | null>(null); // New state for replay
@@ -1008,7 +1008,7 @@ export default function OralExamPage() {
                         <Button
                             size="sm"
                             variant="destructive"
-                            onClick={() => window.location.reload()} // Quick exit
+                            onClick={() => setLocation('/dashboard')}
                             className="h-8 opacity-80 hover:opacity-100"
                         >
                             Esci
